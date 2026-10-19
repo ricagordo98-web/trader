@@ -1,0 +1,370 @@
+@page "/settings"
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+@inject AuthSession Session
+@inject ThemeState Theme
+@inject IClientStore Store
+@inject IServerEndpointSettings ServerEndpoint
+@inject ISnackbar Snackbar
+
+<PageTitle>Configurações · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-6">
+    <MudText Typo="Typo.h4" Class="mb-4">Configurações</MudText>
+
+    <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
+        <MudTabPanel Text="Aparência">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Tema</MudText>
+                <MudRadioGroup T="ThemeMode" Value="Theme.Mode" ValueChanged="SetModeAsync">
+                    <MudRadio Value="ThemeMode.Dark" Color="Color.Primary">Escuro</MudRadio>
+                    <MudRadio Value="ThemeMode.Light" Color="Color.Primary">Claro</MudRadio>
+                    <MudRadio Value="ThemeMode.System" Color="Color.Primary">Seguir o sistema</MudRadio>
+                </MudRadioGroup>
+            </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Cor de destaque</MudText>
+                <div class="d-flex flex-wrap gap-3">
+                    @foreach (AccentOption accent in ThemeState.Accents)
+                    {
+                        <button type="button" class="accent-swatch @(accent == Theme.Accent ? "selected" : string.Empty)" title="@accent.Label"
+                                style="background:@(Theme.IsDark ? accent.Dark : accent.Light)" @onclick="@(() => Theme.SetAccentAsync(Store, accent))"></button>
+                    }
+                </div>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Conta">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <div class="d-flex align-center flex-wrap gap-3">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="symbol-name">Sessão iniciada como</MudText>
+                        <MudText Typo="Typo.subtitle1">@Session.Email</MudText>
+                    </div>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Logout" OnClick="Session.LogoutAsync">Terminar sessão</MudButton>
+                </div>
+            </MudPaper>
+
+            <MudGrid Spacing="4">
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">Alterar palavra-passe</MudText>
+                        <MudTextField T="string" @bind-Value="_oldPassword" Label="Palavra-passe atual" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudTextField T="string" @bind-Value="_newPassword" Label="Nova palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true"
+                                      HelperText="Mínimo de 8 caracteres, com maiúscula, minúscula, número e símbolo." />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrEmpty(_oldPassword) || string.IsNullOrEmpty(_newPassword))" OnClick="ChangePasswordAsync">Guardar</MudButton>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Criar novo utilizador</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">Só quem tem sessão iniciada pode criar contas. Não existe registo público.</MudText>
+                        <MudTextField T="string" @bind-Value="_userEmail" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudTextField T="string" @bind-Value="_userPassword" Label="Palavra-passe inicial" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_userEmail) || string.IsNullOrEmpty(_userPassword))" OnClick="CreateUserAsync">Criar conta</MudButton>
+                    </MudPaper>
+                </MudItem>
+
+                @if (ServerEndpoint.IsConfigurable)
+                {
+                    <MudItem xs="12">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">Servidor</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name mb-3">Endereço do servidor Trader a que esta app se liga. A alteração aplica-se depois de reiniciares a app.</MudText>
+                            <div class="d-flex flex-wrap gap-3 align-center">
+                                <MudTextField T="string" @bind-Value="_serverUrl" Label="URL" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" Immediate="true" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveServerUrl">Guardar</MudButton>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Watchlist">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Adicionar instrumento</MudText>
+                <MudText Typo="Typo.caption" Class="symbol-name mb-3">Usa o símbolo do Yahoo Finance (ex.: AMD, GC=F para o ouro, EURUSD=X para forex). O símbolo é validado antes de ser guardado.</MudText>
+                <MudGrid Spacing="2" Class="align-center">
+                    <MudItem xs="12" sm="3"><MudTextField T="string" @bind-Value="_newSymbol" Label="Símbolo" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                    <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_newName" Label="Nome" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                    <MudItem xs="6" sm="2">
+                        <MudSelect T="AssetClass" @bind-Value="_newClass" Label="Tipo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem Value="AssetClass.Stock">Ação</MudSelectItem>
+                            <MudSelectItem Value="AssetClass.Commodity">Mercadoria</MudSelectItem>
+                            <MudSelectItem Value="AssetClass.Etf">ETF</MudSelectItem>
+                            <MudSelectItem Value="AssetClass.Forex">Forex</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" sm="1"><MudTextField T="string" @bind-Value="_newCurrency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                    <MudItem xs="12" sm="2">
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newSymbol) || string.IsNullOrWhiteSpace(_newName))" OnClick="AddInstrumentAsync">Adicionar</MudButton>
+                    </MudItem>
+                </MudGrid>
+                @if (_watchlistError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_watchlistError</MudAlert>
+                }
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true">
+                <MudTable Items="_watchlist" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Símbolo</MudTh>
+                        <MudTh>Nome</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Moeda</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Symbol</MudTd>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>@ClassLabel(context.AssetClass)</MudTd>
+                        <MudTd>@context.Currency</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudTooltip Text="Remover da watchlist">
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Disabled="_busy" OnClick="@(() => RemoveInstrumentAsync(context))" />
+                            </MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Fontes">
+            <MudPaper Elevation="0" Outlined="true">
+                <MudTable Items="_sources" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                    <HeaderContent>
+                        <MudTh>Fonte</MudTh>
+                        <MudTh>Estado</MudTh>
+                        <MudTh>Intervalo</MudTh>
+                        <MudTh>Última recolha</MudTh>
+                        <MudTh Style="text-align:right">Obtidos / novos</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Name</MudTd>
+                        <MudTd>
+                            @if (!context.Enabled)
+                            {
+                                <MudTooltip Text="@context.DisabledReason"><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Desligada</MudChip></MudTooltip>
+                            }
+                            else if (context.LastError is not null)
+                            {
+                                <MudTooltip Text="@context.LastError"><MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Atenção</MudChip></MudTooltip>
+                            }
+                            else if (context.LastRun is null)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">A aguardar</MudChip>
+                            }
+                            else
+                            {
+                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Ativa</MudChip>
+                            }
+                        </MudTd>
+                        <MudTd>@(context.Enabled ? $"{context.IntervalMinutes} min" : "—")</MudTd>
+                        <MudTd>@(context.LastRun is { } run ? run.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "—")</MudTd>
+                        <MudTd Style="text-align:right">@(context.LastRun is null ? "—" : $"{context.LastFetched} / {context.LastAdded}")</MudTd>
+                    </RowTemplate>
+                </MudTable>
+            </MudPaper>
+            <MudText Typo="Typo.caption" Class="symbol-name mt-2">As chaves e credenciais das fontes configuram-se no servidor (ver README). Aqui só se mostra o estado.</MudText>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Scoring">
+            @if (_scoring is not null)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Pesos dos sinais</MudText>
+                    <MudText Typo="Typo.caption" Class="symbol-name mb-3">Quanto cada sinal conta na pontuação. Alterações aplicam-se ao próximo cálculo (a cada 15 minutos ou em "Recalcular agora").</MudText>
+                    <MudGrid Spacing="3">
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SentimentWeight" Label="Sentimento" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BuzzWeight" Label="Volume de menções" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TrendWeight" Label="Tendência" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MomentumWeight" Label="Momentum" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BollingerWeight" Label="Bollinger" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
+                </MudPaper>
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-3">Critérios para emitir uma sugestão</MudText>
+                    <MudGrid Spacing="3">
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.ConfidenceThreshold" Label="Certeza mínima (0,5–0,95)" Min="0.5" Max="0.95" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.MinAgreeingSignals" Label="Sinais concordantes (mín.)" Min="2" Max="5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MinRiskReward" Label="R:R mínimo" Min="1" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SlAtrMultiple" Label="Stop loss (× ATR)" Min="0.5" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TpAtrMultiple" Label="Take profit (× ATR)" Min="0.5" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.ExpiryDays" Label="Validade (dias)" Min="1" Max="30" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
+                </MudPaper>
+                @if (_scoringError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_scoringError</MudAlert>
+                }
+                <div class="d-flex gap-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveScoringAsync">Guardar</MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="_busy" OnClick="ResetScoringAsync">Repor valores por omissão</MudButton>
+                </div>
+            }
+            else
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<WatchlistItem> _watchlist = [];
+    private IReadOnlyList<SourceStatus> _sources = [];
+    private ScoringOptions? _scoring;
+    private string _oldPassword = string.Empty;
+    private string _newPassword = string.Empty;
+    private string _userEmail = string.Empty;
+    private string _userPassword = string.Empty;
+    private string _serverUrl = string.Empty;
+    private string _newSymbol = string.Empty;
+    private string _newName = string.Empty;
+    private string _newCurrency = "USD";
+    private AssetClass _newClass = AssetClass.Stock;
+    private string? _watchlistError;
+    private string? _scoringError;
+    private bool _busy;
+    private int _tab;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+        _serverUrl = ServerEndpoint.Url ?? string.Empty;
+
+        try
+        {
+            _watchlist = await Api.GetWatchlistAsync(_cts.Token);
+            _sources = await Api.GetSourcesAsync(_cts.Token);
+            _scoring = await Api.GetScoringAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Não foi possível carregar as configurações do servidor.", Severity.Error);
+        }
+    }
+
+    private Task SetModeAsync(ThemeMode mode) => Theme.SetModeAsync(Store, mode, mode == ThemeMode.System);
+
+    private async Task ChangePasswordAsync()
+    {
+        _busy = true;
+        string? error = await Api.ChangePasswordAsync(_oldPassword, _newPassword);
+        _busy = false;
+
+        if (error is null)
+        {
+            _oldPassword = string.Empty;
+            _newPassword = string.Empty;
+            Snackbar.Add("Palavra-passe alterada.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Error);
+        }
+    }
+
+    private async Task CreateUserAsync()
+    {
+        _busy = true;
+        string? error = await Api.CreateUserAsync(_userEmail.Trim(), _userPassword);
+        _busy = false;
+
+        if (error is null)
+        {
+            Snackbar.Add($"Conta criada para {_userEmail.Trim()}.", Severity.Success);
+            _userEmail = string.Empty;
+            _userPassword = string.Empty;
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Error);
+        }
+    }
+
+    private void SaveServerUrl()
+    {
+        if (!Uri.TryCreate(_serverUrl.Trim(), UriKind.Absolute, out Uri? uri) || uri.Scheme is not ("http" or "https"))
+        {
+            Snackbar.Add("Indica um URL válido (http:// ou https://).", Severity.Warning);
+            return;
+        }
+
+        ServerEndpoint.Url = uri.ToString();
+        Snackbar.Add("Guardado. Reinicia a app para ligar ao novo servidor.", Severity.Success);
+    }
+
+    private async Task AddInstrumentAsync()
+    {
+        _busy = true;
+        _watchlistError = await Api.AddInstrumentAsync(new AddInstrumentRequest(_newSymbol, _newName, _newClass, _newCurrency));
+
+        if (_watchlistError is null)
+        {
+            _watchlist = await Api.GetWatchlistAsync(_cts.Token);
+            _newSymbol = string.Empty;
+            _newName = string.Empty;
+            Snackbar.Add("Instrumento adicionado.", Severity.Success);
+        }
+
+        _busy = false;
+    }
+
+    private async Task RemoveInstrumentAsync(WatchlistItem item)
+    {
+        _busy = true;
+
+        if (await Api.RemoveInstrumentAsync(item.Symbol))
+        {
+            _watchlist = await Api.GetWatchlistAsync(_cts.Token);
+            Snackbar.Add($"{item.Symbol} removido.", Severity.Info);
+        }
+
+        _busy = false;
+    }
+
+    private async Task SaveScoringAsync()
+    {
+        _busy = true;
+        _scoringError = await Api.SaveScoringAsync(_scoring!);
+        _busy = false;
+
+        if (_scoringError is null)
+        {
+            Snackbar.Add("Pesos guardados.", Severity.Success);
+        }
+    }
+
+    private async Task ResetScoringAsync()
+    {
+        _busy = true;
+        await Api.ResetScoringAsync();
+        _scoring = await Api.GetScoringAsync(_cts.Token);
+        _scoringError = null;
+        _busy = false;
+        Snackbar.Add("Valores por omissão repostos.", Severity.Info);
+    }
+
+    private static string ClassLabel(AssetClass assetClass) => assetClass switch
+    {
+        AssetClass.Stock => "Ação",
+        AssetClass.Commodity => "Mercadoria",
+        AssetClass.Etf => "ETF",
+        _ => "Forex"
+    };
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

@@ -1,0 +1,121 @@
+@page "/trading"
+@inject TraderApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Trading · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6">
+    <div class="d-flex align-center mb-4 gap-4">
+        <MudText Typo="Typo.h4">Trading</MudText>
+        <MudSpacer />
+        <MudTextField @bind-Value="_search" Immediate="true" Placeholder="Pesquisar símbolo ou nome" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="trading-search" />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" OnClick="LoadAsync" />
+    </div>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <MudPaper Elevation="0" Outlined="true">
+        <MudTabs Rounded="true" TabPanelsClass="pa-0" ApplyEffectsToContainer="true">
+            @foreach ((AssetClass assetClass, string title) in _tabs)
+            {
+                <MudTabPanel Text="@title">
+                    <MudTable Items="Filter(assetClass)" Hover="true" OnRowClick="@((TableRowClickEventArgs<InstrumentQuote> args) => OpenChartAsync(args.Item))" RowStyle="cursor:pointer" Dense="true" Elevation="0" Loading="_loading" LoadingProgressColor="Color.Primary" Breakpoint="Breakpoint.None">
+                        <HeaderContent>
+                            <MudTh>Instrumento</MudTh>
+                            <MudTh Style="text-align:right">Preço</MudTh>
+                            <MudTh Style="text-align:right">Variação</MudTh>
+                            <MudTh Style="text-align:right">1 mês</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>
+                                <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
+                                <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
+                            </MudTd>
+                            <MudTd Style="text-align:right">
+                                @(context.Price is null ? "—" : $"{context.Price.Value.ToString(PriceFormat(context.AssetClass), _culture)} {context.Currency}")
+                            </MudTd>
+                            <MudTd Style="text-align:right">
+                                @if (context.ChangePercent is { } pct)
+                                {
+                                    <MudText Typo="Typo.body2" Color="@(pct >= 0 ? Color.Success : Color.Error)">
+                                        @(pct >= 0 ? "+" : string.Empty)@pct.ToString("F2", _culture)%
+                                    </MudText>
+                                }
+                                else
+                                {
+                                    <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
+                                }
+                            </MudTd>
+                            <MudTd Style="text-align:right"><Sparkline Values="context.Sparkline" /></MudTd>
+                        </RowTemplate>
+                        <NoRecordsContent>
+                            <MudText Class="pa-4" Color="Color.Secondary">Sem instrumentos.</MudText>
+                        </NoRecordsContent>
+                    </MudTable>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    </MudPaper>
+</MudContainer>
+
+@code {
+    private static readonly System.Globalization.CultureInfo _culture = System.Globalization.CultureInfo.GetCultureInfo("pt-PT");
+
+    private readonly (AssetClass AssetClass, string Title)[] _tabs =
+    [
+        (AssetClass.Stock, "Ações"),
+        (AssetClass.Commodity, "Mercadorias"),
+        (AssetClass.Etf, "ETFs"),
+        (AssetClass.Forex, "Forex")
+    ];
+
+    private IReadOnlyList<InstrumentQuote> _quotes = [];
+    private string _search = string.Empty;
+    private string? _error;
+    private bool _loading;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _quotes = await Api.GetInstrumentsAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter os dados de mercado. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private IEnumerable<InstrumentQuote> Filter(AssetClass assetClass) =>
+        _quotes.Where(q => q.AssetClass == assetClass
+            && (string.IsNullOrWhiteSpace(_search)
+                || q.Symbol.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || q.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)));
+
+    private async Task OpenChartAsync(InstrumentQuote? quote)
+    {
+        if (quote is null)
+        {
+            return;
+        }
+
+        DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote } };
+        DialogOptions options = new() { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true };
+        await DialogService.ShowAsync<ChartDialog>(quote.Symbol, parameters, options);
+    }
+
+    private static string PriceFormat(AssetClass assetClass) => assetClass == AssetClass.Forex ? "F5" : "N2";
+}

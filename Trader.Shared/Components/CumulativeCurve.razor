@@ -1,0 +1,48 @@
+@using System.Globalization
+
+@if (Points.Count >= 1)
+{
+    <svg class="curve" viewBox="0 0 @Width @Height" preserveAspectRatio="none" role="img" aria-label="Curva de R acumulado">
+        <line x1="0" x2="@Width" y1="@Zero" y2="@Zero" stroke="var(--mud-palette-lines-default)" stroke-dasharray="4 4" />
+        <polygon points="@AreaPoints" fill="@Stroke" fill-opacity="0.12" />
+        <polyline fill="none" stroke="@Stroke" stroke-width="2" stroke-linejoin="round" points="@LinePoints" vector-effect="non-scaling-stroke" />
+    </svg>
+}
+
+@code {
+    private const int Width = 600;
+    private const int Height = 200;
+    private const int Padding = 12;
+
+    [Parameter] public IReadOnlyList<double> Points { get; set; } = [];
+
+    private double Min => Math.Min(0, Points.Min());
+    private double Max => Math.Max(0, Points.Max());
+    private double Span => Max - Min == 0 ? 1 : Max - Min;
+
+    private string Stroke => Points.Count > 0 && Points[^1] >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)";
+
+    private double Y(double value) => Padding + (Height - 2 * Padding) * (1 - (value - Min) / Span);
+
+    private string Zero => Y(0).ToString("0.0", CultureInfo.InvariantCulture);
+
+    private IEnumerable<(double X, double Y)> Coordinates()
+    {
+        double step = Points.Count > 1 ? (double)(Width - 2 * Padding) / (Points.Count - 1) : 0;
+        return Points.Select((value, index) => (Padding + index * step, Y(value)));
+    }
+
+    private string LinePoints => string.Join(' ', Coordinates().Select(c => $"{c.X.ToString("0.0", CultureInfo.InvariantCulture)},{c.Y.ToString("0.0", CultureInfo.InvariantCulture)}"));
+
+    private string AreaPoints
+    {
+        get
+        {
+            List<(double X, double Y)> coordinates = Coordinates().ToList();
+            string baseline = Zero;
+            string first = coordinates[0].X.ToString("0.0", CultureInfo.InvariantCulture);
+            string last = coordinates[^1].X.ToString("0.0", CultureInfo.InvariantCulture);
+            return $"{first},{baseline} {LinePoints} {last},{baseline}";
+        }
+    }
+}

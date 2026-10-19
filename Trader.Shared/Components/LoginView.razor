@@ -1,0 +1,93 @@
+@inject AuthSession Session
+
+<div class="login-wrap">
+    <MudPaper Elevation="0" Outlined="true" Class="login-card pa-6">
+        <div class="login-brand">TRADER</div>
+
+        @if (_checking)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-4" />
+        }
+        else
+        {
+            <MudText Typo="Typo.h6" Class="mt-4">@(_registrationOpen ? "Criar a conta principal" : "Iniciar sessão")</MudText>
+            <MudText Typo="Typo.body2" Class="symbol-name mb-4">
+                @(_registrationOpen
+                    ? "Primeira utilização: esta conta ficará com acesso ao servidor. As restantes contas são criadas depois, nas Configurações."
+                    : "Acesso reservado a contas criadas neste servidor.")
+            </MudText>
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+            }
+
+            <form @onsubmit="SubmitAsync" @onsubmit:preventDefault="true">
+                <MudTextField T="string" @bind-Value="_email" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                              Immediate="true" Required="true" AutoFocus="true" />
+                <MudTextField T="string" @bind-Value="_password" Label="Palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3"
+                              Immediate="true" Required="true" HelperText="@(_registrationOpen ? "Mínimo de 8 caracteres, com maiúscula, minúscula, número e símbolo." : null)" />
+                @if (_registrationOpen)
+                {
+                    <MudTextField T="string" @bind-Value="_confirm" Label="Confirmar palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                }
+                <MudButton ButtonType="ButtonType.Submit" Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Size="Size.Large" Disabled="_busy">
+                    @(_busy ? "Aguarda…" : _registrationOpen ? "Criar conta e entrar" : "Entrar")
+                </MudButton>
+            </form>
+        }
+    </MudPaper>
+</div>
+
+@code {
+    private string _email = string.Empty;
+    private string _password = string.Empty;
+    private string _confirm = string.Empty;
+    private string? _error;
+    private bool _registrationOpen;
+    private bool _checking = true;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _registrationOpen = await Session.IsRegistrationOpenAsync();
+        _checking = false;
+    }
+
+    private async Task SubmitAsync()
+    {
+        _error = null;
+
+        if (string.IsNullOrWhiteSpace(_email) || string.IsNullOrEmpty(_password))
+        {
+            _error = "Indica o email e a palavra-passe.";
+            return;
+        }
+
+        if (_registrationOpen && _password != _confirm)
+        {
+            _error = "As palavras-passe não coincidem.";
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            string email = _email.Trim();
+            _error = _registrationOpen
+                ? await Session.RegisterFirstAccountAsync(email, _password)
+                : await Session.LoginAsync(email, _password);
+
+            if (_error is null)
+            {
+                _password = string.Empty;
+                _confirm = string.Empty;
+            }
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}

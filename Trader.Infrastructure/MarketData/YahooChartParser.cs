@@ -1,0 +1,71 @@
+using System.Text.Json;
+using Trader.Core.Models;
+
+namespace Trader.Infrastructure.MarketData;
+
+public static class YahooChartParser
+{
+    public static ChartSeries Parse(string json)
+    {
+        using JsonDocument document = JsonDocument.Parse(json);
+
+        if (!document.RootElement.TryGetProperty("chart", out JsonElement chart)
+            || !chart.TryGetProperty("result", out JsonElement results)
+            || results.ValueKind != JsonValueKind.Array
+            || results.GetArrayLength() == 0)
+        {
+            return new ChartSeries(null, []);
+        }
+
+        JsonElement result = results[0];
+
+        double? lastPrice = result.TryGetProperty("meta", out JsonElement meta)
+            && meta.TryGetProperty("regularMarketPrice", out JsonElement price)
+            && price.ValueKind == JsonValueKind.Number
+                ? price.GetDouble()
+                : null;
+
+        if (!result.TryGetProperty("timestamp", out JsonElement timestamps)
+            || timestamps.ValueKind != JsonValueKind.Array
+            || !result.TryGetProperty("indicators", out JsonElement indicators)
+            || !indicators.TryGetProperty("quote", out JsonElement quotes)
+            || quotes.GetArrayLength() == 0)
+        {
+            return new ChartSeries(lastPrice, []);
+        }
+
+        JsonElement quote = quotes[0];
+        JsonElement open = quote.GetProperty("open");
+        JsonElement high = quote.GetProperty("high");
+        JsonElement low = quote.GetProperty("low");
+        JsonElement close = quote.GetProperty("close");
+        quote.TryGetProperty("volume", out JsonElement volume);
+
+        List<Candle> candles = new(timestamps.GetArrayLength());
+
+        for (int i = 0; i < timestamps.GetArrayLength(); i++)
+        {
+            if (open[i].ValueKind != JsonValueKind.Number
+                || high[i].ValueKind != JsonValueKind.Number
+                || low[i].ValueKind != JsonValueKind.Number
+                || close[i].ValueKind != JsonValueKind.Number)
+            {
+                continue;
+            }
+
+            double candleVolume = volume.ValueKind == JsonValueKind.Array && volume[i].ValueKind == JsonValueKind.Number
+                ? volume[i].GetDouble()
+                : 0;
+
+            candles.Add(new Candle(
+                DateTimeOffset.FromUnixTimeSeconds(timestamps[i].GetInt64()),
+                open[i].GetDouble(),
+                high[i].GetDouble(),
+                low[i].GetDouble(),
+                close[i].GetDouble(),
+                candleVolume));
+        }
+
+        return new ChartSeries(lastPrice, candles);
+    }
+}

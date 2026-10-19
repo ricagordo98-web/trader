@@ -1,0 +1,34 @@
+@using System.Globalization
+
+@if (Values.Count >= 2)
+{
+    <svg class="sparkline" width="@Width" height="@Height" viewBox="0 0 @Width @Height" preserveAspectRatio="none" aria-hidden="true">
+        <polyline fill="none" stroke="@Stroke" stroke-width="1.5" stroke-linejoin="round" stroke-linecap="round" points="@Points" />
+    </svg>
+}
+
+@code {
+    [Parameter] public IReadOnlyList<double> Values { get; set; } = [];
+    [Parameter] public int Width { get; set; } = 96;
+    [Parameter] public int Height { get; set; } = 28;
+
+    private string Stroke => Values.Count >= 2 && Values[^1] >= Values[0]
+        ? "var(--mud-palette-success)"
+        : "var(--mud-palette-error)";
+
+    private string Points
+    {
+        get
+        {
+            double min = Values.Min();
+            double max = Values.Max();
+            double span = max - min == 0 ? 1 : max - min;
+            double step = (double)(Width - 2) / (Values.Count - 1);
+
+            return string.Join(' ', Values.Select((value, index) =>
+                string.Create(
+                    CultureInfo.InvariantCulture,
+                    $"{1 + index * step:F1},{1 + (Height - 2) * (1 - (value - min) / span):F1}")));
+        }
+    }
+}

@@ -1,0 +1,388 @@
+@page "/"
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject TraderApiClient Api
+@inject AuthSession Session
+
+<PageTitle>Notícias · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6">
+    <div class="d-flex align-center flex-wrap gap-3 mb-4">
+        <MudText Typo="Typo.h4">Notícias</MudText>
+        <MudChip T="string" Size="Size.Small" Color="@(_live ? Color.Success : Color.Default)" Variant="Variant.Outlined">@(_live ? "Ao vivo" : "Offline")</MudChip>
+        <MudSpacer />
+        <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" DebounceInterval="400" Placeholder="Pesquisar notícias"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="news-search" />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" OnClick="ReloadAsync" />
+    </div>
+
+    <div class="d-flex align-center flex-wrap gap-2 mb-4">
+        @foreach ((SourceType? type, string label) in _sourceFilters)
+        {
+            <MudChip T="string" Size="Size.Medium" Variant="@(_sourceType == type ? Variant.Filled : Variant.Outlined)" Color="@(_sourceType == type ? Color.Primary : Color.Default)"
+                     OnClick="@(() => SetSourceTypeAsync(type))">@label</MudChip>
+        }
+        <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+        @foreach ((string? value, string label) in _sentimentFilters)
+        {
+            <MudChip T="string" Size="Size.Medium" Variant="@(_sentiment == value ? Variant.Filled : Variant.Outlined)" Color="@SentimentFilterColor(value)"
+                     OnClick="@(() => SetSentimentAsync(value))">@label</MudChip>
+        }
+        @if (_symbol is not null)
+        {
+            <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Filled" OnClose="@(() => SetSymbolAsync(null))">@_symbol</MudChip>
+        }
+    </div>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <MudGrid Spacing="4">
+        <MudItem xs="12" md="8" lg="9">
+            @if (_pending.Count > 0)
+            {
+                <MudButton FullWidth="true" Variant="Variant.Filled" Color="Color.Primary" Class="mb-3" StartIcon="@Icons.Material.Filled.ArrowUpward" OnClick="ShowPending">
+                    @_pending.Count @(_pending.Count == 1 ? "nova notícia" : "novas notícias")
+                </MudButton>
+            }
+
+            @if (_loading && _articles.Count == 0)
+            {
+                @for (int i = 0; i < 5; i++)
+                {
+                    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="104px" Class="mb-3" />
+                }
+            }
+            else if (_articles.Count == 0 && _error is null)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                    <MudText Color="Color.Secondary">Sem notícias para estes filtros.</MudText>
+                </MudPaper>
+            }
+
+            @foreach (ArticleDto article in _articles)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="news-card pa-4 mb-3" @key="article.Id">
+                    <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                        <MudText Typo="Typo.caption" Class="news-source">@article.Source</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name">· @TimeAgo(article.PublishedAt)</MudText>
+                        @if (article.SourceType != SourceType.News)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">@SourceTypeLabel(article.SourceType)</MudChip>
+                        }
+                        <MudSpacer />
+                        @if (article.Sentiment is { } score)
+                        {
+                            <MudChip T="string" Size="Size.Small" Class="ma-0" Variant="Variant.Filled" Color="@SentimentColor(score)">
+                                @SentimentLabel(score) @(score >= 0 ? "+" : string.Empty)@score.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                            </MudChip>
+                        }
+                    </div>
+                    @if (SafeUrl(article.Url) is { } url)
+                    {
+                        <a href="@url" target="_blank" rel="noopener noreferrer" class="news-title">@article.Title</a>
+                    }
+                    else
+                    {
+                        <span class="news-title">@article.Title</span>
+                    }
+                    @if (!string.IsNullOrWhiteSpace(article.Summary) && article.Summary != article.Title)
+                    {
+                        <MudText Typo="Typo.body2" Class="news-summary mt-1">@article.Summary</MudText>
+                    }
+                    @if (article.Symbols.Count > 0)
+                    {
+                        <div class="d-flex flex-wrap gap-1 mt-2">
+                            @foreach (string symbol in article.Symbols)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0" OnClick="@(() => SetSymbolAsync(symbol))">@symbol</MudChip>
+                            }
+                        </div>
+                    }
+                </MudPaper>
+            }
+
+            @if (_hasMore && _articles.Count > 0)
+            {
+                <div class="d-flex justify-center mt-2">
+                    <MudButton Variant="Variant.Outlined" Disabled="_loading" OnClick="LoadMoreAsync">Carregar mais</MudButton>
+                </div>
+            }
+        </MudItem>
+
+        <MudItem xs="12" md="4" lg="3">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Sentimento por ativo</MudText>
+                <MudText Typo="Typo.caption" Class="symbol-name mb-3">Últimas 24 horas · média FinBERT</MudText>
+                @if (_summary.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Ainda sem dados.</MudText>
+                }
+                @foreach (SentimentSummary item in _summary.Take(12))
+                {
+                    <div class="sentiment-row" @onclick="@(() => SetSymbolAsync(item.Symbol))">
+                        <div class="d-flex align-center">
+                            <MudText Typo="Typo.subtitle2">@item.Symbol</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name ml-2">@item.ArticleCount</MudText>
+                            <MudSpacer />
+                            <MudText Typo="Typo.body2" Color="@SentimentColor(item.AverageSentiment)">
+                                @(item.AverageSentiment >= 0 ? "+" : string.Empty)@item.AverageSentiment.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+                            </MudText>
+                        </div>
+                        <div class="sentiment-bar">
+                            <div class="sentiment-bar-fill @(item.AverageSentiment >= 0 ? "positive" : "negative")" style="width:@BarWidth(item.AverageSentiment)%"></div>
+                        </div>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private const int PageSize = 30;
+
+    private static readonly (SourceType? Type, string Label)[] _sourceFilters =
+    [
+        (null, "Tudo"),
+        (SourceType.News, "Notícias"),
+        (SourceType.Social, "Social"),
+        (SourceType.Filing, "Filings"),
+        (SourceType.Macro, "Macro")
+    ];
+
+    private static readonly (string? Value, string Label)[] _sentimentFilters =
+    [
+        (null, "Qualquer sentimento"),
+        ("positive", "Positivo"),
+        ("neutral", "Neutro"),
+        ("negative", "Negativo")
+    ];
+
+    private readonly List<ArticleDto> _articles = [];
+    private readonly List<ArticleDto> _pending = [];
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<SentimentSummary> _summary = [];
+    private HubConnection? _hub;
+    private SourceType? _sourceType;
+    private string? _sentiment;
+    private string? _symbol;
+    private string _search = string.Empty;
+    private string? _error;
+    private bool _loading;
+    private bool _hasMore;
+    private bool _live;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await ReloadAsync();
+        await ConnectHubAsync();
+        _ = RefreshClockAsync(_cts.Token);
+    }
+
+    private NewsQuery BuildQuery(DateTimeOffset? before = null) =>
+        new(_symbol, _sourceType, _sentiment, string.IsNullOrWhiteSpace(_search) ? null : _search, before, PageSize);
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+        _pending.Clear();
+
+        try
+        {
+            IReadOnlyList<ArticleDto> page = await Api.GetNewsAsync(BuildQuery(), _cts.Token);
+            _articles.Clear();
+            _articles.AddRange(page);
+            _hasMore = page.Count == PageSize;
+            _summary = await Api.GetSentimentSummaryAsync(24, _cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter as notícias. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task LoadMoreAsync()
+    {
+        if (_articles.Count == 0)
+        {
+            return;
+        }
+
+        _loading = true;
+
+        try
+        {
+            IReadOnlyList<ArticleDto> page = await Api.GetNewsAsync(BuildQuery(_articles[^1].PublishedAt), _cts.Token);
+            _articles.AddRange(page.Where(p => _articles.All(a => a.Id != p.Id)));
+            _hasMore = page.Count == PageSize;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar mais notícias.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnSearchChanged(string value)
+    {
+        _search = value;
+        return ReloadAsync();
+    }
+
+    private Task SetSourceTypeAsync(SourceType? type)
+    {
+        _sourceType = type;
+        return ReloadAsync();
+    }
+
+    private Task SetSentimentAsync(string? sentiment)
+    {
+        _sentiment = sentiment;
+        return ReloadAsync();
+    }
+
+    private Task SetSymbolAsync(string? symbol)
+    {
+        _symbol = symbol;
+        return ReloadAsync();
+    }
+
+    private async Task ConnectHubAsync()
+    {
+        try
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Api.NewsHubUrl, options => options.AccessTokenProvider = () => Session.GetAccessTokenAsync())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.On<List<ArticleDto>>("ArticlesAdded", OnArticlesAddedAsync);
+            _hub.Reconnecting += _ => SetLiveAsync(false);
+            _hub.Reconnected += _ => SetLiveAsync(true);
+            _hub.Closed += _ => SetLiveAsync(false);
+
+            await _hub.StartAsync(_cts.Token);
+            _live = true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+            _live = false;
+        }
+    }
+
+    private Task SetLiveAsync(bool live) => InvokeAsync(() =>
+    {
+        _live = live;
+        StateHasChanged();
+    });
+
+    private Task OnArticlesAddedAsync(List<ArticleDto> added) => InvokeAsync(() =>
+    {
+        foreach (ArticleDto article in added.Where(Matches))
+        {
+            if (_articles.All(a => a.Id != article.Id) && _pending.All(a => a.Id != article.Id))
+            {
+                _pending.Add(article);
+            }
+        }
+
+        StateHasChanged();
+    });
+
+    private bool Matches(ArticleDto article) =>
+        (_sourceType is null || article.SourceType == _sourceType)
+        && (_symbol is null || article.Symbols.Contains(_symbol))
+        && (string.IsNullOrWhiteSpace(_search)
+            || article.Title.Contains(_search, StringComparison.OrdinalIgnoreCase)
+            || article.Summary.Contains(_search, StringComparison.OrdinalIgnoreCase))
+        && _sentiment switch
+        {
+            "positive" => SentimentBands.IsPositive(article.Sentiment),
+            "negative" => SentimentBands.IsNegative(article.Sentiment),
+            "neutral" => article.Sentiment is not null && !SentimentBands.IsPositive(article.Sentiment) && !SentimentBands.IsNegative(article.Sentiment),
+            _ => true
+        };
+
+    private void ShowPending()
+    {
+        _articles.InsertRange(0, _pending.OrderByDescending(a => a.PublishedAt));
+        _articles.Sort((a, b) => b.PublishedAt.CompareTo(a.PublishedAt));
+        _pending.Clear();
+    }
+
+    private async Task RefreshClockAsync(CancellationToken cancellationToken)
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromMinutes(1));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private static string? SafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" ? uri.ToString() : null;
+
+    private static string TimeAgo(DateTimeOffset time)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - time;
+
+        return elapsed.TotalMinutes < 1 ? "agora"
+            : elapsed.TotalMinutes < 60 ? $"há {(int)elapsed.TotalMinutes} min"
+            : elapsed.TotalHours < 24 ? $"há {(int)elapsed.TotalHours} h"
+            : $"há {(int)elapsed.TotalDays} d";
+    }
+
+    private static string SourceTypeLabel(SourceType type) => type switch
+    {
+        SourceType.Social => "Social",
+        SourceType.Filing => "Filing",
+        SourceType.Macro => "Macro",
+        _ => "Notícia"
+    };
+
+    private static string SentimentLabel(double score) =>
+        SentimentBands.IsPositive(score) ? "Positivo" : SentimentBands.IsNegative(score) ? "Negativo" : "Neutro";
+
+    private static Color SentimentColor(double score) =>
+        SentimentBands.IsPositive(score) ? Color.Success : SentimentBands.IsNegative(score) ? Color.Error : Color.Default;
+
+    private Color SentimentFilterColor(string? value) =>
+        _sentiment != value ? Color.Default : value switch
+        {
+            "positive" => Color.Success,
+            "negative" => Color.Error,
+            _ => Color.Primary
+        };
+
+    private static string BarWidth(double score) =>
+        (Math.Min(Math.Abs(score), 1) * 100).ToString("0", System.Globalization.CultureInfo.InvariantCulture);
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+
+        if (_hub is not null)
+        {
+            await _hub.DisposeAsync();
+        }
+    }
+}

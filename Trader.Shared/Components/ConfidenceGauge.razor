@@ -1,0 +1,23 @@
+@using System.Globalization
+
+<div class="gauge" style="width:@(Size)px;height:@(Size)px">
+    <svg viewBox="0 0 100 100" width="@Size" height="@Size" aria-hidden="true">
+        <circle cx="50" cy="50" r="42" fill="none" stroke="var(--mud-palette-lines-default)" stroke-width="9" />
+        <circle cx="50" cy="50" r="42" fill="none" stroke="@Stroke" stroke-width="9" stroke-linecap="round"
+                stroke-dasharray="@Dash 263.9" transform="rotate(-90 50 50)" />
+    </svg>
+    <div class="gauge-label">
+        <span class="gauge-value">@Percent</span><span class="gauge-unit">%</span>
+    </div>
+</div>
+
+@code {
+    [Parameter] public double Value { get; set; }
+    [Parameter] public int Size { get; set; } = 96;
+
+    private int Percent => (int)Math.Round(Math.Clamp(Value, 0, 1) * 100);
+
+    private string Dash => (Math.Clamp(Value, 0, 1) * 263.9).ToString("0.0", CultureInfo.InvariantCulture);
+
+    private string Stroke => Value >= 0.8 ? "var(--mud-palette-success)" : Value >= 0.7 ? "var(--mud-palette-primary)" : "var(--mud-palette-warning)";
+}

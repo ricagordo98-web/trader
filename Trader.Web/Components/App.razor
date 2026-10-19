@@ -1,0 +1,30 @@
+﻿<!DOCTYPE html>
+<html lang="en">
+
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <base href="/" />
+    <ResourcePreloader />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="_content/MudBlazor/MudBlazor.min.css" />
+    <link rel="stylesheet" href="_content/Trader.Shared/app.css" />
+    <link rel="stylesheet" href="Trader.Web.styles.css" />
+    <ImportMap />
+    <HeadOutlet @rendermode="InteractiveRenderMode" />
+</head>
+
+<body>
+    <Routes @rendermode="InteractiveRenderMode" />
+    <ReconnectModal />
+    <script src="_content/MudBlazor/MudBlazor.min.js"></script>
+    <script src="_content/Trader.Shared/lib/klinecharts/klinecharts.min.js"></script>
+    <script src="@Assets["_framework/blazor.web.js"]"></script>
+</body>
+
+</html>
+
+@code {
+    private static readonly IComponentRenderMode InteractiveRenderMode = new InteractiveServerRenderMode(prerender: false);
+}

@@ -1,0 +1,54 @@
+@page "/about"
+@using System.Reflection
+
+<PageTitle>Sobre · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-6">
+    <MudText Typo="Typo.h4" Class="mb-1">Sobre</MudText>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">Trader · versão @Version</MudText>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">O que é</MudText>
+        <MudText Typo="Typo.body2">
+            Ferramenta pessoal que reúne notícias, redes sociais, comunicações oficiais e dados de mercado, mede o sentimento com um modelo financeiro (FinBERT)
+            e sugere entradas com certeza, stop loss e take profit. As operações fazem-se em plataformas externas; esta app não executa ordens.
+        </MudText>
+    </MudPaper>
+
+    <MudAlert Severity="Severity.Warning" Variant="Variant.Outlined" Class="mb-4">
+        Não constitui aconselhamento financeiro. As sugestões são estimativas automáticas e podem estar erradas. Negociar mercados envolve risco de perda de capital;
+        usa o separador Track record para avaliar, com dados reais, se as sugestões têm mérito antes de confiares nelas.
+    </MudAlert>
+
+    <MudGrid Spacing="4">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Fontes de informação</MudText>
+                <ul class="about-list">
+                    <li>Notícias por RSS: CNBC, MarketWatch, Investing.com, Seeking Alpha, Financial Times, Google News, Yahoo Finance</li>
+                    <li>Banco Central Europeu e Reserva Federal (macro)</li>
+                    <li>GDELT (notícias globais)</li>
+                    <li>Finnhub, Reddit e SEC EDGAR (com chave ou contacto configurados)</li>
+                    <li>Preços e velas: Yahoo Finance</li>
+                </ul>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Tecnologias e créditos</MudText>
+                <ul class="about-list">
+                    <li>.NET 10, ASP.NET Core, MAUI Blazor Hybrid, SignalR, Entity Framework Core (SQLite)</li>
+                    <li>MudBlazor (interface)</li>
+                    <li>KLineChart, Apache License 2.0 (gráficos)</li>
+                    <li>FinBERT (ProsusAI), via ONNX Runtime (sentimento)</li>
+                    <li>Skender.Stock.Indicators (indicadores técnicos)</li>
+                </ul>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private static string Version =>
+        typeof(About).Assembly.GetCustomAttribute<AssemblyInformationalVersionAttribute>()?.InformationalVersion.Split('+')[0] ?? "1.0";
+}

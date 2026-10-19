@@ -1,0 +1,284 @@
+@implements IDisposable
+@inject TraderApiClient Api
+@inject ThemeState Theme
+@inject ISnackbar Snackbar
+
+<MudDialog ContentClass="chart-dialog-content">
+    <TitleContent>
+        <div class="d-flex align-center gap-3">
+            <MudText Typo="Typo.h6">@Quote.Symbol</MudText>
+            <MudText Typo="Typo.body2" Class="symbol-name">@Quote.Name</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="chart-dialog">
+            <div class="chart-toolbar">
+                @foreach (Timeframe timeframe in Timeframes)
+                {
+                    <MudButton Size="Size.Small" Variant="@(timeframe == _timeframe ? Variant.Filled : Variant.Text)" Color="@(timeframe == _timeframe ? Color.Primary : Color.Default)"
+                               OnClick="@(() => SelectTimeframeAsync(timeframe))">@timeframe.Label</MudButton>
+                }
+                <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                <MudMenu Label="Indicadores" StartIcon="@Icons.Material.Filled.Insights" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    @foreach (IndicatorOption indicator in Indicators)
+                    {
+                        <MudMenuItem OnClick="@(() => ToggleIndicatorAsync(indicator))">@(_activeIndicators.Contains(indicator.Name) ? "✓ " : "    ")@indicator.Label</MudMenuItem>
+                    }
+                </MudMenu>
+                @foreach (ChartLevel level in _levels)
+                {
+                    <span class="chart-legend"><span class="chart-legend-dot" style="background:@level.Color"></span>@level.Label @level.Price.ToString(PricePrecision > 3 ? "F5" : "F2", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</span>
+                }
+                <MudSpacer />
+                <MudTooltip Text="Apagar selecionado (Del)">
+                    <MudIconButton Icon="@Icons.Material.Filled.Backspace" Size="Size.Small" OnClick="RemoveSelectedAsync" />
+                </MudTooltip>
+                <MudTooltip Text="Apagar todos os desenhos">
+                    <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small" OnClick="ClearDrawingsAsync" />
+                </MudTooltip>
+            </div>
+            <div class="chart-body">
+                <div class="chart-tools">
+                    @foreach (DrawingTool tool in DrawingTools)
+                    {
+                        <MudTooltip Text="@tool.Label" Placement="Placement.Right">
+                            <MudIconButton Icon="@tool.Icon" Size="Size.Small" OnClick="@(() => StartDrawingAsync(tool))" />
+                        </MudTooltip>
+                    }
+                </div>
+                <div class="chart-area">
+                    @if (_error is not null)
+                    {
+                        <MudAlert Severity="Severity.Error" Class="ma-4">@_error</MudAlert>
+                    }
+                    else if (!_ready)
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+                    else
+                    {
+                        <KLineChart @ref="_chart" Symbol="@Quote.Symbol" PricePrecision="@PricePrecision" Interval="@_timeframe.Interval" Candles="_candles"
+                                    Dark="Theme.IsDark" ShowVolume="@HasVolume" Levels="_levels" DrawingsJson="@_drawingsJson" DrawingsChanged="SaveDrawingsAsync" />
+                    }
+                </div>
+            </div>
+        </div>
+    </DialogContent>
+</MudDialog>
+
+@code {
+    private sealed record Timeframe(string Label, string Interval, string Range, string LiveRange);
+
+    private sealed record IndicatorOption(string Name, string Label, bool MainPane);
+
+    private sealed record DrawingTool(string Name, string Label, string Icon);
+
+    private static readonly Timeframe[] Timeframes =
+    [
+        new("1m", "1m", "5d", "1d"),
+        new("5m", "5m", "1mo", "1d"),
+        new("15m", "15m", "1mo", "1d"),
+        new("1H", "60m", "6mo", "5d"),
+        new("1D", "1d", "2y", "5d"),
+        new("1W", "1wk", "10y", "1mo"),
+        new("1M", "1mo", "max", "6mo")
+    ];
+
+    private static readonly IndicatorOption[] Indicators =
+    [
+        new("MA", "Média móvel (MA)", true),
+        new("EMA", "Média móvel exponencial (EMA)", true),
+        new("BOLL", "Bandas de Bollinger", true),
+        new("SAR", "Parabolic SAR", true),
+        new("VOL", "Volume", false),
+        new("MACD", "MACD", false),
+        new("RSI", "RSI", false),
+        new("KDJ", "KDJ / Estocástico", false),
+        new("OBV", "On-Balance Volume", false),
+        new("CCI", "CCI", false)
+    ];
+
+    private static readonly DrawingTool[] DrawingTools =
+    [
+        new("segment", "Segmento de reta", Icons.Material.Filled.Timeline),
+        new("straightLine", "Reta", Icons.Material.Filled.TrendingUp),
+        new("rayLine", "Raio", Icons.Material.Filled.CallMade),
+        new("horizontalStraightLine", "Linha horizontal", Icons.Material.Filled.HorizontalRule),
+        new("verticalStraightLine", "Linha vertical", Icons.Material.Filled.MoreVert),
+        new("parallelStraightLine", "Canal paralelo", Icons.Material.Filled.DensityMedium),
+        new("priceChannelLine", "Canal de preço", Icons.Material.Filled.Reorder),
+        new("fibonacciLine", "Retração de Fibonacci", Icons.Material.Filled.FormatLineSpacing),
+        new("rectangle", "Retângulo", Icons.Material.Filled.CropSquare),
+        new("priceLine", "Linha de preço", Icons.Material.Filled.AttachMoney)
+    ];
+
+    private readonly HashSet<string> _activeIndicators = ["VOL"];
+    private readonly CancellationTokenSource _cts = new();
+    private KLineChart? _chart;
+    private IReadOnlyList<Candle> _candles = [];
+    private IReadOnlyList<ChartLevel> _levels = [];
+    private Timeframe _timeframe = Timeframes[4];
+    private string _drawingsJson = "[]";
+    private string? _error;
+    private bool _ready;
+
+    [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
+
+    private bool HasVolume => Quote.AssetClass != AssetClass.Forex;
+
+    private int PricePrecision => Quote.AssetClass == AssetClass.Forex
+        ? (Quote.Symbol.Contains("JPY", StringComparison.Ordinal) ? 3 : 5)
+        : 2;
+
+    protected override async Task OnInitializedAsync()
+    {
+        Theme.Changed += OnThemeChanged;
+
+        if (!HasVolume)
+        {
+            _activeIndicators.Remove("VOL");
+        }
+
+        try
+        {
+            _drawingsJson = await Api.GetDrawingsAsync(Quote.Symbol, _cts.Token);
+            _candles = await Api.GetCandlesAsync(Quote.Symbol, _timeframe.Interval, _timeframe.Range, _cts.Token);
+            _levels = await LoadLevelsAsync();
+            _ready = true;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar o gráfico. Verifica se o servidor está a correr.";
+            return;
+        }
+
+        _ = RunLiveUpdatesAsync(_cts.Token);
+    }
+
+    private async Task<IReadOnlyList<ChartLevel>> LoadLevelsAsync()
+    {
+        IReadOnlyList<SuggestionDto> open = await Api.GetSuggestionsAsync(Quote.Symbol, true, 1, _cts.Token);
+
+        return open.Count == 0
+            ? []
+            :
+            [
+                new ChartLevel("Entrada", open[0].Entry, "#4C8DFF"),
+                new ChartLevel("Stop loss", open[0].StopLoss, "#EF4444"),
+                new ChartLevel("Take profit", open[0].TakeProfit, "#22C55E")
+            ];
+    }
+
+    private async Task SelectTimeframeAsync(Timeframe timeframe)
+    {
+        if (timeframe == _timeframe)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<Candle> candles = await Api.GetCandlesAsync(Quote.Symbol, timeframe.Interval, timeframe.Range, _cts.Token);
+            _timeframe = timeframe;
+            _candles = candles;
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Não foi possível carregar este intervalo.", Severity.Error);
+        }
+    }
+
+    private async Task ToggleIndicatorAsync(IndicatorOption indicator)
+    {
+        if (_chart is null)
+        {
+            return;
+        }
+
+        IReadOnlyList<string> active = await _chart.ToggleIndicatorAsync(indicator.Name, indicator.MainPane);
+        _activeIndicators.Clear();
+        _activeIndicators.UnionWith(active);
+    }
+
+    private async Task StartDrawingAsync(DrawingTool tool)
+    {
+        if (_chart is not null)
+        {
+            await _chart.StartDrawingAsync(tool.Name);
+        }
+    }
+
+    private async Task RemoveSelectedAsync()
+    {
+        if (_chart is not null)
+        {
+            await _chart.RemoveSelectedAsync();
+        }
+    }
+
+    private async Task ClearDrawingsAsync()
+    {
+        if (_chart is not null)
+        {
+            await _chart.ClearDrawingsAsync();
+        }
+    }
+
+    private async Task SaveDrawingsAsync(string json)
+    {
+        try
+        {
+            await Api.SaveDrawingsAsync(Quote.Symbol, json, _cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Não foi possível guardar os desenhos.", Severity.Warning);
+        }
+    }
+
+    private async Task RunLiveUpdatesAsync(CancellationToken cancellationToken)
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromSeconds(15));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                Timeframe timeframe = _timeframe;
+
+                try
+                {
+                    IReadOnlyList<Candle> latest = await Api.GetCandlesAsync(Quote.Symbol, timeframe.Interval, timeframe.LiveRange, cancellationToken);
+
+                    if (_chart is null || timeframe != _timeframe)
+                    {
+                        continue;
+                    }
+
+                    await InvokeAsync(async () =>
+                    {
+                        foreach (Candle candle in latest.TakeLast(2))
+                        {
+                            await _chart.PushBarAsync(candle);
+                        }
+                    });
+                }
+                catch (HttpRequestException)
+                {
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private void OnThemeChanged() => InvokeAsync(StateHasChanged);
+
+    public void Dispose()
+    {
+        Theme.Changed -= OnThemeChanged;
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

@@ -1,0 +1,351 @@
+@page "/prediction"
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Predição · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6">
+    <div class="d-flex align-center flex-wrap gap-3 mb-1">
+        <MudText Typo="Typo.h4">Predição</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" Disabled="_refreshing" OnClick="RefreshAsync">
+            @(_refreshing ? "A calcular…" : "Recalcular agora")
+        </MudButton>
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">
+        Sugestões geradas a partir de notícias, sentimento e indicadores técnicos. Ferramenta de apoio à decisão — não constitui aconselhamento financeiro.
+    </MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4">
+        <MudTabPanel Text="@($"Sugestões ({_open.Count})")">
+            @if (_loading)
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+            else if (_open.Count == 0)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Sem sugestões neste momento</MudText>
+                    <MudText Color="Color.Secondary">Só aparecem sugestões quando vários sinais concordam com pelo menos @ThresholdPercent% de certeza e o ganho potencial é, no mínimo, 1,5× o risco. O cálculo repete-se a cada 15 minutos.</MudText>
+                </MudPaper>
+            }
+
+            <MudGrid Spacing="4">
+                @foreach (SuggestionDto suggestion in _open)
+                {
+                    bool buy = suggestion.Direction == TradeDirection.Buy;
+                    <MudItem xs="12" lg="6" xl="4" @key="suggestion.Id">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                            <div class="d-flex align-center gap-3">
+                                <ConfidenceGauge Value="suggestion.Confidence" />
+                                <div class="flex-grow-1">
+                                    <div class="d-flex align-center gap-2 flex-wrap">
+                                        <MudText Typo="Typo.h6">@suggestion.Symbol</MudText>
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(buy ? Color.Success : Color.Error)" Class="ma-0">@(buy ? "COMPRAR" : "VENDER")</MudChip>
+                                    </div>
+                                    <MudText Typo="Typo.body2" Class="symbol-name">@suggestion.Name</MudText>
+                                    <MudText Typo="Typo.caption" Class="symbol-name">
+                                        @TimeAgo(suggestion.CreatedAt) · expira em @ExpiresIn(suggestion.ExpiresAt)
+                                    </MudText>
+                                </div>
+                            </div>
+
+                            <div class="d-flex flex-wrap gap-2 mt-3">
+                                <div class="level-box flex-grow-1">
+                                    <div class="level-label">Entrada</div>
+                                    <div class="level-value">@Price(suggestion.Entry)</div>
+                                    @if (_quotes.TryGetValue(suggestion.Symbol, out InstrumentQuote? quote) && quote.Price is { } current)
+                                    {
+                                        <MudText Typo="Typo.caption" Class="symbol-name">agora @Price(current)</MudText>
+                                    }
+                                </div>
+                                <div class="level-box flex-grow-1">
+                                    <div class="level-label">Stop loss</div>
+                                    <div class="level-value" style="color:var(--mud-palette-error)">@Price(suggestion.StopLoss)</div>
+                                    <MudText Typo="Typo.caption" Class="symbol-name">@Distance(suggestion.Entry, suggestion.StopLoss)</MudText>
+                                </div>
+                                <div class="level-box flex-grow-1">
+                                    <div class="level-label">Take profit</div>
+                                    <div class="level-value" style="color:var(--mud-palette-success)">@Price(suggestion.TakeProfit)</div>
+                                    <MudText Typo="Typo.caption" Class="symbol-name">@Distance(suggestion.Entry, suggestion.TakeProfit)</MudText>
+                                </div>
+                                <div class="level-box">
+                                    <div class="level-label">R:R</div>
+                                    <div class="level-value">1 : @suggestion.RiskReward.ToString("0.0", CultureInfo.InvariantCulture)</div>
+                                </div>
+                            </div>
+
+                            <MudText Typo="Typo.body2" Class="mt-3">@suggestion.Explanation</MudText>
+
+                            <MudExpansionPanels Class="mt-3" Elevation="0" Outlined="true">
+                                <MudExpansionPanel Text="Provas">
+                                    @foreach (SignalResult signal in suggestion.Signals)
+                                    {
+                                        <div class="mb-3">
+                                            <div class="d-flex align-center">
+                                                <MudText Typo="Typo.body2">@signal.Label</MudText>
+                                                <MudSpacer />
+                                                <MudText Typo="Typo.caption" Color="@SignalColor(signal.Value, suggestion.Direction)">
+                                                    @(signal.Value >= 0 ? "+" : string.Empty)@signal.Value.ToString("0.00", CultureInfo.InvariantCulture)
+                                                </MudText>
+                                            </div>
+                                            <div class="signal-bar">
+                                                <div class="signal-bar-mid"></div>
+                                                <div class="signal-bar-fill @(signal.Value >= 0 ? "positive" : "negative")" style="width:@(Math.Min(Math.Abs(signal.Value), 1) * 50)%"></div>
+                                            </div>
+                                            <MudText Typo="Typo.caption" Class="symbol-name">@signal.Detail</MudText>
+                                        </div>
+                                    }
+
+                                    @if (suggestion.Articles.Count > 0)
+                                    {
+                                        <MudDivider Class="my-2" />
+                                        <MudText Typo="Typo.subtitle2" Class="mb-2">Notícias e posts que sustentam a sugestão</MudText>
+                                        @foreach (EvidenceArticle article in suggestion.Articles)
+                                        {
+                                            <div class="mb-2">
+                                                @if (SafeUrl(article.Url) is { } url)
+                                                {
+                                                    <a href="@url" target="_blank" rel="noopener noreferrer" class="news-title" style="font-size:.9rem">@article.Title</a>
+                                                }
+                                                else
+                                                {
+                                                    <span class="news-title" style="font-size:.9rem">@article.Title</span>
+                                                }
+                                                <MudText Typo="Typo.caption" Class="symbol-name">
+                                                    @article.Source · @TimeAgo(article.PublishedAt) · sentimento @(article.Sentiment >= 0 ? "+" : string.Empty)@article.Sentiment.ToString("0.00", CultureInfo.InvariantCulture)
+                                                </MudText>
+                                            </div>
+                                        }
+                                    }
+                                </MudExpansionPanel>
+                            </MudExpansionPanels>
+
+                            <div class="d-flex justify-end mt-3">
+                                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.CandlestickChart" OnClick="@(() => OpenChartAsync(suggestion))">Ver gráfico</MudButton>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Track record">
+            @if (_record is null || _record.ClosedCount == 0)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem sugestões fechadas</MudText>
+                    <MudText Color="Color.Secondary">
+                        Cada sugestão é avaliada automaticamente contra o preço real e fecha quando toca no take profit, no stop loss ou ao fim de 5 dias.
+                        Há @(_record?.OpenCount ?? 0) em curso; as estatísticas aparecem aqui à medida que fecharem.
+                    </MudText>
+                </MudPaper>
+            }
+            else
+            {
+                <MudGrid Spacing="3" Class="mb-4">
+                    @foreach ((string label, string value, Color color) in Kpis())
+                    {
+                        <MudItem xs="6" md="4" lg="2">
+                            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                                <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                                <MudText Typo="Typo.h5" Color="color">@value</MudText>
+                            </MudPaper>
+                        </MudItem>
+                    }
+                </MudGrid>
+
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-2">R acumulado</MudText>
+                    <CumulativeCurve Points="@_record.Curve.Select(c => c.CumulativeR).ToList()" />
+                </MudPaper>
+
+                <MudGrid Spacing="4">
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-2">Acerto por sinal</MudText>
+                            @foreach (AccuracyStat stat in _record.BySignal)
+                            {
+                                <div class="d-flex align-center py-1">
+                                    <MudText Typo="Typo.body2">@stat.Label</MudText>
+                                    <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
+                                    <MudSpacer />
+                                    <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                </div>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-2">Acerto por fonte</MudText>
+                            @foreach (AccuracyStat stat in _record.BySource.Take(12))
+                            {
+                                <div class="d-flex align-center py-1">
+                                    <MudText Typo="Typo.body2">@stat.Label</MudText>
+                                    <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
+                                    <MudSpacer />
+                                    <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                </div>
+                            }
+                        </MudPaper>
+                    </MudItem>
+                </MudGrid>
+
+                <MudPaper Elevation="0" Outlined="true" Class="mt-4">
+                    <MudTable Items="_closed" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                        <HeaderContent>
+                            <MudTh>Ativo</MudTh>
+                            <MudTh>Direção</MudTh>
+                            <MudTh>Resultado</MudTh>
+                            <MudTh Style="text-align:right">R</MudTh>
+                            <MudTh>Fechada</MudTh>
+                        </HeaderContent>
+                        <RowTemplate>
+                            <MudTd>@context.Symbol</MudTd>
+                            <MudTd>@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
+                            <MudTd>@StatusLabel(context.Status)</MudTd>
+                            <MudTd Style="text-align:right">
+                                <MudText Typo="Typo.body2" Color="@(context.RMultiple >= 0 ? Color.Success : Color.Error)">
+                                    @(context.RMultiple >= 0 ? "+" : string.Empty)@context.RMultiple?.ToString("0.00", CultureInfo.InvariantCulture)
+                                </MudText>
+                            </MudTd>
+                            <MudTd>@(context.ClosedAt is { } closed ? TimeAgo(closed) : "—")</MudTd>
+                        </RowTemplate>
+                    </MudTable>
+                </MudPaper>
+            }
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private const double ConfidenceThreshold = 0.6;
+
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<SuggestionDto> _open = [];
+    private IReadOnlyList<SuggestionDto> _closed = [];
+    private Dictionary<string, InstrumentQuote> _quotes = [];
+    private TrackRecordDto? _record;
+    private string? _error;
+    private bool _loading = true;
+    private bool _refreshing;
+
+    private static int ThresholdPercent => (int)(ConfidenceThreshold * 100);
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+
+        try
+        {
+            _open = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
+            _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token);
+            _record = await Api.GetTrackRecordAsync(_cts.Token);
+            _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter as sugestões. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RefreshAsync()
+    {
+        _refreshing = true;
+
+        try
+        {
+            await Api.RefreshSuggestionsAsync(_cts.Token);
+            await LoadAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível recalcular agora.";
+        }
+        finally
+        {
+            _refreshing = false;
+        }
+    }
+
+    private async Task OpenChartAsync(SuggestionDto suggestion)
+    {
+        InstrumentQuote quote = _quotes.TryGetValue(suggestion.Symbol, out InstrumentQuote? known)
+            ? known
+            : new InstrumentQuote(suggestion.Symbol, suggestion.Name, AssetClass.Stock, "USD", null, null, null, []);
+
+        DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote } };
+        DialogOptions options = new() { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true };
+        await DialogService.ShowAsync<ChartDialog>(suggestion.Symbol, parameters, options);
+    }
+
+    private IEnumerable<(string Label, string Value, Color Color)> Kpis()
+    {
+        TrackRecordDto record = _record!;
+
+        yield return ("Fechadas", record.ClosedCount.ToString(CultureInfo.InvariantCulture), Color.Default);
+        yield return ("Taxa de acerto", $"{record.WinRate * 100:0}%", record.WinRate >= 0.5 ? Color.Success : Color.Warning);
+        yield return ("R médio", record.AverageR.ToString("+0.00;-0.00", CultureInfo.InvariantCulture), record.AverageR >= 0 ? Color.Success : Color.Error);
+        yield return ("R total", record.TotalR.ToString("+0.0;-0.0", CultureInfo.InvariantCulture), record.TotalR >= 0 ? Color.Success : Color.Error);
+        yield return ("Profit factor", record.ProfitFactor?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—", record.ProfitFactor >= 1 ? Color.Success : Color.Warning);
+        yield return ("Em curso", record.OpenCount.ToString(CultureInfo.InvariantCulture), Color.Default);
+    }
+
+    private static string Price(double value) =>
+        value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", CultureInfo.GetCultureInfo("pt-PT"));
+
+    private static string Distance(double entry, double level) =>
+        $"{(level - entry) / entry * 100:+0.0;-0.0}%".Replace('.', ',');
+
+    private static Color SignalColor(double value, TradeDirection direction) =>
+        Math.Abs(value) < 0.1 ? Color.Default : (value > 0) == (direction == TradeDirection.Buy) ? Color.Success : Color.Warning;
+
+    private static string StatusLabel(SuggestionStatus status) => status switch
+    {
+        SuggestionStatus.HitTakeProfit => "Take profit",
+        SuggestionStatus.HitStopLoss => "Stop loss",
+        SuggestionStatus.Expired => "Expirou",
+        _ => "Aberta"
+    };
+
+    private static string? SafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" ? uri.ToString() : null;
+
+    private static string TimeAgo(DateTimeOffset time)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - time;
+
+        return elapsed.TotalMinutes < 1 ? "agora"
+            : elapsed.TotalMinutes < 60 ? $"há {(int)elapsed.TotalMinutes} min"
+            : elapsed.TotalHours < 24 ? $"há {(int)elapsed.TotalHours} h"
+            : $"há {(int)elapsed.TotalDays} d";
+    }
+
+    private static string ExpiresIn(DateTimeOffset time)
+    {
+        TimeSpan remaining = time - DateTimeOffset.UtcNow;
+
+        return remaining.TotalHours < 1 ? "menos de 1 h"
+            : remaining.TotalHours < 48 ? $"{(int)remaining.TotalHours} h"
+            : $"{(int)remaining.TotalDays} d";
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

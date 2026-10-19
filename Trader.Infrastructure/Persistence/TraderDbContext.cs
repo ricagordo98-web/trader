@@ -1,0 +1,84 @@
+using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore;
+using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Trader.Core.Models;
+
+namespace Trader.Infrastructure.Persistence;
+
+public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) : IdentityDbContext<AppUser>(options)
+{
+    public DbSet<Instrument> Instruments => Set<Instrument>();
+    public DbSet<ChartDrawing> ChartDrawings => Set<ChartDrawing>();
+    public DbSet<Article> Articles => Set<Article>();
+    public DbSet<Suggestion> Suggestions => Set<Suggestion>();
+    public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+
+    protected override void OnModelCreating(ModelBuilder modelBuilder)
+    {
+        base.OnModelCreating(modelBuilder);
+
+        ValueConverter<DateTimeOffset, long> utcTicks = new(
+            value => value.UtcTicks,
+            ticks => new DateTimeOffset(ticks, TimeSpan.Zero));
+
+        modelBuilder.Entity<Article>(entity =>
+        {
+            entity.HasIndex(a => a.UrlHash).IsUnique();
+            entity.HasIndex(a => a.TitleHash);
+            entity.HasIndex(a => a.PublishedAt);
+            entity.Property(a => a.PublishedAt).HasConversion(utcTicks);
+            entity.Property(a => a.IngestedAt).HasConversion(utcTicks);
+            entity.Property(a => a.Url).HasMaxLength(2048).IsRequired();
+            entity.Property(a => a.UrlHash).HasMaxLength(64).IsRequired();
+            entity.Property(a => a.TitleHash).HasMaxLength(64).IsRequired();
+            entity.Property(a => a.Title).HasMaxLength(512).IsRequired();
+            entity.Property(a => a.Source).HasMaxLength(128).IsRequired();
+            entity.Property(a => a.SourceType).HasConversion<string>().HasMaxLength(16);
+            entity.HasMany(a => a.Symbols).WithOne().HasForeignKey(s => s.ArticleId).OnDelete(DeleteBehavior.Cascade);
+        });
+
+        modelBuilder.Entity<ArticleSymbol>(entity =>
+        {
+            entity.HasKey(s => new { s.ArticleId, s.Symbol });
+            entity.HasIndex(s => s.Symbol);
+            entity.Property(s => s.Symbol).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<Suggestion>(entity =>
+        {
+            entity.HasIndex(s => s.Status);
+            entity.HasIndex(s => s.Symbol);
+            entity.Property(s => s.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(s => s.Name).HasMaxLength(128).IsRequired();
+            entity.Property(s => s.Direction).HasConversion<string>().HasMaxLength(8);
+            entity.Property(s => s.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(s => s.CreatedAt).HasConversion(utcTicks);
+            entity.Property(s => s.ExpiresAt).HasConversion(utcTicks);
+            entity.Property(s => s.ClosedAt).HasConversion(utcTicks);
+        });
+
+        modelBuilder.Entity<AppSetting>(entity =>
+        {
+            entity.HasKey(s => s.Key);
+            entity.Property(s => s.Key).HasMaxLength(64);
+            entity.Property(s => s.Value).IsRequired();
+        });
+
+        modelBuilder.Entity<ChartDrawing>(entity =>
+        {
+            entity.HasIndex(d => d.Symbol).IsUnique();
+            entity.Property(d => d.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(d => d.Json).IsRequired();
+        });
+
+        modelBuilder.Entity<Instrument>(entity =>
+        {
+            entity.HasIndex(i => i.Symbol).IsUnique();
+            entity.Property(i => i.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(i => i.Name).HasMaxLength(128).IsRequired();
+            entity.Property(i => i.Currency).HasMaxLength(8).IsRequired();
+            entity.Property(i => i.AssetClass).HasConversion<string>().HasMaxLength(16);
+            entity.HasData(InstrumentSeed.All);
+        });
+    }
+}
