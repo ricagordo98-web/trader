@@ -15,8 +15,23 @@ public sealed class ArticleIngestor(
     ILogger<ArticleIngestor> logger)
 {
     private static readonly TimeSpan MaxAge = TimeSpan.FromDays(7);
+    private static readonly SemaphoreSlim Gate = new(1, 1);
 
     public async Task<int> IngestAsync(IReadOnlyList<RawArticle> rawArticles, CancellationToken cancellationToken)
+    {
+        await Gate.WaitAsync(cancellationToken);
+
+        try
+        {
+            return await IngestCoreAsync(rawArticles, cancellationToken);
+        }
+        finally
+        {
+            Gate.Release();
+        }
+    }
+
+    private async Task<int> IngestCoreAsync(IReadOnlyList<RawArticle> rawArticles, CancellationToken cancellationToken)
     {
         DateTimeOffset now = DateTimeOffset.UtcNow;
 

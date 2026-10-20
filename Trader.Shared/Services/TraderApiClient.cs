@@ -170,8 +170,15 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
     }
 
-    public async Task<BacktestResult?> GetLastBacktestAsync(CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<BacktestResult>("api/backtest/last", cancellationToken);
+    public async Task<BacktestResult?> GetLastBacktestAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.GetAsync("api/backtest/last", cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<BacktestResult>(cancellationToken);
+    }
 
     public async Task<(BacktestResult? Result, string? Error)> RunBacktestAsync(BacktestRequest request, CancellationToken cancellationToken = default)
     {
