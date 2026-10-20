@@ -1,0 +1,117 @@
+@page "/charts"
+@using System.Text.Json
+@inject TraderApiClient Api
+@inject IClientStore Store
+
+<PageTitle>Gráficos · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-4 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-3">
+        <MudText Typo="Typo.h4">Gráficos</MudText>
+        <MudSpacer />
+        <MudToggleGroup T="int" Value="_count" ValueChanged="SetCountAsync" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="2" Text="2 gráficos" />
+            <MudToggleItem Value="4" Text="4 gráficos" />
+            <MudToggleItem Value="6" Text="6 gráficos" />
+        </MudToggleGroup>
+    </div>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error">@_error</MudAlert>
+    }
+    else if (_instruments.Count == 0)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else
+    {
+        <div class="charts-grid" style="--cols:@Columns;--rows:@Rows">
+            @for (int i = 0; i < _count; i++)
+            {
+                int index = i;
+                <ChartPanel @key="index" Symbol="@_panels[index].Symbol" TimeframeIndex="_panels[index].Timeframe" Instruments="_instruments"
+                            SymbolChanged="@(symbol => UpdatePanelAsync(index, symbol, null))"
+                            TimeframeChanged="@(timeframe => UpdatePanelAsync(index, null, timeframe))" />
+            }
+        </div>
+    }
+</MudContainer>
+
+@code {
+    private const string StoreKey = "charts.layout";
+    private const int MaxPanels = 6;
+
+    private sealed record PanelState(string Symbol, int Timeframe);
+
+    private sealed record SavedLayout(int Count, List<PanelState> Panels);
+
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<InstrumentQuote> _instruments = [];
+    private List<PanelState> _panels = [];
+    private int _count = 4;
+    private string? _error;
+
+    private int Columns => _count == 2 ? 2 : _count == 4 ? 2 : 3;
+
+    private int Rows => (int)Math.Ceiling(_count / (double)Columns);
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _instruments = await Api.GetInstrumentsAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter a watchlist. Verifica se o servidor está a correr.";
+            return;
+        }
+
+        SavedLayout? saved = await LoadSavedAsync();
+        _count = saved is { Count: 2 or 4 or 6 } ? saved.Count : 4;
+        HashSet<string> known = _instruments.Select(i => i.Symbol).ToHashSet();
+
+        _panels = Enumerable.Range(0, MaxPanels)
+            .Select(i => saved?.Panels is { } list && i < list.Count && known.Contains(list[i].Symbol)
+                ? list[i]
+                : new PanelState(_instruments[i % _instruments.Count].Symbol, 4))
+            .ToList();
+    }
+
+    private async Task<SavedLayout?> LoadSavedAsync()
+    {
+        try
+        {
+            string? json = await Store.GetAsync(StoreKey);
+            return json is null ? null : JsonSerializer.Deserialize<SavedLayout>(json);
+        }
+        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        {
+            return null;
+        }
+    }
+
+    private async Task SetCountAsync(int count)
+    {
+        _count = count;
+        await SaveAsync();
+    }
+
+    private async Task UpdatePanelAsync(int index, string? symbol, int? timeframe)
+    {
+        _panels[index] = new PanelState(symbol ?? _panels[index].Symbol, timeframe ?? _panels[index].Timeframe);
+        await SaveAsync();
+    }
+
+    private async Task SaveAsync()
+    {
+        try
+        {
+            await Store.SetAsync(StoreKey, JsonSerializer.Serialize(new SavedLayout(_count, _panels)));
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+}

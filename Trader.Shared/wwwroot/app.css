@@ -135,3 +135,16 @@ a.news-title:hover { color: var(--mud-palette-primary); }
 }
 
 .alert-list { min-width: min(360px, 90vw); max-height: 60vh; overflow-y: auto; }
+
+.charts-grid { display: grid; gap: 12px; grid-template-columns: repeat(var(--cols, 2), minmax(0, 1fr)); }
+.chart-panel { display: flex; flex-direction: column; height: max(320px, calc((100vh - 170px) / var(--rows, 2))); overflow: hidden; }
+.chart-panel-header { display: flex; align-items: center; gap: 2px; padding: 2px 8px; border-bottom: 1px solid var(--mud-palette-lines-default); overflow-x: auto; white-space: nowrap; scrollbar-width: none; }
+.chart-panel-header::-webkit-scrollbar { display: none; }
+.chart-panel-header > * { flex: none; }
+.chart-panel-header .mud-button-root { text-transform: none; min-width: 36px; }
+.chart-panel-symbol { min-width: 150px; max-width: 220px; margin-top: 0; }
+.chart-panel-body { flex: 1; min-height: 0; position: relative; }
+.chart-panel-body .kline-container { width: 100%; height: 100%; }
+.chart-panel-live { width: 8px; height: 8px; border-radius: 50%; background: var(--mud-palette-gray-light); margin-right: 6px; }
+.chart-panel-live.on { background: #22C55E; box-shadow: 0 0 6px #22C55E; }
+@media (max-width: 899px) { .charts-grid { grid-template-columns: 1fr; } .chart-panel { height: 380px; } }

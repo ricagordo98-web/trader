@@ -1,0 +1,209 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject TraderApiClient Api
+@inject AuthSession Session
+@inject ThemeState Theme
+
+<MudPaper Elevation="0" Outlined="true" Class="chart-panel">
+    <div class="chart-panel-header">
+        <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChanged" Dense="true" Variant="Variant.Text" Margin="Margin.Dense" Class="chart-panel-symbol" aria-label="Ativo">
+            @foreach (InstrumentQuote instrument in Instruments)
+            {
+                <MudSelectItem T="string" Value="@instrument.Symbol">@instrument.Symbol · @instrument.Name</MudSelectItem>
+            }
+        </MudSelect>
+        @for (int i = 0; i < Timeframes.Length; i++)
+        {
+            int index = i;
+            <MudButton Size="Size.Small" Variant="@(index == TimeframeIndex ? Variant.Filled : Variant.Text)" Color="@(index == TimeframeIndex ? Color.Primary : Color.Default)"
+                       OnClick="@(() => TimeframeChanged.InvokeAsync(index))">@Timeframes[index].Label</MudButton>
+        }
+        <MudSpacer />
+        <span class="chart-panel-live @(_streaming ? "on" : string.Empty)" title="@(_streaming ? "Em direto" : "Sem dados em direto")"></span>
+    </div>
+    <div class="chart-panel-body">
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Class="ma-3">@_error</MudAlert>
+        }
+        else if (_candles.Count == 0)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+        }
+        else
+        {
+            <KLineChart Symbol="@Symbol" PricePrecision="@Precision" Interval="@Current.Interval" Candles="_candles" Dark="Theme.IsDark" ShowVolume="@HasVolume" @ref="_chart" />
+        }
+    </div>
+</MudPaper>
+
+@code {
+    private sealed record Timeframe(string Label, string Interval, string Range, string LiveRange);
+
+    private static readonly Timeframe[] Timeframes =
+    [
+        new("1m", "1m", "5d", "1d"),
+        new("5m", "5m", "1mo", "1d"),
+        new("15m", "15m", "1mo", "1d"),
+        new("1H", "60m", "6mo", "1d"),
+        new("1D", "1d", "2y", "5d")
+    ];
+
+    private readonly CancellationTokenSource _cts = new();
+    private KLineChart? _chart;
+    private HubConnection? _hub;
+    private IReadOnlyList<Candle> _candles = [];
+    private string? _error;
+    private string? _loadedSymbol;
+    private int _loadedTimeframe = -1;
+    private string? _subscribed;
+    private bool _streaming;
+
+    [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
+
+    [Parameter] public int TimeframeIndex { get; set; } = 4;
+
+    [Parameter] public IReadOnlyList<InstrumentQuote> Instruments { get; set; } = [];
+
+    [Parameter] public EventCallback<string> SymbolChanged { get; set; }
+
+    [Parameter] public EventCallback<int> TimeframeChanged { get; set; }
+
+    private Timeframe Current => Timeframes[Math.Clamp(TimeframeIndex, 0, Timeframes.Length - 1)];
+
+    private InstrumentQuote? Quote => Instruments.FirstOrDefault(i => i.Symbol == Symbol);
+
+    private bool HasVolume => Quote?.AssetClass != AssetClass.Forex;
+
+    private int Precision => Quote?.AssetClass == AssetClass.Forex ? (Symbol.Contains("JPY", StringComparison.Ordinal) ? 3 : 5) : 2;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loadedSymbol == Symbol && _loadedTimeframe == TimeframeIndex)
+        {
+            return;
+        }
+
+        _loadedSymbol = Symbol;
+        _loadedTimeframe = TimeframeIndex;
+        await LoadAsync();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (firstRender)
+        {
+            await StartStreamingAsync();
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _error = null;
+
+        try
+        {
+            Timeframe timeframe = Current;
+            _candles = await Api.GetCandlesAsync(Symbol, timeframe.Interval, timeframe.Range, _cts.Token);
+            await SubscribeAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar o gráfico.";
+        }
+    }
+
+    private async Task StartStreamingAsync()
+    {
+        try
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Api.NewsHubUrl, options => options.AccessTokenProvider = () => Session.GetAccessTokenAsync())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.On<LiveCandles>("LiveCandles", OnLiveCandlesAsync);
+            _hub.Reconnecting += _ => SetStreamingAsync(false);
+            _hub.Reconnected += async _ =>
+            {
+                _subscribed = null;
+                await SubscribeAsync();
+            };
+            _hub.Closed += _ => SetStreamingAsync(false);
+
+            await _hub.StartAsync(_cts.Token);
+            await SubscribeAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
+        {
+            await SetStreamingAsync(false);
+        }
+    }
+
+    private Task SetStreamingAsync(bool streaming) => InvokeAsync(() =>
+    {
+        _streaming = streaming;
+        StateHasChanged();
+    });
+
+    private async Task SubscribeAsync()
+    {
+        if (_hub is not { State: HubConnectionState.Connected })
+        {
+            return;
+        }
+
+        Timeframe timeframe = Current;
+        string key = $"{Symbol}|{timeframe.Interval}|{timeframe.LiveRange}";
+
+        if (_subscribed == key)
+        {
+            return;
+        }
+
+        try
+        {
+            if (_subscribed is not null)
+            {
+                string[] previous = _subscribed.Split('|');
+                await _hub.InvokeAsync("UnsubscribeLive", previous[0], previous[1], previous[2], _cts.Token);
+            }
+
+            await _hub.InvokeAsync("SubscribeLive", Symbol, timeframe.Interval, timeframe.LiveRange, _cts.Token);
+            _subscribed = key;
+            await SetStreamingAsync(true);
+        }
+        catch (Exception ex) when (ex is Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException)
+        {
+            await SetStreamingAsync(false);
+        }
+    }
+
+    private Task OnLiveCandlesAsync(LiveCandles message)
+    {
+        if (_chart is null || message.Symbol != Symbol || message.Interval != Current.Interval)
+        {
+            return Task.CompletedTask;
+        }
+
+        return InvokeAsync(async () =>
+        {
+            foreach (Candle candle in message.Candles.TakeLast(2))
+            {
+                await _chart.PushBarAsync(candle);
+            }
+        });
+    }
+
+    public async ValueTask DisposeAsync()
+    {
+        _cts.Cancel();
+
+        if (_hub is not null)
+        {
+            await _hub.DisposeAsync();
+        }
+
+        _cts.Dispose();
+    }
+}
