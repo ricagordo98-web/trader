@@ -15,7 +15,7 @@ public sealed class MarketDataService(
 {
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan CandleCacheDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan TickCacheDuration = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan LiveCacheDuration = TimeSpan.FromSeconds(1);
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetQuotesAsync(AssetClass? assetClass, CancellationToken cancellationToken)
     {
@@ -61,23 +61,20 @@ public sealed class MarketDataService(
         return series.Candles;
     }
 
-    public async Task<LiveTick?> GetLiveTickAsync(string symbol, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<Candle>> GetLiveCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken)
     {
-        string key = $"tick:{symbol}";
+        string key = $"live:{symbol}:{interval}:{range}";
 
-        if (cache.TryGetValue(key, out LiveTick? cached))
+        if (cache.TryGetValue(key, out IReadOnlyList<Candle>? cached) && cached is not null)
         {
             return cached;
         }
 
-        ChartSeries series = await provider.GetChartAsync(symbol, "1m", "1d", cancellationToken);
-        double? price = series.LastPrice ?? series.Candles.LastOrDefault()?.Close;
-        LiveTick? tick = price is { } value
-            ? new LiveTick(symbol, value, series.LastPriceTime ?? series.Candles.LastOrDefault()?.Time ?? DateTimeOffset.UtcNow)
-            : null;
+        ChartSeries series = await provider.GetChartAsync(symbol, interval, range, cancellationToken);
+        IReadOnlyList<Candle> latest = LiveCandleBuilder.Build(interval, series);
 
-        cache.Set(key, tick, TickCacheDuration);
-        return tick;
+        cache.Set(key, latest, LiveCacheDuration);
+        return latest;
     }
 
     private async Task<InstrumentQuote> GetQuoteAsync(Instrument instrument, CancellationToken cancellationToken)

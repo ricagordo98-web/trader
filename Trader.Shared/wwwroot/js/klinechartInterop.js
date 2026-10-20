@@ -160,33 +160,11 @@ export function pushBar(id, candle) {
     }
 
     if (bar.timestamp === last.timestamp) {
+        bar.high = Math.max(bar.high, last.high);
+        bar.low = Math.min(bar.low, last.low);
         state.data[state.data.length - 1] = bar;
     } else {
         state.data.push(bar);
-    }
-
-    state.pushCallback?.(bar);
-}
-
-const periodMs = { '1m': 60000, '2m': 120000, '5m': 300000, '15m': 900000, '30m': 1800000, '60m': 3600000 };
-
-export function pushTick(id, interval, price, time) {
-    const state = charts.get(id);
-    if (!state || state.data.length === 0) {
-        return;
-    }
-
-    const last = state.data[state.data.length - 1];
-    const ms = periodMs[interval];
-    let bar;
-
-    if (ms && time >= last.timestamp + ms) {
-        const timestamp = last.timestamp + Math.floor((time - last.timestamp) / ms) * ms;
-        bar = { timestamp, open: price, high: price, low: price, close: price, volume: 0 };
-        state.data.push(bar);
-    } else {
-        bar = { ...last, close: price, high: Math.max(last.high, price), low: Math.min(last.low, price) };
-        state.data[state.data.length - 1] = bar;
     }
 
     state.pushCallback?.(bar);

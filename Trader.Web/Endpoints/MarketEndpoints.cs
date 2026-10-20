@@ -45,11 +45,21 @@ public static class MarketEndpoints
             }
         });
 
-        group.MapGet("/instruments/{symbol}/tick", async (string symbol, IMarketDataService service, CancellationToken cancellationToken) =>
+        group.MapGet("/instruments/{symbol}/live", async (
+            string symbol,
+            string interval,
+            string range,
+            IMarketDataService service,
+            CancellationToken cancellationToken) =>
         {
+            if (!AllowedIntervals.Contains(interval) || !AllowedRanges.Contains(range))
+            {
+                return Results.Problem(title: "Invalid interval or range", statusCode: StatusCodes.Status400BadRequest);
+            }
+
             try
             {
-                return await service.GetLiveTickAsync(symbol, cancellationToken) is { } tick ? Results.Ok(tick) : Results.NoContent();
+                return Results.Ok(await service.GetLiveCandlesAsync(symbol, interval, range, cancellationToken));
             }
             catch (HttpRequestException)
             {
