@@ -199,6 +199,62 @@
             {
                 <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
             }
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Alertas de preço</MudText>
+                <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                    Avisa-te quando um ativo cruza o preço que definires. Os stops e alvos das trades abertas no Diário avisam automaticamente.
+                </MudText>
+                <MudGrid Spacing="2" Class="mb-2">
+                    <MudItem xs="12" sm="4">
+                        <MudSelect T="string" @bind-Value="_alertSymbol" Label="Ativo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            @foreach (WatchlistItem item in _watchlist)
+                            {
+                                <MudSelectItem T="string" Value="@item.Symbol">@item.Symbol · @item.Name</MudSelectItem>
+                            }
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" sm="3">
+                        <MudSelect T="PriceCondition" @bind-Value="_alertCondition" Label="Quando" Variant="Variant.Outlined" Margin="Margin.Dense">
+                            <MudSelectItem T="PriceCondition" Value="PriceCondition.Above">Subir acima de</MudSelectItem>
+                            <MudSelectItem T="PriceCondition" Value="PriceCondition.Below">Descer abaixo de</MudSelectItem>
+                        </MudSelect>
+                    </MudItem>
+                    <MudItem xs="6" sm="2">
+                        <MudNumericField T="double" @bind-Value="_alertPrice" Label="Preço" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                    </MudItem>
+                    <MudItem xs="12" sm="3">
+                        <MudTextField T="string" @bind-Value="_alertNote" Label="Nota (opcional)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
+                    </MudItem>
+                </MudGrid>
+                @if (_alertError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_alertError</MudAlert>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="AddPriceAlertAsync" Class="mb-3">Adicionar alerta</MudButton>
+
+                @if (_priceAlerts.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="symbol-name">Sem alertas de preço.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            @foreach (PriceAlertDto alert in _priceAlerts)
+                            {
+                                <tr>
+                                    <td>@alert.Symbol</td>
+                                    <td>@(alert.Condition == PriceCondition.Above ? "acima de" : "abaixo de") @alert.Price.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</td>
+                                    <td>@alert.Note</td>
+                                    <td>@(alert.TriggeredAt is { } at ? $"disparado {at.ToLocalTime():dd/MM HH:mm}" : "ativo")</td>
+                                    <td style="text-align:right"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" aria-label="@($"Apagar alerta {alert.Symbol}")" OnClick="@(() => DeletePriceAlertAsync(alert))" /></td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
         </MudTabPanel>
 
         <MudTabPanel Text="Scoring">
@@ -252,6 +308,12 @@
     private string? _ntfyTopic;
     private string _ntfyServer = NtfySettings.DefaultServer;
     private string? _ntfyError;
+    private IReadOnlyList<PriceAlertDto> _priceAlerts = [];
+    private string? _alertSymbol;
+    private PriceCondition _alertCondition = PriceCondition.Above;
+    private double _alertPrice;
+    private string _alertNote = string.Empty;
+    private string? _alertError;
     private string _oldPassword = string.Empty;
     private string _newPassword = string.Empty;
     private string _userEmail = string.Empty;
@@ -279,10 +341,35 @@
             NtfySettings ntfy = await Api.GetNtfyAsync(_cts.Token);
             _ntfyTopic = ntfy.Topic;
             _ntfyServer = ntfy.Server;
+            _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
+            _alertSymbol = _watchlist.FirstOrDefault()?.Symbol;
         }
         catch (HttpRequestException)
         {
             Snackbar.Add("Não foi possível carregar as configurações do servidor.", Severity.Error);
+        }
+    }
+
+    private async Task AddPriceAlertAsync()
+    {
+        _busy = true;
+        _alertError = await Api.AddPriceAlertAsync(new CreatePriceAlertRequest(_alertSymbol ?? string.Empty, _alertCondition, _alertPrice, _alertNote), _cts.Token);
+
+        if (_alertError is null)
+        {
+            _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
+            _alertPrice = 0;
+            _alertNote = string.Empty;
+        }
+
+        _busy = false;
+    }
+
+    private async Task DeletePriceAlertAsync(PriceAlertDto alert)
+    {
+        if (await Api.DeletePriceAlertAsync(alert.Id, _cts.Token))
+        {
+            _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
         }
     }
 

@@ -21,8 +21,12 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
         dbContext.Alerts.AddRange(alerts);
         await dbContext.SaveChangesAsync(cancellationToken);
 
+        foreach (IGrouping<string?, Alert> group in alerts.GroupBy(a => a.UserId))
+        {
+            await notifier.NotifyAlertsAsync(group.Select(a => ToDto(a, true)).ToList(), group.Key, cancellationToken);
+        }
+
         List<AlertDto> dtos = alerts.Select(a => ToDto(a, true)).ToList();
-        await notifier.NotifyAlertsAsync(dtos, cancellationToken);
 
         NtfySettings ntfy = await GetNtfyAsync(cancellationToken);
 
@@ -102,11 +106,12 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
 
         List<Alert> rows = await dbContext.Alerts
             .AsNoTracking()
+            .Where(a => a.UserId == null || a.UserId == userId)
             .OrderByDescending(a => a.CreatedAt)
             .Take(Math.Clamp(limit, 1, 200))
             .ToListAsync(cancellationToken);
 
-        int unread = await dbContext.Alerts.CountAsync(a => a.CreatedAt > seenAt, cancellationToken);
+        int unread = await dbContext.Alerts.CountAsync(a => (a.UserId == null || a.UserId == userId) && a.CreatedAt > seenAt, cancellationToken);
 
         return new AlertFeed(rows.Select(a => ToDto(a, a.CreatedAt > seenAt)).ToList(), unread);
     }
@@ -136,6 +141,68 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
             ? new DateTimeOffset(ticks, TimeSpan.Zero)
             : DateTimeOffset.MinValue;
     }
+
+    public async Task<IReadOnlyList<PriceAlertDto>> ListPriceAlertsAsync(string userId, CancellationToken cancellationToken)
+    {
+        List<PriceAlert> rows = await dbContext.PriceAlerts
+            .AsNoTracking()
+            .Where(a => a.UserId == userId)
+            .OrderBy(a => a.TriggeredAt != null)
+            .ThenByDescending(a => a.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        return rows.Select(ToDto).ToList();
+    }
+
+    public async Task<(PriceAlertDto? Alert, IReadOnlyList<string> Errors)> AddPriceAlertAsync(string userId, CreatePriceAlertRequest request, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string> errors = PriceAlertValidator.Validate(request);
+
+        if (errors.Count > 0)
+        {
+            return (null, errors);
+        }
+
+        int active = await dbContext.PriceAlerts.CountAsync(a => a.UserId == userId && a.TriggeredAt == null, cancellationToken);
+
+        if (active >= MaxActivePriceAlerts)
+        {
+            return (null, [$"Já tens {MaxActivePriceAlerts} alertas ativos. Apaga algum antes de criar outro."]);
+        }
+
+        PriceAlert alert = new()
+        {
+            UserId = userId,
+            Symbol = request.Symbol.Trim().ToUpperInvariant(),
+            Condition = request.Condition,
+            Price = request.Price,
+            Note = request.Note?.Trim() ?? string.Empty,
+            CreatedAt = DateTimeOffset.UtcNow
+        };
+
+        dbContext.PriceAlerts.Add(alert);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return (ToDto(alert), []);
+    }
+
+    public async Task<bool> DeletePriceAlertAsync(string userId, long id, CancellationToken cancellationToken)
+    {
+        PriceAlert? alert = await dbContext.PriceAlerts.FirstOrDefaultAsync(a => a.Id == id && a.UserId == userId, cancellationToken);
+
+        if (alert is null)
+        {
+            return false;
+        }
+
+        dbContext.PriceAlerts.Remove(alert);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return true;
+    }
+
+    private static PriceAlertDto ToDto(PriceAlert alert) =>
+        new(alert.Id, alert.Symbol, alert.Condition, alert.Price, alert.Note, alert.CreatedAt, alert.TriggeredAt);
+
+    private const int MaxActivePriceAlerts = 50;
 
     private const string NtfyKey = "alerts.ntfy";
 

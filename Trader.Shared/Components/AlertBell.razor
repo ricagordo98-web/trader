@@ -112,24 +112,27 @@
 
     private static string IconFor(AlertKind kind) => kind switch
     {
-        AlertKind.TakeProfit => Icons.Material.Filled.CheckCircle,
-        AlertKind.StopLoss => Icons.Material.Filled.Cancel,
+        AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Icons.Material.Filled.CheckCircle,
+        AlertKind.StopLoss or AlertKind.TradeStopLoss => Icons.Material.Filled.Cancel,
+        AlertKind.PriceTarget => Icons.Material.Filled.NotificationsActive,
         AlertKind.Expired => Icons.Material.Filled.Schedule,
         _ => Icons.Material.Filled.AutoGraph
     };
 
     private static Color ColorFor(AlertKind kind) => kind switch
     {
-        AlertKind.TakeProfit => Color.Success,
-        AlertKind.StopLoss => Color.Error,
+        AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Color.Success,
+        AlertKind.StopLoss or AlertKind.TradeStopLoss => Color.Error,
+        AlertKind.PriceTarget => Color.Warning,
         AlertKind.Expired => Color.Default,
         _ => Color.Primary
     };
 
     private static Severity SeverityFor(AlertKind kind) => kind switch
     {
-        AlertKind.TakeProfit => Severity.Success,
-        AlertKind.StopLoss => Severity.Error,
+        AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Severity.Success,
+        AlertKind.StopLoss or AlertKind.TradeStopLoss => Severity.Error,
+        AlertKind.PriceTarget => Severity.Warning,
         AlertKind.Expired => Severity.Normal,
         _ => Severity.Info
     };

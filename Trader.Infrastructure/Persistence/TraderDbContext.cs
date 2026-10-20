@@ -16,6 +16,7 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<JournalTrade> JournalTrades => Set<JournalTrade>();
     public DbSet<Alert> Alerts => Set<Alert>();
+    public DbSet<PriceAlert> PriceAlerts => Set<PriceAlert>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -75,8 +76,20 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.Property(t => t.ExitTime).HasConversion(utcTicks);
         });
 
+        modelBuilder.Entity<PriceAlert>(entity =>
+        {
+            entity.HasIndex(a => new { a.UserId, a.TriggeredAt });
+            entity.Property(a => a.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(a => a.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(a => a.Note).HasMaxLength(200);
+            entity.Property(a => a.Condition).HasConversion<string>().HasMaxLength(8);
+            entity.Property(a => a.CreatedAt).HasConversion(utcTicks);
+            entity.Property(a => a.TriggeredAt).HasConversion(utcTicks);
+        });
+
         modelBuilder.Entity<Alert>(entity =>
         {
+            entity.Property(a => a.UserId).HasMaxLength(450);
             entity.HasIndex(a => a.CreatedAt);
             entity.Property(a => a.Symbol).HasMaxLength(32).IsRequired();
             entity.Property(a => a.Title).HasMaxLength(128).IsRequired();

@@ -18,6 +18,21 @@ public sealed class TraderApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<IReadOnlyList<PriceAlertDto>> GetPriceAlertsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<PriceAlertDto>>("api/alerts/price", cancellationToken) ?? [];
+
+    public async Task<string?> AddPriceAlertAsync(CreatePriceAlertRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/alerts/price", request, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<bool> DeletePriceAlertAsync(long id, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync($"api/alerts/price/{id}", cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
     public async Task<NtfySettings> GetNtfyAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<NtfySettings>("api/alerts/ntfy", cancellationToken) ?? new NtfySettings(NtfySettings.DefaultServer, string.Empty);
 

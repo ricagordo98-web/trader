@@ -62,6 +62,12 @@ public sealed class MarketDataService(
         return series.Candles;
     }
 
+    public async Task<double?> GetLatestPriceAsync(string symbol, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<Candle> candles = await GetLiveCandlesAsync(symbol, "1m", "1d", cancellationToken);
+        return candles.Count > 0 ? candles[^1].Close : null;
+    }
+
     public async Task<IReadOnlyList<Candle>> GetLiveCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken)
     {
         string key = $"live:{symbol}:{interval}:{range}";

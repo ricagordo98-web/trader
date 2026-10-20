@@ -1,3 +1,4 @@
+using Trader.Infrastructure.Alerts;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -25,7 +26,7 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
             foreach (ServiceDescriptor descriptor in services
                 .Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType is { } type
-                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker)))
+                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker)))
                 .ToList())
             {
                 services.Remove(descriptor);

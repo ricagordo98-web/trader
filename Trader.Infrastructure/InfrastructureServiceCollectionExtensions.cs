@@ -54,6 +54,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ISourceStatusRegistry, SourceStatusRegistry>();
         services.AddSingleton<ISymbolProvider, SymbolProvider>();
         services.AddHostedService<SuggestionWorker>();
+        services.AddHostedService<PriceWatchWorker>();
 
         AddConnector<RssConnector>(services, 20);
         AddConnector<GdeltConnector>(services, 40);

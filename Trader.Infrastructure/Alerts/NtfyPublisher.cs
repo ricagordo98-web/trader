@@ -16,7 +16,7 @@ public sealed class NtfyPublisher(HttpClient httpClient) : IAlertPublisher
                 title = alert.Title,
                 message = alert.Message,
                 tags = new[] { TagFor(alert.Kind) },
-                priority = alert.Kind == AlertKind.StopLoss ? 4 : 3
+                priority = alert.Kind is AlertKind.StopLoss or AlertKind.TradeStopLoss ? 4 : 3
             };
 
             using HttpResponseMessage response = await httpClient.PostAsJsonAsync(settings.Server, body, cancellationToken);
@@ -26,8 +26,9 @@ public sealed class NtfyPublisher(HttpClient httpClient) : IAlertPublisher
 
     private static string TagFor(AlertKind kind) => kind switch
     {
-        AlertKind.TakeProfit => "white_check_mark",
-        AlertKind.StopLoss => "x",
+        AlertKind.TakeProfit or AlertKind.TradeTakeProfit => "white_check_mark",
+        AlertKind.StopLoss or AlertKind.TradeStopLoss => "x",
+        AlertKind.PriceTarget => "bell",
         AlertKind.Expired => "hourglass",
         _ => "chart_with_upwards_trend"
     };

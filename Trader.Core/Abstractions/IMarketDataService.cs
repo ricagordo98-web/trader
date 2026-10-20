@@ -8,5 +8,7 @@ public interface IMarketDataService
 
     Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken);
 
+    Task<double?> GetLatestPriceAsync(string symbol, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<Candle>> GetLiveCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken);
 }

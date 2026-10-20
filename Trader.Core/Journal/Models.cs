@@ -28,6 +28,8 @@ public sealed class JournalTrade
     public TradeStatus Status { get; set; }
     public DateTimeOffset? ExitTime { get; set; }
     public double? ExitPrice { get; set; }
+    public bool StopLossAlerted { get; set; }
+    public bool TakeProfitAlerted { get; set; }
 }
 
 public sealed record OpenTradeRequest(

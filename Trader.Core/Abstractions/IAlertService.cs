@@ -15,11 +15,17 @@ public interface IAlertService
     Task<IReadOnlyList<string>> SaveNtfyAsync(NtfySettings settings, CancellationToken cancellationToken);
 
     Task<string?> SendTestAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyList<PriceAlertDto>> ListPriceAlertsAsync(string userId, CancellationToken cancellationToken);
+
+    Task<(PriceAlertDto? Alert, IReadOnlyList<string> Errors)> AddPriceAlertAsync(string userId, CreatePriceAlertRequest request, CancellationToken cancellationToken);
+
+    Task<bool> DeletePriceAlertAsync(string userId, long id, CancellationToken cancellationToken);
 }
 
 public interface IAlertNotifier
 {
-    Task NotifyAlertsAsync(IReadOnlyList<AlertDto> alerts, CancellationToken cancellationToken);
+    Task NotifyAlertsAsync(IReadOnlyList<AlertDto> alerts, string? userId, CancellationToken cancellationToken);
 }
 
 public interface IAlertPublisher

@@ -177,11 +177,57 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("UserId")
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
                     b.HasKey("Id");
 
                     b.HasIndex("CreatedAt");
 
                     b.ToTable("Alerts");
+                });
+
+            modelBuilder.Entity("Trader.Core.Alerts.PriceAlert", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Condition")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Note")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double>("Price")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long?>("TriggeredAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId", "TriggeredAt");
+
+                    b.ToTable("PriceAlerts");
                 });
 
             modelBuilder.Entity("Trader.Core.Journal.JournalTrade", b =>
@@ -239,6 +285,9 @@ namespace Trader.Infrastructure.Persistence.Migrations
                     b.Property<double?>("StopLoss")
                         .HasColumnType("REAL");
 
+                    b.Property<bool>("StopLossAlerted")
+                        .HasColumnType("INTEGER");
+
                     b.Property<long?>("SuggestionId")
                         .HasColumnType("INTEGER");
 
@@ -249,6 +298,9 @@ namespace Trader.Infrastructure.Persistence.Migrations
 
                     b.Property<double?>("TakeProfit")
                         .HasColumnType("REAL");
+
+                    b.Property<bool>("TakeProfitAlerted")
+                        .HasColumnType("INTEGER");
 
                     b.Property<string>("UserId")
                         .IsRequired()

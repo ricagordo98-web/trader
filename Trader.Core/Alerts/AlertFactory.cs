@@ -1,4 +1,5 @@
 using System.Globalization;
+using Trader.Core.Journal;
 using Trader.Core.Models;
 
 namespace Trader.Core.Alerts;
@@ -14,6 +15,27 @@ public static class AlertFactory
             CultureInfo.InvariantCulture,
             $"{suggestion.Confidence * 100:0}% de certeza · entrada {suggestion.Entry:0.#####} · SL {suggestion.StopLoss:0.#####} · TP {suggestion.TakeProfit:0.#####}"),
         SuggestionId = suggestion.Id,
+        CreatedAt = now
+    };
+
+    public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now) => new()
+    {
+        UserId = trade.UserId,
+        Kind = level == TradeLevel.StopLoss ? AlertKind.TradeStopLoss : AlertKind.TradeTakeProfit,
+        Symbol = trade.Symbol,
+        Title = $"{(level == TradeLevel.StopLoss ? "Stop loss" : "Take profit")} atingido na tua trade: {trade.Symbol}",
+        Message = string.Create(CultureInfo.InvariantCulture, $"Preço {price:0.#####} · entrada {trade.EntryPrice:0.#####} · nível {(level == TradeLevel.StopLoss ? trade.StopLoss : trade.TakeProfit):0.#####}"),
+        SuggestionId = trade.SuggestionId ?? 0,
+        CreatedAt = now
+    };
+
+    public static Alert ForPriceAlert(PriceAlert alert, double price, DateTimeOffset now) => new()
+    {
+        UserId = alert.UserId,
+        Kind = AlertKind.PriceTarget,
+        Symbol = alert.Symbol,
+        Title = $"Alerta de preço: {alert.Symbol} {(alert.Condition == PriceCondition.Above ? "acima de" : "abaixo de")} {alert.Price.ToString("0.#####", CultureInfo.InvariantCulture)}",
+        Message = string.Create(CultureInfo.InvariantCulture, $"Preço atual {price:0.#####}{(alert.Note.Length > 0 ? " · " + alert.Note : string.Empty)}"),
         CreatedAt = now
     };
 

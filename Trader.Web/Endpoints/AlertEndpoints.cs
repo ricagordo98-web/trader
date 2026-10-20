@@ -19,6 +19,21 @@ public static class AlertEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/price", async (ClaimsPrincipal user, IAlertService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ListPriceAlertsAsync(UserId(user), cancellationToken)));
+
+        group.MapPost("/price", async (CreatePriceAlertRequest request, ClaimsPrincipal user, IAlertService service, CancellationToken cancellationToken) =>
+        {
+            (PriceAlertDto? alert, IReadOnlyList<string> errors) = await service.AddPriceAlertAsync(UserId(user), request, cancellationToken);
+
+            return alert is not null
+                ? Results.Ok(alert)
+                : Results.Problem(title: string.Join(" ", errors), statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapDelete("/price/{id:long}", async (long id, ClaimsPrincipal user, IAlertService service, CancellationToken cancellationToken) =>
+            await service.DeletePriceAlertAsync(UserId(user), id, cancellationToken) ? Results.NoContent() : Results.NotFound());
+
         group.MapGet("/ntfy", async (IAlertService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GetNtfyAsync(cancellationToken)));
 

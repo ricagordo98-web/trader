@@ -5,12 +5,17 @@ public enum AlertKind
     NewSuggestion,
     TakeProfit,
     StopLoss,
-    Expired
+    Expired,
+    PriceTarget,
+    TradeStopLoss,
+    TradeTakeProfit
 }
 
 public sealed class Alert
 {
     public long Id { get; set; }
+
+    public string? UserId { get; set; }
 
     public AlertKind Kind { get; set; }
 

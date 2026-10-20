@@ -46,6 +46,6 @@ public sealed class SignalRNewsNotifier(IHubContext<NewsHub> hubContext) : INews
 
 public sealed class SignalRAlertNotifier(IHubContext<NewsHub> hubContext) : IAlertNotifier
 {
-    public Task NotifyAlertsAsync(IReadOnlyList<Trader.Core.Alerts.AlertDto> alerts, CancellationToken cancellationToken) =>
-        hubContext.Clients.All.SendAsync(NewsHub.AlertsRaisedMethod, alerts, cancellationToken);
+    public Task NotifyAlertsAsync(IReadOnlyList<Trader.Core.Alerts.AlertDto> alerts, string? userId, CancellationToken cancellationToken) =>
+        (userId is null ? hubContext.Clients.All : hubContext.Clients.User(userId)).SendAsync(NewsHub.AlertsRaisedMethod, alerts, cancellationToken);
 }
