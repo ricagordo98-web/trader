@@ -41,3 +41,41 @@ public class YahooChartParserTests
         series.Candles.Should().BeEmpty();
     }
 }
+
+public class QuoteChangeTests
+{
+    private static readonly Trader.Core.Models.Instrument Apple = new() { Symbol = "AAPL", Name = "Apple", Currency = "USD" };
+
+    private static Trader.Core.Models.Candle Candle(int day, double close) =>
+        new(DateTimeOffset.UnixEpoch.AddDays(day), close, close, close, close, 0);
+
+    [Fact]
+    public void BuildQuote_MarketNotYetOpenToday_ShowsLastSessionChange()
+    {
+        var series = new Trader.Core.Models.ChartSeries(104, [Candle(1, 100), Candle(2, 102), Candle(3, 104)]);
+
+        var quote = Trader.Infrastructure.MarketData.MarketDataService.BuildQuote(Apple, series);
+
+        quote.Change.Should().BeApproximately(2, 1e-9);
+        quote.ChangePercent.Should().BeApproximately(2 / 102.0 * 100, 1e-9);
+    }
+
+    [Fact]
+    public void BuildQuote_LivePriceAboveLastClose_UsesPreviousSessionAsReference()
+    {
+        var series = new Trader.Core.Models.ChartSeries(105, [Candle(1, 100), Candle(2, 102), Candle(3, 104.8)]);
+
+        var quote = Trader.Infrastructure.MarketData.MarketDataService.BuildQuote(Apple, series);
+
+        quote.Change.Should().BeApproximately(3, 1e-9);
+    }
+
+    [Fact]
+    public void BuildQuote_SingleCandle_HasNoChange()
+    {
+        var quote = Trader.Infrastructure.MarketData.MarketDataService.BuildQuote(Apple, new Trader.Core.Models.ChartSeries(100, [Candle(1, 100)]));
+
+        quote.Change.Should().BeNull();
+        quote.Price.Should().Be(100);
+    }
+}

@@ -1,3 +1,4 @@
+using Trader.Infrastructure.Alerts;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -5,6 +6,8 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Scoring;
+using Trader.Infrastructure.Backtesting;
+using Trader.Infrastructure.Journal;
 using Trader.Infrastructure.MarketData;
 using Trader.Infrastructure.News;
 using Trader.Infrastructure.News.Sources;
@@ -40,6 +43,10 @@ public static class InfrastructureServiceCollectionExtensions
         services.Configure<ScoringOptions>(configuration.GetSection(ScoringOptions.SectionName));
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<IScoringSettings, ScoringSettings>();
+        services.AddScoped<IBacktestService, BacktestService>();
+        services.AddScoped<IJournalService, JournalService>();
+        services.AddScoped<IAlertService, AlertService>();
+        services.AddHttpClient<IAlertPublisher, NtfyPublisher>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<IInstrumentService, InstrumentService>();
         services.AddSingleton<ISourceStatusRegistry, SourceStatusRegistry>();
         services.AddSingleton<ISymbolProvider, SymbolProvider>();

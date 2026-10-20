@@ -1,0 +1,263 @@
+@page "/journal"
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+@inject IDialogService DialogService
+@inject ISnackbar Snackbar
+
+<PageTitle>Diário · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6">
+    <MudText Typo="Typo.h4" Class="mb-1">Diário</MudText>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">
+        Calcula quanto arriscar em cada operação e regista as que fazes na corretora, para comparares o teu resultado com o das sugestões.
+    </MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    @if (_loading)
+    {
+        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="320px" />
+    }
+    else
+    {
+        <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
+            <MudTabPanel Text="Calculadora">
+                <PositionCalculatorPanel Account="_account" Watchlist="_watchlist" Quotes="_quotes" OpenSuggestions="_openSuggestions"
+                                         Initial="_prefill" OnRegister="OpenTradeDialogAsync" OnSaveAccount="SaveAccountAsync" />
+            </MudTabPanel>
+
+            <MudTabPanel Text="@($"Trades ({_trades.Count})")">
+                <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                    @foreach ((TradeStatus? value, string label) in _filters)
+                    {
+                        <MudChip T="string" Variant="@(_filter == value ? Variant.Filled : Variant.Outlined)" Color="@(_filter == value ? Color.Primary : Color.Default)"
+                                 OnClick="@(() => _filter = value)">@label</MudChip>
+                    }
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => OpenTradeDialogAsync(null))">Nova trade</MudButton>
+                </div>
+
+                @if (VisibleTrades.Count == 0)
+                {
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Sem trades</MudText>
+                        <MudText Color="Color.Secondary">Regista aqui as operações que fazes na XTB, Trading 212 ou outra plataforma.</MudText>
+                    </MudPaper>
+                }
+                else
+                {
+                    <MudPaper Elevation="0" Outlined="true">
+                        <MudTable Items="VisibleTrades" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Md">
+                            <HeaderContent>
+                                <MudTh>Ativo</MudTh>
+                                <MudTh>Entrada</MudTh>
+                                <MudTh>SL / TP</MudTh>
+                                <MudTh>Saída</MudTh>
+                                <MudTh Style="text-align:right">Resultado</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>
+                                    <div class="d-flex align-center gap-2">
+                                        <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
+                                        <MudChip T="string" Size="Size.Small" Class="ma-0" Variant="Variant.Filled" Color="@(context.Direction == TradeDirection.Buy ? Color.Success : Color.Error)">@(context.Direction == TradeDirection.Buy ? "COMPRA" : "VENDA")</MudChip>
+                                        @if (context.SuggestionId is not null)
+                                        {
+                                            <MudTooltip Text="@($"Ligada à sugestão #{context.SuggestionId}")"><MudIcon Icon="@Icons.Material.Filled.Link" Size="Size.Small" /></MudTooltip>
+                                        }
+                                    </div>
+                                    <MudText Typo="Typo.caption" Class="symbol-name">@context.Quantity.ToString("0.####", CultureInfo.InvariantCulture) un · @context.Platform</MudText>
+                                </MudTd>
+                                <MudTd>
+                                    @context.EntryPrice.ToString("0.#####", CultureInfo.InvariantCulture)
+                                    <MudText Typo="Typo.caption" Class="symbol-name">@context.EntryTime.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</MudText>
+                                </MudTd>
+                                <MudTd>@(context.StopLoss?.ToString("0.#####", CultureInfo.InvariantCulture) ?? "—") / @(context.TakeProfit?.ToString("0.#####", CultureInfo.InvariantCulture) ?? "—")</MudTd>
+                                <MudTd>
+                                    @if (context.Status == TradeStatus.Closed)
+                                    {
+                                        @context.ExitPrice?.ToString("0.#####", CultureInfo.InvariantCulture)
+                                        <MudText Typo="Typo.caption" Class="symbol-name">@context.ExitTime?.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)</MudText>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0">Aberta</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd Style="text-align:right">
+                                    @if (context.NetPnl is { } pnl)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="@(pnl >= 0 ? Color.Success : Color.Error)">@Money(pnl)</MudText>
+                                        @if (context.RMultiple is { } r)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="symbol-name">@r.ToString("+0.00;-0.00", CultureInfo.InvariantCulture) R</MudText>
+                                        }
+                                    }
+                                    else
+                                    {
+                                        <MudText Typo="Typo.caption" Class="symbol-name">—</MudText>
+                                    }
+                                </MudTd>
+                                <MudTd Style="text-align:right;white-space:nowrap">
+                                    @if (context.Status == TradeStatus.Open)
+                                    {
+                                        <MudTooltip Text="Fechar trade"><MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small" aria-label="@($"Fechar {context.Symbol}")" OnClick="@(() => CloseTradeDialogAsync(context))" /></MudTooltip>
+                                    }
+                                    <MudTooltip Text="Apagar"><MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" aria-label="@($"Apagar {context.Symbol}")" OnClick="@(() => DeleteTradeAsync(context))" /></MudTooltip>
+                                </MudTd>
+                            </RowTemplate>
+                            <ChildRowContent>
+                                @if (!string.IsNullOrWhiteSpace(context.Notes))
+                                {
+                                    <MudTd colspan="6"><MudText Typo="Typo.caption" Class="symbol-name">📝 @context.Notes</MudText></MudTd>
+                                }
+                            </ChildRowContent>
+                        </MudTable>
+                    </MudPaper>
+                }
+            </MudTabPanel>
+
+            <MudTabPanel Text="Estatísticas">
+                <JournalStatsPanel Stats="_stats" Currency="@_account.Currency" />
+            </MudTabPanel>
+        </MudTabs>
+    }
+</MudContainer>
+
+@code {
+    private static readonly (TradeStatus? Value, string Label)[] _filters =
+    [
+        (null, "Todas"),
+        (TradeStatus.Open, "Abertas"),
+        (TradeStatus.Closed, "Fechadas")
+    ];
+
+    private readonly CancellationTokenSource _cts = new();
+    private AccountProfile _account = new(10_000, 1, "EUR");
+    private IReadOnlyList<WatchlistItem> _watchlist = [];
+    private IReadOnlyDictionary<string, InstrumentQuote> _quotes = new Dictionary<string, InstrumentQuote>();
+    private IReadOnlyList<SuggestionDto> _openSuggestions = [];
+    private IReadOnlyList<JournalTradeDto> _trades = [];
+    private JournalStats _stats = new(0, 0, 0, 0, 0, 0, null, 0, null, 0, 0, 0, [], 0, null, null, []);
+    private TradePrefill? _prefill;
+    private TradeStatus? _filter;
+    private string? _error;
+    private bool _loading = true;
+    private int _tab;
+
+    [SupplyParameterFromQuery] public string? Symbol { get; set; }
+
+    [SupplyParameterFromQuery] public double? Entry { get; set; }
+
+    [SupplyParameterFromQuery(Name = "sl")] public double? StopLoss { get; set; }
+
+    [SupplyParameterFromQuery(Name = "tp")] public double? TakeProfit { get; set; }
+
+    [SupplyParameterFromQuery] public long? Suggestion { get; set; }
+
+    private IReadOnlyList<JournalTradeDto> VisibleTrades => _filter is null ? _trades : _trades.Where(t => t.Status == _filter).ToList();
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _account = await Api.GetAccountAsync(_cts.Token);
+            _watchlist = await Api.GetWatchlistAsync(_cts.Token);
+            _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
+            _openSuggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
+            await ReloadTradesAsync();
+
+            if (Entry is { } entry && StopLoss is { } stop)
+            {
+                _prefill = new TradePrefill(Symbol ?? string.Empty, stop < entry ? TradeDirection.Buy : TradeDirection.Sell, entry, stop, TakeProfit, 0, 1, Suggestion);
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar o diário. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ReloadTradesAsync()
+    {
+        _trades = await Api.GetTradesAsync(null, _cts.Token);
+        _stats = await Api.GetJournalStatsAsync(_cts.Token);
+    }
+
+    private async Task SaveAccountAsync(AccountProfile profile)
+    {
+        string? error = await Api.SaveAccountAsync(profile);
+
+        if (error is null)
+        {
+            _account = profile with { Currency = profile.Currency.Trim().ToUpperInvariant() };
+            Snackbar.Add("Predefinições guardadas.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Error);
+        }
+    }
+
+    private async Task OpenTradeDialogAsync(TradePrefill? prefill)
+    {
+        DialogParameters<TradeDialog> parameters = new()
+        {
+            { x => x.Prefill, prefill },
+            { x => x.Symbols, _watchlist.Select(w => w.Symbol).ToList() }
+        };
+
+        IDialogReference dialog = await DialogService.ShowAsync<TradeDialog>("Registar trade", parameters, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true });
+
+        if (!(await dialog.Result)?.Canceled ?? false)
+        {
+            await ReloadTradesAsync();
+            _tab = 1;
+            Snackbar.Add("Trade registada.", Severity.Success);
+        }
+    }
+
+    private async Task CloseTradeDialogAsync(JournalTradeDto trade)
+    {
+        DialogParameters<CloseTradeDialog> parameters = new() { { x => x.Trade, trade }, { x => x.Currency, _account.Currency } };
+
+        IDialogReference dialog = await DialogService.ShowAsync<CloseTradeDialog>("Fechar trade", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+
+        if (!(await dialog.Result)?.Canceled ?? false)
+        {
+            await ReloadTradesAsync();
+            Snackbar.Add("Trade fechada.", Severity.Success);
+        }
+    }
+
+    private async Task DeleteTradeAsync(JournalTradeDto trade)
+    {
+        bool? confirmed = await DialogService.ShowMessageBoxAsync(
+            "Apagar trade",
+            $"Apagar a trade de {trade.Symbol}? Esta ação não pode ser desfeita.",
+            yesText: "Apagar",
+            cancelText: "Cancelar");
+
+        if (confirmed == true && await Api.DeleteTradeAsync(trade.Id))
+        {
+            await ReloadTradesAsync();
+            Snackbar.Add("Trade apagada.", Severity.Info);
+        }
+    }
+
+    private string Money(double value) => $"{value.ToString("+#,0.00;-#,0.00;0.00", CultureInfo.GetCultureInfo("pt-PT"))} {_account.Currency}";
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

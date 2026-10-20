@@ -1,0 +1,144 @@
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
+@inject TraderApiClient Api
+@inject AuthSession Session
+@inject ISnackbar Snackbar
+@inject NavigationManager Navigation
+
+<MudBadge Content="_unread" Visible="_unread > 0" Color="Color.Error" Overlap="true" Max="99">
+    <MudMenu Icon="@Icons.Material.Filled.Notifications" Color="Color.Inherit" AriaLabel="Alertas" AnchorOrigin="Origin.BottomRight" TransformOrigin="Origin.TopRight" OpenChanged="OnOpenChangedAsync">
+    <ChildContent>
+        <div class="alert-list">
+            @if (_items.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="symbol-name pa-4">Sem alertas. Aparecem aqui as sugestões novas e os stops/alvos atingidos.</MudText>
+            }
+            else
+            {
+                @foreach (AlertDto alert in _items)
+                {
+                    <MudMenuItem OnClick="@(() => Navigation.NavigateTo("/prediction"))">
+                        <div class="d-flex align-center" style="gap:12px">
+                            <MudIcon Icon="@IconFor(alert.Kind)" Color="@ColorFor(alert.Kind)" Size="Size.Small" />
+                            <div>
+                                <MudText Typo="Typo.body2" Style="@(alert.Unread ? "font-weight:600" : null)">@alert.Title</MudText>
+                                <MudText Typo="Typo.caption" Class="symbol-name">@alert.Message · @alert.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</MudText>
+                            </div>
+                        </div>
+                    </MudMenuItem>
+                }
+            }
+        </div>
+    </ChildContent>
+    </MudMenu>
+</MudBadge>
+
+@code {
+    private HubConnection? _hub;
+    private List<AlertDto> _items = [];
+    private int _unread;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (!firstRender)
+        {
+            return;
+        }
+
+        await LoadAsync();
+        await ConnectAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        try
+        {
+            AlertFeed feed = await Api.GetAlertsAsync();
+            _items = feed.Items.ToList();
+            _unread = feed.UnreadCount;
+            StateHasChanged();
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
+
+    private async Task ConnectAsync()
+    {
+        try
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Api.NewsHubUrl, options => options.AccessTokenProvider = () => Session.GetAccessTokenAsync())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.On<List<AlertDto>>("AlertsRaised", OnAlertsRaisedAsync);
+            await _hub.StartAsync();
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+        }
+    }
+
+    private Task OnAlertsRaisedAsync(List<AlertDto> raised) => InvokeAsync(() =>
+    {
+        _items = raised.Concat(_items).Take(30).ToList();
+        _unread += raised.Count;
+
+        foreach (AlertDto alert in raised.Take(3))
+        {
+            Snackbar.Add($"{alert.Title} — {alert.Message}", SeverityFor(alert.Kind));
+        }
+
+        StateHasChanged();
+    });
+
+    private async Task OnOpenChangedAsync(bool open)
+    {
+        if (!open || _unread == 0)
+        {
+            return;
+        }
+
+        try
+        {
+            await Api.MarkAlertsSeenAsync();
+            _unread = 0;
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
+
+    private static string IconFor(AlertKind kind) => kind switch
+    {
+        AlertKind.TakeProfit => Icons.Material.Filled.CheckCircle,
+        AlertKind.StopLoss => Icons.Material.Filled.Cancel,
+        AlertKind.Expired => Icons.Material.Filled.Schedule,
+        _ => Icons.Material.Filled.AutoGraph
+    };
+
+    private static Color ColorFor(AlertKind kind) => kind switch
+    {
+        AlertKind.TakeProfit => Color.Success,
+        AlertKind.StopLoss => Color.Error,
+        AlertKind.Expired => Color.Default,
+        _ => Color.Primary
+    };
+
+    private static Severity SeverityFor(AlertKind kind) => kind switch
+    {
+        AlertKind.TakeProfit => Severity.Success,
+        AlertKind.StopLoss => Severity.Error,
+        AlertKind.Expired => Severity.Normal,
+        _ => Severity.Info
+    };
+
+    public async ValueTask DisposeAsync()
+    {
+        if (_hub is not null)
+        {
+            await _hub.DisposeAsync();
+        }
+    }
+}

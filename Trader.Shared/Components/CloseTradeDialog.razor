@@ -1,0 +1,109 @@
+@using System.Globalization
+@inject TraderApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Fechar @Trade.Symbol</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+            @(Trade.Direction == TradeDirection.Buy ? "Compra" : "Venda") de @Trade.Quantity.ToString("0.####", CultureInfo.InvariantCulture) a @Trade.EntryPrice.ToString("0.#####", CultureInfo.InvariantCulture)
+        </MudText>
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="DateTime" @bind-Value="_exitTime" Label="Data e hora de saída" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_exitPrice" Label="Preço de saída" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_fees" Label="Comissões (saída)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_notes" Label="Notas (o que correu bem ou mal?)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_exitPrice > 0)
+        {
+            TradeOutcome preview = Preview();
+            <MudPaper Elevation="0" Outlined="true" Class="pa-3 mt-3">
+                <div class="d-flex align-center">
+                    <MudText Typo="Typo.body2">Resultado líquido estimado</MudText>
+                    <MudSpacer />
+                    <MudText Typo="Typo.subtitle1" Color="@(preview.NetPnl >= 0 ? Color.Success : Color.Error)">
+                        @Money(preview.NetPnl ?? 0)@(preview.RMultiple is { } r ? $" · {r.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)} R" : string.Empty)
+                    </MudText>
+                </div>
+            </MudPaper>
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy" OnClick="SaveAsync">Fechar trade</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private DateTime _exitTime = DateTime.Now;
+    private double _exitPrice;
+    private double _fees;
+    private string _notes = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public JournalTradeDto Trade { get; set; } = default!;
+
+    [Parameter] public string Currency { get; set; } = "EUR";
+
+    protected override void OnInitialized() => _notes = Trade.Notes;
+
+    private TradeOutcome Preview() => JournalCalculator.Compute(new JournalTrade
+    {
+        Direction = Trade.Direction,
+        EntryPrice = Trade.EntryPrice,
+        Quantity = Trade.Quantity,
+        StopLoss = Trade.StopLoss,
+        FxRate = Trade.FxRate,
+        Fees = Trade.Fees + _fees,
+        ExitPrice = _exitPrice,
+        Status = TradeStatus.Closed
+    });
+
+    private string Money(double value) => $"{value.ToString("+#,0.00;-#,0.00;0.00", CultureInfo.GetCultureInfo("pt-PT"))} {Currency}";
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+
+        try
+        {
+            DateTimeOffset exitTime = new(DateTime.SpecifyKind(_exitTime, DateTimeKind.Local));
+            _error = await Api.CloseTradeAsync(Trade.Id, new CloseTradeRequest(exitTime, _exitPrice, _fees, _notes));
+
+            if (_error is null)
+            {
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível guardar. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

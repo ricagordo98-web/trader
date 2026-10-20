@@ -17,6 +17,7 @@ builder.Services.AddTraderShared();
 builder.Services.AddTraderInfrastructure(builder.Configuration, Path.Combine(builder.Environment.ContentRootPath, "models", "finbert"));
 builder.Services.AddSignalR();
 builder.Services.AddSingleton<INewsNotifier, SignalRNewsNotifier>();
+builder.Services.AddSingleton<IAlertNotifier, SignalRAlertNotifier>();
 
 builder.Services.AddIdentityApiEndpoints<AppUser>(options =>
     {
@@ -74,6 +75,9 @@ app.MapAuthEndpoints();
 app.MapMarketEndpoints();
 app.MapNewsEndpoints();
 app.MapSuggestionEndpoints();
+app.MapBacktestEndpoints();
+app.MapJournalEndpoints();
+app.MapAlertEndpoints();
 app.MapSettingsEndpoints();
 app.MapHub<NewsHub>("/hubs/news").RequireAuthorization();
 

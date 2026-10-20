@@ -1,4 +1,7 @@
 using System.Net.Http.Json;
+using Trader.Core.Alerts;
+using Trader.Core.Backtesting;
+using Trader.Core.Journal;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
 
@@ -6,6 +9,30 @@ namespace Trader.Shared.Services;
 
 public sealed class TraderApiClient(HttpClient httpClient)
 {
+    public async Task<AlertFeed> GetAlertsAsync(int limit = 30, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<AlertFeed>($"api/alerts?limit={limit}", cancellationToken) ?? new AlertFeed([], 0);
+
+    public async Task MarkAlertsSeenAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync("api/alerts/seen", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
+    public async Task<NtfySettings> GetNtfyAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<NtfySettings>("api/alerts/ntfy", cancellationToken) ?? new NtfySettings(NtfySettings.DefaultServer, string.Empty);
+
+    public async Task<string?> SaveNtfyAsync(NtfySettings settings, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/alerts/ntfy", settings, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<string?> SendNtfyTestAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync("api/alerts/ntfy/test", null, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
     public Uri NewsHubUrl => new(httpClient.BaseAddress!, "hubs/news");
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default) =>
@@ -130,6 +157,54 @@ public sealed class TraderApiClient(HttpClient httpClient)
     public async Task<string?> CreateUserAsync(string email, string password, CancellationToken cancellationToken = default)
     {
         using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/auth/register", new { email, password }, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<BacktestResult?> GetLastBacktestAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<BacktestResult>("api/backtest/last", cancellationToken);
+
+    public async Task<(BacktestResult? Result, string? Error)> RunBacktestAsync(BacktestRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/backtest", request, cancellationToken);
+
+        return response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<BacktestResult>(cancellationToken), null)
+            : (null, await ApiError.ReadAsync(response));
+    }
+
+    public async Task<IReadOnlyList<JournalTradeDto>> GetTradesAsync(TradeStatus? status = null, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<JournalTradeDto>>(
+            status is { } filter ? $"api/journal/trades?status={filter}" : "api/journal/trades",
+            cancellationToken) ?? [];
+
+    public async Task<string?> OpenTradeAsync(OpenTradeRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/journal/trades", request, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<string?> CloseTradeAsync(long id, CloseTradeRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync($"api/journal/trades/{id}/close", request, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<bool> DeleteTradeAsync(long id, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync($"api/journal/trades/{id}", cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<JournalStats> GetJournalStatsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<JournalStats>("api/journal/stats", cancellationToken)
+        ?? new JournalStats(0, 0, 0, 0, 0, 0, null, 0, null, 0, 0, 0, [], 0, null, null, []);
+
+    public async Task<AccountProfile> GetAccountAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<AccountProfile>("api/journal/account", cancellationToken) ?? new AccountProfile(10_000, 1, "EUR");
+
+    public async Task<string?> SaveAccountAsync(AccountProfile profile, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/journal/account", profile, cancellationToken);
         return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
     }
 }

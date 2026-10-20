@@ -27,7 +27,12 @@
         <MudTabPanel Text="@($"Sugestões ({_open.Count})")">
             @if (_loading)
             {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                <MudGrid Spacing="4">
+                    @for (int i = 0; i < 3; i++)
+                    {
+                        <MudItem xs="12" lg="6" xl="4"><MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="300px" /></MudItem>
+                    }
+                </MudGrid>
             }
             else if (_open.Count == 0)
             {
@@ -42,7 +47,7 @@
                 {
                     bool buy = suggestion.Direction == TradeDirection.Buy;
                     <MudItem xs="12" lg="6" xl="4" @key="suggestion.Id">
-                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100 suggestion-card">
                             <div class="d-flex align-center gap-3">
                                 <ConfidenceGauge Value="suggestion.Confidence" />
                                 <div class="flex-grow-1">
@@ -129,6 +134,7 @@
                             </MudExpansionPanels>
 
                             <div class="d-flex justify-end mt-3">
+                                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Calculate" Href="@JournalLink(suggestion)">Calcular posição</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.CandlestickChart" OnClick="@(() => OpenChartAsync(suggestion))">Ver gráfico</MudButton>
                             </div>
                         </MudPaper>
@@ -138,7 +144,12 @@
         </MudTabPanel>
 
         <MudTabPanel Text="Track record">
-            @if (_record is null || _record.ClosedCount == 0)
+            @if (_loading)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="160px" Class="mb-4" />
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="260px" />
+            }
+            else if (_record is null || _record.ClosedCount == 0)
             {
                 <MudPaper Elevation="0" Outlined="true" Class="pa-6">
                     <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem sugestões fechadas</MudText>
@@ -222,6 +233,9 @@
                 </MudPaper>
             }
         </MudTabPanel>
+        <MudTabPanel Text="Backtest">
+            <BacktestPanel />
+        </MudTabPanel>
     </MudTabs>
 </MudContainer>
 
@@ -303,6 +317,11 @@
         yield return ("Profit factor", record.ProfitFactor?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—", record.ProfitFactor >= 1 ? Color.Success : Color.Warning);
         yield return ("Em curso", record.OpenCount.ToString(CultureInfo.InvariantCulture), Color.Default);
     }
+
+    private static string JournalLink(SuggestionDto s) =>
+        string.Create(
+            CultureInfo.InvariantCulture,
+            $"/journal?symbol={Uri.EscapeDataString(s.Symbol)}&entry={s.Entry:R}&sl={s.StopLoss:R}&tp={s.TakeProfit:R}&suggestion={s.Id}");
 
     private static string Price(double value) =>
         value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", CultureInfo.GetCultureInfo("pt-PT"));

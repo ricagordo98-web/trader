@@ -1,0 +1,240 @@
+@using System.Globalization
+
+<MudGrid Spacing="4">
+    <MudItem xs="12" md="5">
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Conta e risco</MudText>
+            <MudGrid Spacing="2">
+                <MudItem xs="5"><MudNumericField T="double" @bind-Value="_capital" Label="@($"Capital ({_currency})")" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="4"><MudNumericField T="double" @bind-Value="_risk" Label="Risco (%)" Min="0" Max="10" Step="0.25" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="3"><MudTextField T="string" @bind-Value="_currency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="8" /></MudItem>
+            </MudGrid>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-1" OnClick="SaveAccountAsync">Guardar como predefinição</MudButton>
+
+            <MudDivider Class="my-3" />
+            <MudText Typo="Typo.subtitle1" Class="mb-3">Operação</MudText>
+
+            @if (OpenSuggestions.Count > 0)
+            {
+                <MudSelect T="long?" Value="_suggestionId" ValueChanged="UseSuggestion" Label="Preencher com uma sugestão" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2">
+                    @foreach (SuggestionDto s in OpenSuggestions)
+                    {
+                        <MudSelectItem T="long?" Value="s.Id">@s.Symbol · @(s.Direction == TradeDirection.Buy ? "Compra" : "Venda") · @((s.Confidence * 100).ToString("0", CultureInfo.InvariantCulture))%</MudSelectItem>
+                    }
+                </MudSelect>
+            }
+
+            <MudGrid Spacing="2">
+                <MudItem xs="8">
+                    <MudSelect T="string" Value="_symbol" ValueChanged="SelectSymbol" Label="Ativo (opcional)" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (WatchlistItem item in Watchlist)
+                        {
+                            <MudSelectItem T="string" Value="item.Symbol">@item.Symbol · @item.Name</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="4" Class="d-flex align-center">
+                    <MudButton Size="Size.Small" Variant="Variant.Outlined" Disabled="@(!HasQuote)" OnClick="UseCurrentPrice" FullWidth="true">Preço atual</MudButton>
+                </MudItem>
+                <MudItem xs="6"><MudNumericField T="double" @bind-Value="_entry" Label="Entrada" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="double" @bind-Value="_stop" Label="Stop loss" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="double?" @bind-Value="_target" Label="Take profit (opcional)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="6">
+                    <MudSelect T="AssetClass" Value="_assetClass" ValueChanged="SetAssetClass" Label="Tipo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="AssetClass.Stock">Ação</MudSelectItem>
+                        <MudSelectItem Value="AssetClass.Etf">ETF</MudSelectItem>
+                        <MudSelectItem Value="AssetClass.Commodity">Mercadoria</MudSelectItem>
+                        <MudSelectItem Value="AssetClass.Forex">Forex</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6"><MudNumericField T="double" @bind-Value="_leverage" Label="Alavancagem (1 = sem)" Min="1" Max="500" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="double" @bind-Value="_fx" Label="Conversão p/ moeda da conta" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" HelperText="1 se o ativo já está na moeda da conta" /></MudItem>
+            </MudGrid>
+        </MudPaper>
+    </MudItem>
+
+    <MudItem xs="12" md="7">
+        @{
+            PositionResult r = Result;
+        }
+
+        @if (!r.IsValid)
+        {
+            <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Preenche a entrada e o stop</MudText>
+                @foreach (string error in r.Errors)
+                {
+                    <MudText Typo="Typo.body2" Class="symbol-name">• @error</MudText>
+                }
+            </MudPaper>
+        }
+        else
+        {
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+                <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                    <MudChip T="string" Variant="Variant.Filled" Color="@(r.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">
+                        @(r.Direction == TradeDirection.Buy ? "COMPRA" : "VENDA")
+                    </MudChip>
+                    <MudText Typo="Typo.body2" Class="symbol-name">direção deduzida da posição do stop face à entrada</MudText>
+                </div>
+
+                <MudGrid Spacing="2">
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Tamanho</div><div class="level-value">@Units(r.Units)</div><MudText Typo="Typo.caption" Class="symbol-name">inteiras: @Units(r.WholeUnits)</MudText></div></MudItem>
+                    @if (r.Lots is { } lots)
+                    {
+                        <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Lotes standard</div><div class="level-value">@lots.ToString("0.00", CultureInfo.InvariantCulture)</div></div></MudItem>
+                    }
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Risco</div><div class="level-value" style="color:var(--mud-palette-error)">@Money(r.RiskAmount)</div><MudText Typo="Typo.caption" Class="symbol-name">com inteiras: @Money(r.ActualRiskAmount)</MudText></div></MudItem>
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Distância do stop</div><div class="level-value">@r.StopDistance.ToString("0.#####", CultureInfo.InvariantCulture)</div><MudText Typo="Typo.caption" Class="symbol-name">@r.StopDistancePercent.ToString("0.00", CultureInfo.InvariantCulture)% do preço</MudText></div></MudItem>
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Valor da posição</div><div class="level-value">@Money(r.Notional)</div></div></MudItem>
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Margem necessária</div><div class="level-value">@Money(r.MarginRequired)</div><MudText Typo="Typo.caption" Class="symbol-name">@((r.MarginRequired / _capital * 100).ToString("0", CultureInfo.InvariantCulture))% do capital</MudText></div></MudItem>
+                    @if (r.RewardAmount is { } reward && r.RiskReward is { } rr)
+                    {
+                        <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Ganho potencial</div><div class="level-value" style="color:var(--mud-palette-success)">@Money(reward)</div></div></MudItem>
+                        <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">R:R</div><div class="level-value">1 : @rr.ToString("0.0", CultureInfo.InvariantCulture)</div></div></MudItem>
+                    }
+                </MudGrid>
+            </MudPaper>
+
+            @foreach (string warning in r.Warnings)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Variant="Variant.Outlined" Class="mb-2">@warning</MudAlert>
+            }
+
+            <MudText Typo="Typo.caption" Class="symbol-name my-2">
+                Fórmula: tamanho = (capital × risco%) ÷ (|entrada − stop| × conversão). Não inclui spread nem comissões, nem o preço de execução real (derrapagem).
+            </MudText>
+
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.PostAdd" OnClick="RegisterAsync">Registar esta trade no diário</MudButton>
+        }
+    </MudItem>
+</MudGrid>
+
+@code {
+    private double _capital = 10_000;
+    private double _risk = 1;
+    private string _currency = "EUR";
+    private string? _symbol;
+    private double _entry;
+    private double _stop;
+    private double? _target;
+    private double _leverage = 5;
+    private double _fx = 1;
+    private AssetClass _assetClass = AssetClass.Stock;
+    private long? _suggestionId;
+    private bool _initialised;
+
+    [Parameter] public AccountProfile Account { get; set; } = new(10_000, 1, "EUR");
+
+    [Parameter] public IReadOnlyList<WatchlistItem> Watchlist { get; set; } = [];
+
+    [Parameter] public IReadOnlyDictionary<string, InstrumentQuote> Quotes { get; set; } = new Dictionary<string, InstrumentQuote>();
+
+    [Parameter] public IReadOnlyList<SuggestionDto> OpenSuggestions { get; set; } = [];
+
+    [Parameter] public TradePrefill? Initial { get; set; }
+
+    [Parameter] public EventCallback<TradePrefill> OnRegister { get; set; }
+
+    [Parameter] public EventCallback<AccountProfile> OnSaveAccount { get; set; }
+
+    private bool HasQuote => _symbol is not null && Quotes.TryGetValue(_symbol, out InstrumentQuote? q) && q.Price is not null;
+
+    private PositionResult Result => PositionCalculator.Calculate(new PositionInput(_capital, _risk, _entry, _stop, _target, _leverage, _fx, _assetClass));
+
+    protected override void OnParametersSet()
+    {
+        if (_initialised)
+        {
+            return;
+        }
+
+        _capital = Account.Capital;
+        _risk = Account.RiskPercent;
+        _currency = Account.Currency;
+
+        if (Initial is not null)
+        {
+            _symbol = string.IsNullOrWhiteSpace(Initial.Symbol) ? null : Initial.Symbol;
+            _entry = Tidy(Initial.Entry);
+            _stop = Tidy(Initial.StopLoss ?? 0);
+            _target = Initial.TakeProfit is { } initialTarget ? Tidy(initialTarget) : null;
+            _fx = Initial.FxRate;
+            _suggestionId = Initial.SuggestionId;
+            ApplyAssetClassFor(_symbol);
+        }
+
+        _initialised = true;
+    }
+
+    private void SelectSymbol(string? symbol)
+    {
+        _symbol = symbol;
+        _suggestionId = null;
+        ApplyAssetClassFor(symbol);
+    }
+
+    private void ApplyAssetClassFor(string? symbol)
+    {
+        WatchlistItem? item = Watchlist.FirstOrDefault(w => w.Symbol == symbol);
+
+        if (item is not null)
+        {
+            SetAssetClass(item.AssetClass);
+        }
+    }
+
+    private void SetAssetClass(AssetClass assetClass)
+    {
+        _assetClass = assetClass;
+        _leverage = PositionCalculator.DefaultLeverage(assetClass);
+    }
+
+    private void UseCurrentPrice()
+    {
+        if (_symbol is not null && Quotes.TryGetValue(_symbol, out InstrumentQuote? quote) && quote.Price is { } price)
+        {
+            _entry = Tidy(price);
+        }
+    }
+
+    private void UseSuggestion(long? id)
+    {
+        _suggestionId = id;
+        SuggestionDto? suggestion = OpenSuggestions.FirstOrDefault(s => s.Id == id);
+
+        if (suggestion is null)
+        {
+            return;
+        }
+
+        _symbol = suggestion.Symbol;
+        _entry = Tidy(suggestion.Entry);
+        _stop = Tidy(suggestion.StopLoss);
+        _target = Tidy(suggestion.TakeProfit);
+        ApplyAssetClassFor(suggestion.Symbol);
+    }
+
+    private Task SaveAccountAsync() => OnSaveAccount.InvokeAsync(new AccountProfile(_capital, _risk, _currency));
+
+    private Task RegisterAsync()
+    {
+        PositionResult r = Result;
+
+        return OnRegister.InvokeAsync(new TradePrefill(
+            _symbol ?? string.Empty,
+            r.Direction,
+            _entry,
+            _stop,
+            _target,
+            r.WholeUnits >= 1 ? r.WholeUnits : Math.Round(r.Units, 4),
+            _fx,
+            _suggestionId));
+    }
+
+    private string Money(double value) => $"{value.ToString("#,0.00", CultureInfo.GetCultureInfo("pt-PT"))} {_currency}";
+
+    private static double Tidy(double value) => Math.Round(value, value >= 100 ? 2 : value >= 1 ? 4 : 6);
+
+    private static string Units(double value) => value.ToString("#,0.####", CultureInfo.GetCultureInfo("pt-PT"));
+}

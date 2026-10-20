@@ -43,7 +43,7 @@ Every API route and the SignalR hub require a signed-in user (ASP.NET Core Ident
 - On the first run the login screen offers to create the main account. After that, public registration is closed: only a signed-in user can create further accounts (Settings > Conta).
 - Passwords need at least 8 characters with upper case, lower case, digit and symbol. Five failed sign-ins lock the account for five minutes.
 - Web: the session lives in the browser (encrypted local storage). MAUI: it lives in the platform secure storage, and the server address is editable in Settings > Conta.
-- Android talks to the host machine at `http://10.0.2.2:5256` in the emulator. Plain HTTP needs cleartext traffic enabled in the Android manifest, or serve the backend over HTTPS.
+- Android: the emulator reaches the host at `http://10.0.2.2:5256`. Plain HTTP is only allowed for `10.0.2.2`, `localhost` and `127.0.0.1` (see `network_security_config.xml`); any other server, including a real device on your network, must be served over HTTPS because the sign-in token travels with every request.
 
 ## Tests
 

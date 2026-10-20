@@ -1,0 +1,106 @@
+@using System.Globalization
+
+@if (Stats.ClosedCount == 0)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem trades fechadas</MudText>
+        <MudText Color="Color.Secondary">
+            Regista as operações que fazes na tua corretora (separador Trades). As estatísticas aparecem quando fechares a primeira.
+            Há @Stats.OpenCount em curso.
+        </MudText>
+    </MudPaper>
+}
+else
+{
+    <MudGrid Spacing="3" Class="mb-4">
+        @foreach ((string label, string value, Color color) in Kpis())
+        {
+            <MudItem xs="6" md="4" lg="3">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                    <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                    <MudText Typo="Typo.h5" Color="color">@value</MudText>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Resultado acumulado (@Currency)</MudText>
+        @if (Stats.Curve.Count >= 2)
+        {
+            <CumulativeCurve Points="@Stats.Curve.Select(c => c.CumulativeR).ToList()" />
+        }
+        else
+        {
+            <MudText Typo="Typo.body2" Class="symbol-name">A curva aparece a partir da segunda trade fechada.</MudText>
+        }
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Tu contra as sugestões</MudText>
+
+        @if (Stats.LinkedCount == 0)
+        {
+            <MudText Typo="Typo.body2" Class="symbol-name">
+                Ainda nenhuma trade fechada está ligada a uma sugestão já concluída. Quando registares uma trade a partir de uma sugestão (botão "Calcular posição" no cartão),
+                aqui comparas o teu R com o que a sugestão acabou por dar. É a prova mais útil de que consegues (ou não) seguir o sistema.
+            </MudText>
+        }
+        else
+        {
+            <MudAlert Severity="@(Stats.LinkedAverageYourR >= Stats.LinkedAverageSuggestionR ? Severity.Success : Severity.Warning)" Variant="Variant.Outlined" Class="mb-3">
+                Em @Stats.LinkedCount trades ligadas, o teu R médio foi @Signed(Stats.LinkedAverageYourR ?? 0) e o da sugestão @Signed(Stats.LinkedAverageSuggestionR ?? 0).
+                @(Stats.LinkedAverageYourR >= Stats.LinkedAverageSuggestionR
+                    ? "Estás a igualar ou a superar o sistema."
+                    : "Estás a ganhar menos do que o sistema previa: vê se entras tarde, sais antes do alvo/stop ou pagas custos que o sistema não conta.")
+            </MudAlert>
+
+            <MudTable Items="Stats.Comparisons" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                <HeaderContent>
+                    <MudTh>Ativo</MudTh>
+                    <MudTh>Sugestão terminou</MudTh>
+                    <MudTh Style="text-align:right">R da sugestão</MudTh>
+                    <MudTh Style="text-align:right">O teu R</MudTh>
+                    <MudTh Style="text-align:right">Diferença</MudTh>
+                </HeaderContent>
+                <RowTemplate>
+                    <MudTd>@context.Symbol</MudTd>
+                    <MudTd>@Outcome(context.SuggestionOutcome)</MudTd>
+                    <MudTd Style="text-align:right">@Signed(context.SuggestionR)</MudTd>
+                    <MudTd Style="text-align:right">@Signed(context.YourR)</MudTd>
+                    <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@(context.YourR - context.SuggestionR >= 0 ? Color.Success : Color.Error)">@Signed(context.YourR - context.SuggestionR)</MudText></MudTd>
+                </RowTemplate>
+            </MudTable>
+        }
+    </MudPaper>
+}
+
+@code {
+    [Parameter, EditorRequired] public JournalStats Stats { get; set; } = default!;
+
+    [Parameter] public string Currency { get; set; } = "EUR";
+
+    private IEnumerable<(string Label, string Value, Color Color)> Kpis()
+    {
+        yield return ("Trades fechadas", Stats.ClosedCount.ToString(CultureInfo.InvariantCulture), Color.Default);
+        yield return ("Taxa de acerto", $"{Stats.WinRate * 100:0}%", Color.Default);
+        yield return ("Resultado líquido", Money(Stats.NetPnl), Stats.NetPnl >= 0 ? Color.Success : Color.Error);
+        yield return ("Expectativa por trade", Money(Stats.Expectancy), Stats.Expectancy >= 0 ? Color.Success : Color.Error);
+        yield return ("R médio", Stats.AverageR is { } r ? Signed(r) : "—", Stats.AverageR >= 0 ? Color.Success : Color.Error);
+        yield return ("Profit factor", Stats.ProfitFactor?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—", Stats.ProfitFactor >= 1 ? Color.Success : Color.Warning);
+        yield return ("Perda máxima", Money(-Stats.MaxDrawdown), Color.Warning);
+        yield return ("Melhor / pior", $"{Stats.BestTrade.ToString("+0;-0", CultureInfo.InvariantCulture)} / {Stats.WorstTrade.ToString("+0;-0", CultureInfo.InvariantCulture)}", Color.Default);
+    }
+
+    private string Money(double value) => $"{value.ToString("+#,0.00;-#,0.00;0.00", CultureInfo.GetCultureInfo("pt-PT"))} {Currency}";
+
+    private static string Signed(double value) => value.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture);
+
+    private static string Outcome(SuggestionStatus status) => status switch
+    {
+        SuggestionStatus.HitTakeProfit => "Take profit",
+        SuggestionStatus.HitStopLoss => "Stop loss",
+        SuggestionStatus.Expired => "Expirou",
+        _ => "Aberta"
+    };
+}

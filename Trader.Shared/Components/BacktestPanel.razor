@@ -1,0 +1,275 @@
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-1">Backtest</MudText>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-3">
+        Aplica o motor ao histórico de preços de toda a watchlist, dia a dia, usando só a informação que existia nesse dia, e mede o que teria acontecido
+        depois de custos. Serve para saber se há margem antes de arriscares dinheiro — não garante o futuro.
+    </MudText>
+
+    <div class="d-flex flex-wrap gap-3 align-center">
+        <MudSelect T="string" @bind-Value="_request.Range" Label="Período" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:160px" Disabled="_running">
+            <MudSelectItem Value="@("2y")">2 anos</MudSelectItem>
+            <MudSelectItem Value="@("5y")">5 anos</MudSelectItem>
+            <MudSelectItem Value="@("10y")">10 anos</MudSelectItem>
+        </MudSelect>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_running" OnClick="RunAsync" StartIcon="@Icons.Material.Filled.PlayArrow">
+            @(_running ? "A simular…" : "Executar backtest")
+        </MudButton>
+    </div>
+
+    <MudExpansionPanels Class="mt-3" Elevation="0" Outlined="true">
+        <MudExpansionPanel Text="Custos considerados (pressupostos editáveis)">
+            <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                Percentagem do preço, ida e volta (spread e comissões), mais o financiamento por cada dia em que a posição fica aberta. Confirma os valores reais na tua corretora.
+            </MudText>
+            <MudGrid Spacing="3">
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.StockRoundTripPercent" Label="Ações (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.EtfRoundTripPercent" Label="ETFs (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.CommodityRoundTripPercent" Label="Mercadorias (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.ForexRoundTripPercent" Label="Forex (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.OvernightPercentPerDay" Label="Financiamento por dia (%)" Min="0" Max="5" Step="0.005" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            </MudGrid>
+        </MudExpansionPanel>
+    </MudExpansionPanels>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+    }
+</MudPaper>
+
+@if (_running)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+        <MudText Typo="Typo.body2" Class="mb-2">A descarregar o histórico e a simular cada dia. Pode demorar até um minuto.</MudText>
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    </MudPaper>
+}
+else if (_loading)
+{
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+}
+else if (_result is null)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+        <MudText Color="Color.Secondary">Ainda não correste nenhum backtest. Escolhe o período e executa.</MudText>
+    </MudPaper>
+}
+else
+{
+    BacktestResult r = _result;
+
+    <MudAlert Severity="@VerdictSeverity(r.Verdict.Code)" Variant="Variant.Outlined" Class="mb-4">
+        <MudText Typo="Typo.subtitle1">@r.Verdict.Title</MudText>
+        <MudText Typo="Typo.body2">@r.Verdict.Detail</MudText>
+    </MudAlert>
+
+    <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+        @r.SymbolsTested ativos · @r.From.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture) a @r.To.ToString("yyyy-MM-dd", CultureInfo.InvariantCulture)
+        · gerado em @r.GeneratedAt.ToLocalTime().ToString("yyyy-MM-dd HH:mm", CultureInfo.InvariantCulture)
+    </MudText>
+
+    <MudGrid Spacing="3" Class="mb-4">
+        @foreach ((string label, string value, Color color) in Kpis(r))
+        {
+            <MudItem xs="6" md="4" lg="3">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                    <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                    <MudText Typo="Typo.h5" Color="color">@value</MudText>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    <MudPaper Elevation="0" Outlined="true" Class="mb-4">
+        <MudTable Items="Comparison(r)" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Comparação</MudTh>
+                <MudTh Style="text-align:right">Operações</MudTh>
+                <MudTh Style="text-align:right">Acerto</MudTh>
+                <MudTh Style="text-align:right">R médio líq.</MudTh>
+                <MudTh Style="text-align:right">IC 95%</MudTh>
+                <MudTh Style="text-align:right">Profit factor</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Name</MudTd>
+                <MudTd Style="text-align:right">@context.Stats.Trades</MudTd>
+                <MudTd Style="text-align:right">@Percent(context.Stats.WinRate)</MudTd>
+                <MudTd Style="text-align:right">@Signed(context.Stats.AverageNetR)</MudTd>
+                <MudTd Style="text-align:right">@Signed(context.Stats.ConfidenceLow) a @Signed(context.Stats.ConfidenceHigh)</MudTd>
+                <MudTd Style="text-align:right">@Factor(context.Stats.ProfitFactor)</MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+    <MudText Typo="Typo.caption" Class="symbol-name mb-4">
+        "Direção aleatória" abre, nos mesmos dias e com os mesmos SL/TP, uma compra e uma venda: mostra o que dá só o desenho das ordens, sem escolher a direção.
+        Comprar e manter a watchlist teria rendido em média @r.BuyAndHoldPercent.ToString("+0.0;-0.0", CultureInfo.InvariantCulture)% no período.
+    </MudText>
+
+    <MudGrid Spacing="3" Class="mb-4">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Estabilidade</MudText>
+                <div class="d-flex py-1"><MudText Typo="Typo.body2">1.ª metade do período</MudText><MudSpacer /><MudText Typo="Typo.body2">@Signed(r.FirstHalf.AverageNetR) R (@r.FirstHalf.Trades)</MudText></div>
+                <div class="d-flex py-1"><MudText Typo="Typo.body2">2.ª metade do período</MudText><MudSpacer /><MudText Typo="Typo.body2">@Signed(r.SecondHalf.AverageNetR) R (@r.SecondHalf.Trades)</MudText></div>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-2">Se só uma das metades ganha, o resultado depende do período escolhido.</MudText>
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Por tipo e direção</MudText>
+                @foreach (BacktestGroup group in r.ByAssetClass.Concat(r.ByDirection))
+                {
+                    <div class="d-flex py-1">
+                        <MudText Typo="Typo.body2">@GroupLabel(group.Name)</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name ml-2">@group.Stats.Trades</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.body2" Color="@(group.Stats.AverageNetR >= 0 ? Color.Success : Color.Error)">@Signed(group.Stats.AverageNetR) R</MudText>
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+
+    @if (r.Curve.Count > 0)
+    {
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">R acumulado líquido (operações por data de saída)</MudText>
+            <CumulativeCurve Points="@r.Curve.Select(c => c.CumulativeR).ToList()" />
+        </MudPaper>
+    }
+
+    <MudPaper Elevation="0" Outlined="true" Class="mb-4">
+        <MudTable Items="r.BySymbol" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+            <HeaderContent>
+                <MudTh>Ativo</MudTh>
+                <MudTh Style="text-align:right">Operações</MudTh>
+                <MudTh Style="text-align:right">Acerto</MudTh>
+                <MudTh Style="text-align:right">R total líq.</MudTh>
+            </HeaderContent>
+            <RowTemplate>
+                <MudTd>@context.Name</MudTd>
+                <MudTd Style="text-align:right">@context.Stats.Trades</MudTd>
+                <MudTd Style="text-align:right">@Percent(context.Stats.WinRate)</MudTd>
+                <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@(context.Stats.TotalNetR >= 0 ? Color.Success : Color.Error)">@Signed(context.Stats.TotalNetR)</MudText></MudTd>
+            </RowTemplate>
+        </MudTable>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+        <MudText Typo="Typo.subtitle1" Class="mb-2">Limitações a ter em conta</MudText>
+        <ul class="about-list">
+            @foreach (string note in r.Notes)
+            {
+                <li>@note</li>
+            }
+        </ul>
+    </MudPaper>
+}
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private readonly BacktestRequest _request = new();
+    private BacktestResult? _result;
+    private string? _error;
+    private bool _loading = true;
+    private bool _running;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _result = await Api.GetLastBacktestAsync(_cts.Token);
+
+            if (_result is not null)
+            {
+                _request.Range = _result.Range;
+                _request.Costs = _result.Costs;
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter o último backtest.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunAsync()
+    {
+        _running = true;
+        _error = null;
+
+        try
+        {
+            (BacktestResult? result, string? error) = await Api.RunBacktestAsync(_request, _cts.Token);
+            _result = result ?? _result;
+            _error = error;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível executar o backtest. Verifica se o servidor está a correr.";
+        }
+        catch (TaskCanceledException)
+        {
+            _error = "O backtest demorou demasiado tempo. Tenta um período mais curto.";
+        }
+        finally
+        {
+            _running = false;
+        }
+    }
+
+    private static IEnumerable<(string Label, string Value, Color Color)> Kpis(BacktestResult r)
+    {
+        BacktestStats s = r.Strategy;
+
+        yield return ("Operações", s.Trades.ToString(CultureInfo.InvariantCulture), Color.Default);
+        yield return ("Taxa de acerto", Percent(s.WinRate), Color.Default);
+        yield return ("R médio líquido", Signed(s.AverageNetR), s.AverageNetR >= 0 ? Color.Success : Color.Error);
+        yield return ("R médio bruto", Signed(s.AverageGrossR), Color.Default);
+        yield return ("R total líquido", Signed(s.TotalNetR), s.TotalNetR >= 0 ? Color.Success : Color.Error);
+        yield return ("Profit factor", Factor(s.ProfitFactor), s.ProfitFactor >= 1 ? Color.Success : Color.Warning);
+        yield return ("Perda máxima (R)", s.MaxDrawdownR.ToString("0.0", CultureInfo.InvariantCulture), Color.Warning);
+        yield return ("% médio por operação", $"{s.AverageNetPercent.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)}%", s.AverageNetPercent >= 0 ? Color.Success : Color.Error);
+    }
+
+    private static IReadOnlyList<BacktestGroup> Comparison(BacktestResult r) =>
+        [new BacktestGroup("Motor de sugestões", r.Strategy), new BacktestGroup("Direção aleatória (mesmos dias)", r.Baseline)];
+
+    private static Severity VerdictSeverity(string code) => code switch
+    {
+        "promising" => Severity.Success,
+        "no-edge" => Severity.Error,
+        "inconclusive" => Severity.Warning,
+        _ => Severity.Info
+    };
+
+    private static string GroupLabel(string name) => name switch
+    {
+        "Stock" => "Ações",
+        "Etf" => "ETFs",
+        "Commodity" => "Mercadorias",
+        "Forex" => "Forex",
+        "Buy" => "Compras",
+        "Sell" => "Vendas",
+        _ => name
+    };
+
+    private static string Signed(double value) => value.ToString("+0.000;-0.000;0.000", CultureInfo.InvariantCulture);
+
+    private static string Percent(double value) => $"{value * 100:0}%";
+
+    private static string Factor(double? value) => value?.ToString("0.00", CultureInfo.InvariantCulture) ?? "—";
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

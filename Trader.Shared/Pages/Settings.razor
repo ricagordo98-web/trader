@@ -125,7 +125,7 @@
                         <MudTd>@context.Currency</MudTd>
                         <MudTd Style="text-align:right">
                             <MudTooltip Text="Remover da watchlist">
-                                <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Disabled="_busy" OnClick="@(() => RemoveInstrumentAsync(context))" />
+                                <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Disabled="_busy" aria-label="@($"Remover {context.Symbol}")" OnClick="@(() => RemoveInstrumentAsync(context))" />
                             </MudTooltip>
                         </MudTd>
                     </RowTemplate>
@@ -172,6 +172,35 @@
             <MudText Typo="Typo.caption" Class="symbol-name mt-2">As chaves e credenciais das fontes configuram-se no servidor (ver README). Aqui só se mostra o estado.</MudText>
         </MudTabPanel>
 
+        <MudTabPanel Text="Notificações">
+            @if (_ntfyTopic is not null)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                    <MudText Typo="Typo.subtitle1" Class="mb-1">Notificações no telemóvel e no PC (ntfy)</MudText>
+                    <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                        Recebes sugestões novas e stops/alvos atingidos mesmo com a app fechada. Instala a app ntfy (grátis) e subscreve o mesmo tópico.
+                        Quem souber o tópico lê os alertas, por isso usa um nome longo e difícil de adivinhar.
+                    </MudText>
+                    <MudGrid Spacing="3">
+                        <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="_ntfyTopic" Label="Tópico (vazio = desligado)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" /></MudItem>
+                        <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="_ntfyServer" Label="Servidor" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                    </MudGrid>
+                </MudPaper>
+                @if (_ntfyError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_ntfyError</MudAlert>
+                }
+                <div class="d-flex gap-3">
+                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveNtfyAsync">Guardar</MudButton>
+                    <MudButton Variant="Variant.Outlined" Disabled="_busy" OnClick="TestNtfyAsync">Enviar notificação de teste</MudButton>
+                </div>
+            }
+            else
+            {
+                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+            }
+        </MudTabPanel>
+
         <MudTabPanel Text="Scoring">
             @if (_scoring is not null)
             {
@@ -212,6 +241,7 @@
             }
         </MudTabPanel>
     </MudTabs>
+    <MudText Typo="Typo.caption" Class="symbol-name mt-4"><MudLink Href="/about">Sobre a app, fontes e créditos</MudLink></MudText>
 </MudContainer>
 
 @code {
@@ -219,6 +249,9 @@
     private IReadOnlyList<WatchlistItem> _watchlist = [];
     private IReadOnlyList<SourceStatus> _sources = [];
     private ScoringOptions? _scoring;
+    private string? _ntfyTopic;
+    private string _ntfyServer = NtfySettings.DefaultServer;
+    private string? _ntfyError;
     private string _oldPassword = string.Empty;
     private string _newPassword = string.Empty;
     private string _userEmail = string.Empty;
@@ -243,10 +276,44 @@
             _watchlist = await Api.GetWatchlistAsync(_cts.Token);
             _sources = await Api.GetSourcesAsync(_cts.Token);
             _scoring = await Api.GetScoringAsync(_cts.Token);
+            NtfySettings ntfy = await Api.GetNtfyAsync(_cts.Token);
+            _ntfyTopic = ntfy.Topic;
+            _ntfyServer = ntfy.Server;
         }
         catch (HttpRequestException)
         {
             Snackbar.Add("Não foi possível carregar as configurações do servidor.", Severity.Error);
+        }
+    }
+
+    private async Task SaveNtfyAsync()
+    {
+        _busy = true;
+        _ntfyError = await Api.SaveNtfyAsync(new NtfySettings(_ntfyServer, _ntfyTopic ?? string.Empty), _cts.Token);
+        _busy = false;
+
+        if (_ntfyError is null)
+        {
+            Snackbar.Add("Notificações guardadas.", Severity.Success);
+        }
+    }
+
+    private async Task TestNtfyAsync()
+    {
+        await SaveNtfyAsync();
+
+        if (_ntfyError is not null)
+        {
+            return;
+        }
+
+        _busy = true;
+        _ntfyError = await Api.SendNtfyTestAsync(_cts.Token);
+        _busy = false;
+
+        if (_ntfyError is null)
+        {
+            Snackbar.Add("Notificação de teste enviada.", Severity.Success);
         }
     }
 

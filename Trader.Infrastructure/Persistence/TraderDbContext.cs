@@ -1,6 +1,8 @@
+using Trader.Core.Alerts;
 using Microsoft.AspNetCore.Identity.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
+using Trader.Core.Journal;
 using Trader.Core.Models;
 
 namespace Trader.Infrastructure.Persistence;
@@ -12,6 +14,8 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
     public DbSet<Article> Articles => Set<Article>();
     public DbSet<Suggestion> Suggestions => Set<Suggestion>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<JournalTrade> JournalTrades => Set<JournalTrade>();
+    public DbSet<Alert> Alerts => Set<Alert>();
 
     protected override void OnModelCreating(ModelBuilder modelBuilder)
     {
@@ -55,6 +59,30 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.Property(s => s.CreatedAt).HasConversion(utcTicks);
             entity.Property(s => s.ExpiresAt).HasConversion(utcTicks);
             entity.Property(s => s.ClosedAt).HasConversion(utcTicks);
+        });
+
+        modelBuilder.Entity<JournalTrade>(entity =>
+        {
+            entity.HasIndex(t => new { t.UserId, t.Status });
+            entity.Property(t => t.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(t => t.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(t => t.Name).HasMaxLength(128).IsRequired();
+            entity.Property(t => t.Platform).HasMaxLength(64);
+            entity.Property(t => t.Notes).HasMaxLength(2000);
+            entity.Property(t => t.Direction).HasConversion<string>().HasMaxLength(8);
+            entity.Property(t => t.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(t => t.EntryTime).HasConversion(utcTicks);
+            entity.Property(t => t.ExitTime).HasConversion(utcTicks);
+        });
+
+        modelBuilder.Entity<Alert>(entity =>
+        {
+            entity.HasIndex(a => a.CreatedAt);
+            entity.Property(a => a.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(a => a.Title).HasMaxLength(128).IsRequired();
+            entity.Property(a => a.Message).HasMaxLength(256).IsRequired();
+            entity.Property(a => a.Kind).HasConversion<string>().HasMaxLength(16);
+            entity.Property(a => a.CreatedAt).HasConversion(utcTicks);
         });
 
         modelBuilder.Entity<AppSetting>(entity =>

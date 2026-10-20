@@ -155,7 +155,7 @@ public sealed class SuggestionEngine(ScoringOptions options)
             $"RSI {Format(market.Rsi, "0")} ({rsiTag}) e MACD {macdTag}");
     }
 
-    private (double StopLoss, double TakeProfit) ComputeLevels(MarketSnapshot market, TradeDirection direction)
+    public (double StopLoss, double TakeProfit) ComputeLevels(MarketSnapshot market, TradeDirection direction)
     {
         double atr = market.Atr;
         double entry = market.Price;

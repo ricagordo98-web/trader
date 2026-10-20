@@ -2,6 +2,7 @@ using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
+using Trader.Core.Alerts;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
 using Trader.Infrastructure.Persistence;
@@ -12,6 +13,7 @@ public sealed class SuggestionService(
     TraderDbContext dbContext,
     IMarketDataService marketData,
     IScoringSettings scoringSettings,
+    IAlertService alerts,
     ILogger<SuggestionService> logger) : ISuggestionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
@@ -58,6 +60,7 @@ public sealed class SuggestionService(
     {
         List<Suggestion> open = await dbContext.Suggestions.Where(s => s.Status == SuggestionStatus.Open).ToListAsync(cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
+        List<Alert> raised = [];
 
         foreach (Suggestion suggestion in open)
         {
@@ -75,6 +78,12 @@ public sealed class SuggestionService(
                 suggestion.ExitPrice = outcome.ExitPrice;
                 suggestion.ClosedAt = outcome.ClosedAt;
                 suggestion.RMultiple = outcome.RMultiple;
+
+                if (AlertFactory.ForOutcome(suggestion, now) is { } alert)
+                {
+                    raised.Add(alert);
+                }
+
                 logger.LogInformation("Suggestion {Id} {Symbol} closed as {Status} ({R:0.00}R)", suggestion.Id, suggestion.Symbol, outcome.Status, outcome.RMultiple);
             }
             catch (HttpRequestException ex)
@@ -84,6 +93,7 @@ public sealed class SuggestionService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await alerts.RaiseAsync(raised, cancellationToken);
     }
 
     private async Task<int> GenerateAsync(ScoringOptions scoring, CancellationToken cancellationToken)
@@ -98,6 +108,7 @@ public sealed class SuggestionService(
 
         List<Instrument> instruments = await dbContext.Instruments.AsNoTracking().OrderBy(i => i.SortOrder).ToListAsync(cancellationToken);
         int created = 0;
+        List<Suggestion> added = [];
 
         foreach (Instrument instrument in instruments.Where(i => !openSymbols.Contains(i.Symbol)))
         {
@@ -119,7 +130,9 @@ public sealed class SuggestionService(
                     continue;
                 }
 
-                dbContext.Suggestions.Add(ToEntity(draft, now, scoring));
+                Suggestion entity = ToEntity(draft, now, scoring);
+                dbContext.Suggestions.Add(entity);
+                added.Add(entity);
                 created++;
             }
             catch (HttpRequestException ex)
@@ -129,6 +142,7 @@ public sealed class SuggestionService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
+        await alerts.RaiseAsync(added.Select(s => AlertFactory.ForNewSuggestion(s, now)).ToList(), cancellationToken);
         logger.LogInformation("Suggestion cycle created {Count} suggestions", created);
         return created;
     }

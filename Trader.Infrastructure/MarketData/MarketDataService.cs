@@ -86,7 +86,7 @@ public sealed class MarketDataService(
         return quote;
     }
 
-    private static InstrumentQuote BuildQuote(Instrument instrument, ChartSeries series)
+    internal static InstrumentQuote BuildQuote(Instrument instrument, ChartSeries series)
     {
         double[] closes = series.Candles.Select(c => c.Close).ToArray();
         double? price = series.LastPrice ?? (closes.Length > 0 ? closes[^1] : null);
@@ -96,8 +96,7 @@ public sealed class MarketDataService(
 
         if (price is not null && closes.Length >= 2)
         {
-            bool lastCandleIsToday = series.Candles[^1].Time.UtcDateTime.Date == DateTime.UtcNow.Date;
-            double previousClose = lastCandleIsToday ? closes[^2] : closes[^1];
+            double previousClose = closes[^2];
 
             if (previousClose != 0)
             {

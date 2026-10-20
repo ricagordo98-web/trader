@@ -31,10 +31,10 @@
                 }
                 <MudSpacer />
                 <MudTooltip Text="Apagar selecionado (Del)">
-                    <MudIconButton Icon="@Icons.Material.Filled.Backspace" Size="Size.Small" OnClick="RemoveSelectedAsync" />
+                    <MudIconButton Icon="@Icons.Material.Filled.Backspace" Size="Size.Small" aria-label="Apagar desenho selecionado" OnClick="RemoveSelectedAsync" />
                 </MudTooltip>
                 <MudTooltip Text="Apagar todos os desenhos">
-                    <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small" OnClick="ClearDrawingsAsync" />
+                    <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small" aria-label="Apagar todos os desenhos" OnClick="ClearDrawingsAsync" />
                 </MudTooltip>
             </div>
             <div class="chart-body">
@@ -42,7 +42,7 @@
                     @foreach (DrawingTool tool in DrawingTools)
                     {
                         <MudTooltip Text="@tool.Label" Placement="Placement.Right">
-                            <MudIconButton Icon="@tool.Icon" Size="Size.Small" OnClick="@(() => StartDrawingAsync(tool))" />
+                            <MudIconButton Icon="@tool.Icon" Size="Size.Small" aria-label="@tool.Label" OnClick="@(() => StartDrawingAsync(tool))" />
                         </MudTooltip>
                     }
                 </div>

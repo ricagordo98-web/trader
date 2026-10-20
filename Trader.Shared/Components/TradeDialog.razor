@@ -1,0 +1,152 @@
+@using System.Globalization
+@inject TraderApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Registar trade</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+            Regista a operação que fizeste na tua corretora. Os preços são os da plataforma; se o ativo for noutra moeda, indica a taxa de conversão para a moeda da conta.
+        </MudText>
+
+        @if (Prefill?.SuggestionId is { } suggestionId)
+        {
+            <MudAlert Severity="Severity.Info" Dense="true" Class="mb-3">Ligada à sugestão #@suggestionId — vais poder comparar o teu resultado com o da sugestão.</MudAlert>
+        }
+
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudAutocomplete T="string" @bind-Value="_symbol" Label="Símbolo" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                 SearchFunc="SearchSymbols" CoerceValue="true" CoerceText="false" ResetValueOnEmptyText="false" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="TradeDirection" @bind-Value="_direction" Label="Direção" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="TradeDirection.Buy">Compra</MudSelectItem>
+                    <MudSelectItem Value="TradeDirection.Sell">Venda</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudTextField T="DateTime" @bind-Value="_entryTime" Label="Data e hora de entrada" InputType="InputType.DateTimeLocal" Format="yyyy-MM-ddTHH:mm" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_entry" Label="Preço de entrada" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_quantity" Label="Quantidade" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double?" @bind-Value="_stopLoss" Label="Stop loss" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double?" @bind-Value="_takeProfit" Label="Take profit" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_fxRate" Label="Conversão p/ moeda da conta" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="6" sm="3">
+                <MudNumericField T="double" @bind-Value="_fees" Label="Comissões" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_platform" Label="Plataforma" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    <MudSelectItem Value="@("XTB")">XTB</MudSelectItem>
+                    <MudSelectItem Value="@("Trading 212")">Trading 212</MudSelectItem>
+                    <MudSelectItem Value="@("Outra")">Outra</MudSelectItem>
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_notes" Label="Notas (porque entraste?)" Lines="3" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="2000" />
+            </MudItem>
+        </MudGrid>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy" OnClick="SaveAsync">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private string? _symbol;
+    private TradeDirection _direction;
+    private DateTime _entryTime = DateTime.Now;
+    private double _entry;
+    private double _quantity;
+    private double? _stopLoss;
+    private double? _takeProfit;
+    private double _fxRate = 1;
+    private double _fees;
+    private string _platform = "XTB";
+    private string _notes = string.Empty;
+    private string? _error;
+    private bool _busy;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public TradePrefill? Prefill { get; set; }
+
+    [Parameter] public IReadOnlyList<string> Symbols { get; set; } = [];
+
+    protected override void OnInitialized()
+    {
+        if (Prefill is null)
+        {
+            return;
+        }
+
+        _symbol = Prefill.Symbol;
+        _direction = Prefill.Direction;
+        _entry = Prefill.Entry;
+        _quantity = Prefill.Quantity;
+        _stopLoss = Prefill.StopLoss;
+        _takeProfit = Prefill.TakeProfit;
+        _fxRate = Prefill.FxRate;
+    }
+
+    private Task<IEnumerable<string>> SearchSymbols(string value, CancellationToken cancellationToken) =>
+        Task.FromResult(Symbols.Where(s => string.IsNullOrWhiteSpace(value) || s.Contains(value, StringComparison.OrdinalIgnoreCase)));
+
+    private async Task SaveAsync()
+    {
+        _error = null;
+        _busy = true;
+
+        try
+        {
+            DateTimeOffset entryTime = new(DateTime.SpecifyKind(_entryTime, DateTimeKind.Local));
+
+            _error = await Api.OpenTradeAsync(new OpenTradeRequest(
+                _symbol ?? string.Empty,
+                _direction,
+                entryTime,
+                _entry,
+                _quantity,
+                _stopLoss,
+                _takeProfit,
+                _fxRate,
+                _fees,
+                _platform,
+                _notes,
+                Prefill?.SuggestionId));
+
+            if (_error is null)
+            {
+                MudDialog.Close(DialogResult.Ok(true));
+            }
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível guardar. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

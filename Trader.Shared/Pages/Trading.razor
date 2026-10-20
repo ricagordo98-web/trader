@@ -10,7 +10,7 @@
         <MudSpacer />
         <MudTextField @bind-Value="_search" Immediate="true" Placeholder="Pesquisar símbolo ou nome" Variant="Variant.Outlined" Margin="Margin.Dense"
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="trading-search" />
-        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" OnClick="LoadAsync" />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" aria-label="Atualizar cotações" OnClick="LoadAsync" />
     </div>
 
     @if (_error is not null)
@@ -28,14 +28,14 @@
                             <MudTh>Instrumento</MudTh>
                             <MudTh Style="text-align:right">Preço</MudTh>
                             <MudTh Style="text-align:right">Variação</MudTh>
-                            <MudTh Style="text-align:right">1 mês</MudTh>
+                            <MudTh Style="text-align:right" Class="d-none d-sm-table-cell">1 mês</MudTh>
                         </HeaderContent>
                         <RowTemplate>
                             <MudTd>
                                 <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
                                 <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
                             </MudTd>
-                            <MudTd Style="text-align:right">
+                            <MudTd Style="text-align:right;white-space:nowrap">
                                 @(context.Price is null ? "—" : $"{context.Price.Value.ToString(PriceFormat(context.AssetClass), _culture)} {context.Currency}")
                             </MudTd>
                             <MudTd Style="text-align:right">
@@ -50,10 +50,22 @@
                                     <MudText Typo="Typo.body2" Color="Color.Secondary">—</MudText>
                                 }
                             </MudTd>
-                            <MudTd Style="text-align:right"><Sparkline Values="context.Sparkline" /></MudTd>
+                            <MudTd Style="text-align:right" Class="d-none d-sm-table-cell"><Sparkline Values="context.Sparkline" /></MudTd>
                         </RowTemplate>
                         <NoRecordsContent>
-                            <MudText Class="pa-4" Color="Color.Secondary">Sem instrumentos.</MudText>
+                            @if (_loading)
+                            {
+                                <div class="pa-4">
+                                    @for (int i = 0; i < 6; i++)
+                                    {
+                                        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="40px" Class="mb-2" />
+                                    }
+                                </div>
+                            }
+                            else
+                            {
+                                <MudText Class="pa-4" Color="Color.Secondary">Sem instrumentos.</MudText>
+                            }
                         </NoRecordsContent>
                     </MudTable>
                 </MudTabPanel>
