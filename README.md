@@ -32,9 +32,23 @@ dotnet user-secrets set "Sources:Finnhub:ApiKey" "<key>"
 dotnet user-secrets set "Sources:Reddit:ClientId" "<id>"
 dotnet user-secrets set "Sources:Reddit:ClientSecret" "<secret>"
 dotnet user-secrets set "Sources:Edgar:ContactEmail" "<your email>"
+dotnet user-secrets set "Sources:Marketaux:ApiKey" "<key>"
+dotnet user-secrets set "Sources:Fred:ApiKey" "<key>"
 ```
 
+In a published build put the same values in `appsettings.Production.json` next to the server executable. The Finnhub key also powers the real-time trade stream used by the charts and the earnings calendar; the FRED key powers the macro calendar.
+
 SEC EDGAR requires a contact address in the User-Agent. StockTwits is disabled by default because it rejects non-browser clients (HTTP 403). GDELT enforces a strict rate limit (HTTP 429); the worker backs off and retries on the next cycle.
+
+## Live data
+
+- Charts receive live candles over SignalR (`/hubs/news`). US stocks/ETFs, forex and crypto use the Finnhub WebSocket (trade by trade); futures and indices fall back to Yahoo, which refreshes every ~15 s.
+- Alerts (Settings > Notificações): new suggestions, TP/SL/expiry, personal price alerts, stops/targets of open journal trades, next-day earnings and macro events, plus the morning summary. Optional push to phone/PC through ntfy.
+- The morning summary is automatic text. Set `Summary:OllamaModel` (for example `llama3.1:8b`, after `ollama pull`) to have a local model write a short narrative.
+
+## Running the server permanently
+
+See [deploy/REMOTE-ACCESS.md](deploy/REMOTE-ACCESS.md): Windows service, daily database backups and private remote access with Tailscale.
 
 ## Accounts
 
