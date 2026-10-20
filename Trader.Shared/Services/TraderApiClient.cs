@@ -246,6 +246,25 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<string> ExportJournalCsvAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetStringAsync("api/journal/export", cancellationToken);
+
+    public async Task<ImportPreview> PreviewImportAsync(string csv, CancellationToken cancellationToken = default)
+    {
+        using StringContent content = new(csv, System.Text.Encoding.UTF8, "text/plain");
+        using HttpResponseMessage response = await httpClient.PostAsync("api/journal/import/preview", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ImportPreview>(cancellationToken) ?? new ImportPreview("desconhecido", [], []);
+    }
+
+    public async Task<ImportSummary> ImportTradesAsync(string csv, CancellationToken cancellationToken = default)
+    {
+        using StringContent content = new(csv, System.Text.Encoding.UTF8, "text/plain");
+        using HttpResponseMessage response = await httpClient.PostAsync("api/journal/import", content, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<ImportSummary>(cancellationToken) ?? new ImportSummary(0, 0, []);
+    }
+
     public async Task<JournalStats> GetJournalStatsAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<JournalStats>("api/journal/stats", cancellationToken)
         ?? new JournalStats(0, 0, 0, 0, 0, 0, null, 0, null, 0, 0, 0, [], 0, null, null, []);

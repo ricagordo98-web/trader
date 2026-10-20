@@ -1,0 +1,145 @@
+@using System.Globalization
+@inject TraderApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Importar trades (CSV)</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.body2" Class="symbol-name mb-3">
+            Aceita o CSV exportado daqui, o histórico do Trading 212 (compras e vendas) ou um ficheiro de posições com colunas de abertura e fecho (por exemplo, o da XTB convertido para CSV).
+            As operações que já existirem (mesmo ativo, hora e preço) são ignoradas. Confirma sempre a pré-visualização.
+        </MudText>
+
+        <InputFile OnChange="OnFileSelectedAsync" accept=".csv,.txt,text/csv" />
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-3" />
+        }
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+
+        @if (_preview is not null)
+        {
+            <MudText Typo="Typo.subtitle2" Class="mt-4">@_preview.Format · @_preview.Trades.Count trades (@_preview.Trades.Count(t => t.ExitPrice is not null) fechadas, @_preview.Trades.Count(t => t.ExitPrice is null) abertas)</MudText>
+
+            @foreach (string warning in _preview.Warnings.Take(6))
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-1">@warning</MudAlert>
+            }
+
+            @if (_preview.Warnings.Count > 6)
+            {
+                <MudText Typo="Typo.caption" Class="symbol-name">… e mais @(_preview.Warnings.Count - 6) avisos.</MudText>
+            }
+
+            @if (_preview.Trades.Count > 0)
+            {
+                <div style="overflow-x:auto" class="mt-2">
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <thead>
+                            <tr><th>Ativo</th><th>Tipo</th><th>Entrada</th><th>Preço</th><th>Qtd.</th><th>Saída</th><th>Preço</th></tr>
+                        </thead>
+                        <tbody>
+                            @foreach (ImportedTrade trade in _preview.Trades.Take(12))
+                            {
+                                <tr>
+                                    <td>@trade.Symbol</td>
+                                    <td>@(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")</td>
+                                    <td>@trade.EntryTime.ToString("dd/MM/yy HH:mm")</td>
+                                    <td>@trade.EntryPrice.ToString("0.#####", CultureInfo.InvariantCulture)</td>
+                                    <td>@trade.Quantity.ToString("0.####", CultureInfo.InvariantCulture)</td>
+                                    <td>@(trade.ExitTime?.ToString("dd/MM/yy HH:mm") ?? "—")</td>
+                                    <td>@(trade.ExitPrice?.ToString("0.#####", CultureInfo.InvariantCulture) ?? "—")</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            }
+        }
+
+        @if (_summary is not null)
+        {
+            <MudAlert Severity="@(_summary.Errors.Count == 0 ? Severity.Success : Severity.Warning)" Class="mt-3">
+                Importadas @_summary.Imported, ignoradas @_summary.Skipped (já existiam)@(_summary.Errors.Count > 0 ? $", com {_summary.Errors.Count} erros: {string.Join(" ", _summary.Errors.Take(3))}" : string.Empty).
+            </MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">@(_summary is null ? "Cancelar" : "Fechar")</MudButton>
+        @if (_summary is null)
+        {
+            <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@(_busy || _preview is not { Trades.Count: > 0 })" OnClick="ImportAsync">Importar @(_preview?.Trades.Count ?? 0) trades</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const long MaxBytes = 2 * 1024 * 1024;
+
+    private string? _csv;
+    private ImportPreview? _preview;
+    private ImportSummary? _summary;
+    private string? _error;
+    private bool _loading;
+    private bool _busy;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    private async Task OnFileSelectedAsync(InputFileChangeEventArgs args)
+    {
+        _error = null;
+        _preview = null;
+        _summary = null;
+        _loading = true;
+
+        try
+        {
+            using StreamReader reader = new(args.File.OpenReadStream(MaxBytes));
+            _csv = await reader.ReadToEndAsync();
+            _preview = await Api.PreviewImportAsync(_csv);
+        }
+        catch (IOException)
+        {
+            _error = "O ficheiro é demasiado grande (máx. 2 MB) ou não pôde ser lido.";
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível analisar o ficheiro. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task ImportAsync()
+    {
+        if (_csv is null)
+        {
+            return;
+        }
+
+        _busy = true;
+
+        try
+        {
+            _summary = await Api.ImportTradesAsync(_csv);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível importar. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private void Close() => MudDialog.Close(DialogResult.Ok(_summary?.Imported ?? 0));
+}

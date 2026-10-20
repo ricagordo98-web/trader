@@ -27,5 +27,7 @@ public interface IJournalService
 
     Task<AccountProfile> GetAccountAsync(string userId, CancellationToken cancellationToken);
 
+    Task<ImportSummary> ImportAsync(string userId, IReadOnlyList<ImportedTrade> trades, CancellationToken cancellationToken);
+
     Task<IReadOnlyList<string>> SaveAccountAsync(string userId, AccountProfile profile, CancellationToken cancellationToken);
 }

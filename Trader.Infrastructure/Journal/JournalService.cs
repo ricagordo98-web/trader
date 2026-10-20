@@ -104,6 +104,58 @@ public sealed class JournalService(TraderDbContext dbContext) : IJournalService
         return JournalResult<JournalTradeDto>.Ok(ToDto(trade, await LoadSuggestionsAsync([trade], cancellationToken)));
     }
 
+    public async Task<ImportSummary> ImportAsync(string userId, IReadOnlyList<ImportedTrade> trades, CancellationToken cancellationToken)
+    {
+        List<(string Symbol, long Ticks, double Price, double Quantity)> existing = (await dbContext.JournalTrades
+            .AsNoTracking()
+            .Where(t => t.UserId == userId)
+            .Select(t => new { t.Symbol, t.EntryTime, t.EntryPrice, t.Quantity })
+            .ToListAsync(cancellationToken))
+            .Select(t => (t.Symbol, t.EntryTime.UtcTicks, t.EntryPrice, t.Quantity))
+            .ToList();
+
+        int imported = 0;
+        int skipped = 0;
+        List<string> errors = [];
+
+        foreach (ImportedTrade trade in trades)
+        {
+            string symbol = trade.Symbol.Trim().ToUpperInvariant();
+
+            if (existing.Any(e => e.Symbol == symbol && Math.Abs(e.Ticks - trade.EntryTime.UtcTicks) < TimeSpan.TicksPerSecond && Math.Abs(e.Price - trade.EntryPrice) < 1e-9 && Math.Abs(e.Quantity - trade.Quantity) < 1e-9))
+            {
+                skipped++;
+                continue;
+            }
+
+            JournalResult<JournalTradeDto> opened = await OpenAsync(
+                userId,
+                new OpenTradeRequest(symbol, trade.Direction, trade.EntryTime, trade.EntryPrice, trade.Quantity, trade.StopLoss, trade.TakeProfit, trade.FxRate, trade.Fees, trade.Platform, null, null),
+                cancellationToken);
+
+            if (!opened.Succeeded)
+            {
+                errors.Add($"{symbol} {trade.EntryTime:dd/MM/yy}: {string.Join(" ", opened.Errors)}");
+                continue;
+            }
+
+            if (trade.ExitPrice is { } exitPrice && trade.ExitTime is { } exitTime)
+            {
+                JournalResult<JournalTradeDto> closed = await CloseAsync(userId, opened.Value!.Id, new CloseTradeRequest(exitTime, exitPrice, 0, null), cancellationToken);
+
+                if (!closed.Succeeded)
+                {
+                    errors.Add($"{symbol} {exitTime:dd/MM/yy}: {string.Join(" ", closed.Errors)}");
+                }
+            }
+
+            existing.Add((symbol, trade.EntryTime.UtcTicks, trade.EntryPrice, trade.Quantity));
+            imported++;
+        }
+
+        return new ImportSummary(imported, skipped, errors);
+    }
+
     public async Task<bool> DeleteAsync(string userId, long id, CancellationToken cancellationToken) =>
         await dbContext.JournalTrades.Where(t => t.Id == id && t.UserId == userId).ExecuteDeleteAsync(cancellationToken) > 0;
 

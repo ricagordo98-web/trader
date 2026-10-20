@@ -4,6 +4,7 @@
 @inject TraderApiClient Api
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
+@inject IJSRuntime JS
 
 <PageTitle>Diário · Trader</PageTitle>
 
@@ -38,6 +39,8 @@
                                  OnClick="@(() => _filter = value)">@label</MudChip>
                     }
                     <MudSpacer />
+                    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="ExportCsvAsync" Disabled="@(_trades.Count == 0)">Exportar CSV</MudButton>
+                    <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FileUpload" OnClick="ImportCsvAsync">Importar CSV</MudButton>
                     <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="@(() => OpenTradeDialogAsync(null))">Nova trade</MudButton>
                 </div>
 
@@ -204,6 +207,33 @@
         else
         {
             Snackbar.Add(error, Severity.Error);
+        }
+    }
+
+    private async Task ExportCsvAsync()
+    {
+        try
+        {
+            string csv = await Api.ExportJournalCsvAsync();
+            await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/files.js");
+            await module.InvokeVoidAsync("downloadText", $"diario-trader-{DateTime.Now:yyyyMMdd}.csv", csv, "text/csv;charset=utf-8");
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Não foi possível exportar. Verifica se o servidor está a correr.", Severity.Error);
+        }
+    }
+
+    private async Task ImportCsvAsync()
+    {
+        IDialogReference dialog = await DialogService.ShowAsync<ImportTradesDialog>("Importar trades", new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseOnEscapeKey = true });
+        DialogResult? result = await dialog.Result;
+
+        if (result is { Canceled: false, Data: int imported } && imported > 0)
+        {
+            await ReloadTradesAsync();
+            _tab = 1;
+            Snackbar.Add($"{imported} trades importadas.", Severity.Success);
         }
     }
 

@@ -22,6 +22,30 @@ public static class JournalEndpoints
         group.MapDelete("/trades/{id:long}", async (long id, ClaimsPrincipal user, IJournalService service, CancellationToken cancellationToken) =>
             await service.DeleteAsync(UserId(user), id, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
+        group.MapGet("/export", async (ClaimsPrincipal user, IJournalService service, CancellationToken cancellationToken) =>
+            Results.Text(TradeCsv.Export(await service.ListAsync(UserId(user), null, cancellationToken)), "text/csv; charset=utf-8"));
+
+        group.MapPost("/import/preview", async (HttpRequest request, CancellationToken cancellationToken) =>
+        {
+            string? csv = await ReadCsvAsync(request, cancellationToken);
+            return csv is null ? TooLarge() : Results.Ok(TradeCsv.Parse(csv));
+        });
+
+        group.MapPost("/import", async (HttpRequest request, ClaimsPrincipal user, IJournalService service, CancellationToken cancellationToken) =>
+        {
+            string? csv = await ReadCsvAsync(request, cancellationToken);
+
+            if (csv is null)
+            {
+                return TooLarge();
+            }
+
+            ImportPreview preview = TradeCsv.Parse(csv);
+            return preview.Trades.Count == 0
+                ? Results.Problem(title: preview.Warnings.FirstOrDefault() ?? "Nenhuma trade reconhecida.", statusCode: StatusCodes.Status400BadRequest)
+                : Results.Ok(await service.ImportAsync(UserId(user), preview.Trades, cancellationToken));
+        });
+
         group.MapGet("/stats", async (ClaimsPrincipal user, IJournalService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GetStatsAsync(UserId(user), cancellationToken)));
 
@@ -39,6 +63,22 @@ public static class JournalEndpoints
 
         return app;
     }
+
+    private const int MaxCsvBytes = 2 * 1024 * 1024;
+
+    private static async Task<string?> ReadCsvAsync(HttpRequest request, CancellationToken cancellationToken)
+    {
+        if (request.ContentLength > MaxCsvBytes)
+        {
+            return null;
+        }
+
+        using StreamReader reader = new(request.Body);
+        string text = await reader.ReadToEndAsync(cancellationToken);
+        return text.Length > MaxCsvBytes ? null : text;
+    }
+
+    private static IResult TooLarge() => Results.Problem(title: "O ficheiro é demasiado grande (máx. 2 MB).", statusCode: StatusCodes.Status413PayloadTooLarge);
 
     private static string UserId(ClaimsPrincipal user) =>
         user.FindFirstValue(ClaimTypes.NameIdentifier) ?? throw new InvalidOperationException("Authenticated user without an identifier.");
