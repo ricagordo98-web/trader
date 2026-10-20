@@ -1,4 +1,5 @@
 using FluentAssertions;
+using Trader.Core.Models;
 using Trader.Infrastructure.News;
 using Trader.Infrastructure.News.Sources;
 
@@ -153,4 +154,84 @@ public class SummaryRedundancyTests
     {
         ArticleHasher.IsRedundantSummary(title, summary).Should().Be(expected);
     }
+}
+
+public class NewSourceParserTests
+{
+    [Fact]
+    public void AlphaVantageParse_FeedItem_MapsTimeAndTickers()
+    {
+        const string json = """
+            {"feed":[{"title":"Apple beats","url":"https://x.test/a","time_published":"20260105T153000","summary":"S","source":"Reuters",
+            "ticker_sentiment":[{"ticker":"AAPL"},{"ticker":"FOREX:EUR"}]}]}
+            """;
+
+        RawArticle article = AlphaVantageConnector.Parse(json).Single();
+
+        article.Title.Should().Be("Apple beats");
+        article.PublishedAt.Should().Be(new DateTimeOffset(2026, 1, 5, 15, 30, 0, TimeSpan.Zero));
+        article.Symbols.Should().Equal("AAPL");
+        article.Source.Should().Be("Reuters");
+    }
+
+    [Fact]
+    public void AlphaVantageParse_RateLimitMessage_Throws()
+    {
+        Action act = () => AlphaVantageConnector.Parse("""{"Information":"Thank you ... rate limit is 25 requests per day"}""");
+
+        act.Should().Throw<System.Text.Json.JsonException>().WithMessage("*rate limit*");
+    }
+
+    [Fact]
+    public void MarketauxParse_Item_MapsEntitiesAsSymbols()
+    {
+        const string json = """
+            {"data":[{"title":"Tesla rallies","description":"D","url":"https://x.test/t","published_at":"2026-01-05T10:00:00.000000Z","source":"cnbc.com",
+            "entities":[{"symbol":"TSLA"},{"symbol":"F"}]}]}
+            """;
+
+        RawArticle article = MarketauxConnector.Parse(json).Single();
+
+        article.Symbols.Should().Equal("TSLA", "F");
+        article.PublishedAt.Should().Be(new DateTimeOffset(2026, 1, 5, 10, 0, 0, TimeSpan.Zero));
+    }
+
+    [Fact]
+    public void FredParse_YearOverYearSeries_ComputesInflation()
+    {
+        string observations = string.Join(',', Enumerable.Range(0, 14).Select(i =>
+            $$"""{"date":"2026-{{12 - i % 12:00}}-01","value":"{{(i < 13 ? 103 - i * 0.25 : 100).ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)}}"}"""));
+        FredConnector.Series series = new("CPIAUCSL", "Inflação anual", "%", true);
+
+        RawArticle? article = FredConnector.Parse(series, $$"""{"observations":[{{observations}}]}""", DateTimeOffset.UtcNow);
+
+        article.Should().NotBeNull();
+        article!.SourceType.Should().Be(SourceType.Macro);
+        article.Title.Should().StartWith("Inflação anual: ").And.Contain("%");
+        article.Url.Should().Contain("series/CPIAUCSL?obs=");
+    }
+
+    [Fact]
+    public void FredParse_MissingValues_AreSkipped()
+    {
+        FredConnector.Series series = new("UNRATE", "Desemprego", "%", false);
+
+        FredConnector.Parse(series, """{"observations":[{"date":"2026-02-01","value":"."},{"date":"2026-01-01","value":"4.1"}]}""", DateTimeOffset.UtcNow)
+            .Should().BeNull();
+    }
+
+    [Theory]
+    [InlineData("Fed holds interest rates steady", true)]
+    [InlineData("Show HN: my soil moisture sensor", false)]
+    public void HackerNewsParse_FiltersByFinanceKeywords(string title, bool expected)
+    {
+        string json = $$"""{"id":1,"title":"{{title}}","time":1767600000,"score":10,"descendants":3}""";
+
+        (HackerNewsConnector.Parse(json) is not null).Should().Be(expected);
+    }
+
+    [Fact]
+    public void HackerNewsParse_StoryWithoutUrl_LinksToDiscussion() =>
+        HackerNewsConnector.Parse("""{"id":42,"title":"Stock market crash explained","time":1767600000}""")!.Url
+            .Should().Be("https://news.ycombinator.com/item?id=42");
 }
