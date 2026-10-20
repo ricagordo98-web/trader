@@ -11,11 +11,12 @@ public sealed class MarketDataService(
     TraderDbContext dbContext,
     IMarketDataProvider provider,
     IMemoryCache cache,
+    ILiveTradeFeed tradeFeed,
     ILogger<MarketDataService> logger) : IMarketDataService
 {
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan CandleCacheDuration = TimeSpan.FromSeconds(30);
-    private static readonly TimeSpan LiveCacheDuration = TimeSpan.FromSeconds(1);
+    private static readonly TimeSpan LiveCacheDuration = TimeSpan.FromSeconds(2);
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetQuotesAsync(AssetClass? assetClass, CancellationToken cancellationToken)
     {
@@ -65,16 +66,17 @@ public sealed class MarketDataService(
     {
         string key = $"live:{symbol}:{interval}:{range}";
 
-        if (cache.TryGetValue(key, out IReadOnlyList<Candle>? cached) && cached is not null)
+        if (!cache.TryGetValue(key, out ChartSeries? series) || series is null)
         {
-            return cached;
+            series = await provider.GetChartAsync(symbol, interval, range, cancellationToken);
+            cache.Set(key, series, LiveCacheDuration);
         }
 
-        ChartSeries series = await provider.GetChartAsync(symbol, interval, range, cancellationToken);
-        IReadOnlyList<Candle> latest = LiveCandleBuilder.Build(interval, series);
+        IReadOnlyList<LiveTrade> trades = tradeFeed.Track(symbol) && series.Candles.Count > 0
+            ? tradeFeed.GetTrades(symbol, series.Candles[^1].Time)
+            : [];
 
-        cache.Set(key, latest, LiveCacheDuration);
-        return latest;
+        return LiveCandleBuilder.Build(interval, series, trades);
     }
 
     private async Task<InstrumentQuote> GetQuoteAsync(Instrument instrument, CancellationToken cancellationToken)

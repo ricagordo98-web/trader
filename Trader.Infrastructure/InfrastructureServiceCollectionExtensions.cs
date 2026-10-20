@@ -33,6 +33,9 @@ public static class InfrastructureServiceCollectionExtensions
         });
 
         services.AddScoped<IMarketDataService, MarketDataService>();
+        services.AddSingleton<FinnhubTradeFeed>();
+        services.AddSingleton<ILiveTradeFeed>(sp => sp.GetRequiredService<FinnhubTradeFeed>());
+        services.AddHostedService(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddScoped<IChartDrawingService, ChartDrawingService>();
 
         services.Configure<SourcesOptions>(configuration.GetSection(SourcesOptions.SectionName));
