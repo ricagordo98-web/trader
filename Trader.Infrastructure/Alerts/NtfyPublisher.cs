@@ -30,6 +30,7 @@ public sealed class NtfyPublisher(HttpClient httpClient) : IAlertPublisher
         AlertKind.StopLoss or AlertKind.TradeStopLoss => "x",
         AlertKind.PriceTarget => "bell",
         AlertKind.Calendar => "calendar",
+        AlertKind.DailySummary => "newspaper",
         AlertKind.Expired => "hourglass",
         _ => "chart_with_upwards_trend"
     };

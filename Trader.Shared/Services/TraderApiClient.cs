@@ -7,6 +7,7 @@ using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
+using Trader.Core.Summary;
 
 namespace Trader.Shared.Services;
 
@@ -43,6 +44,23 @@ public sealed class TraderApiClient(HttpClient httpClient)
     {
         using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/chart/templates", templates, cancellationToken);
         return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<DailySummary?> GetDailySummaryAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.GetAsync("api/summary", cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<DailySummary>(cancellationToken);
+    }
+
+    public async Task<DailySummary?> GenerateDailySummaryAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync("api/summary/generate", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<DailySummary>(cancellationToken);
     }
 
     public async Task<CalendarFeed> GetCalendarAsync(int days, CancellationToken cancellationToken = default) =>

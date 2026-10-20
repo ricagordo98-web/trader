@@ -102,6 +102,7 @@ app.MapAlertEndpoints();
 app.MapSystemEndpoints();
 app.MapCalendarEndpoints();
 app.MapChartTemplateEndpoints();
+app.MapSummaryEndpoints();
 app.MapSettingsEndpoints();
 app.MapHub<NewsHub>("/hubs/news").RequireAuthorization();
 

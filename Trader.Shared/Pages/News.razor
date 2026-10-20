@@ -16,6 +16,8 @@
         <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" aria-label="Atualizar notícias" OnClick="ReloadAsync" />
     </div>
 
+    <DailySummaryCard />
+
     <div class="d-flex align-center flex-wrap gap-2 mb-4">
         @foreach ((SourceType? type, string label) in _sourceFilters)
         {

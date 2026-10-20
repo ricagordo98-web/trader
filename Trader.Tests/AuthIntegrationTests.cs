@@ -1,6 +1,7 @@
 using Trader.Infrastructure.Alerts;
 using Trader.Infrastructure.Backup;
 using Trader.Infrastructure.Calendar;
+using Trader.Infrastructure.Summary;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -31,7 +32,7 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
             foreach (ServiceDescriptor descriptor in services
                 .Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType is { } type
-                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker)))
+                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker) || type == typeof(SummaryWorker)))
                 .ToList())
             {
                 services.Remove(descriptor);

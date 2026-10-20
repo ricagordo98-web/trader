@@ -1,0 +1,86 @@
+@inject TraderApiClient Api
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4 daily-summary">
+    <div class="d-flex align-center flex-wrap gap-2">
+        <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small" />
+        <MudText Typo="Typo.subtitle1">Resumo do dia</MudText>
+        @if (_summary is not null)
+        {
+            <MudText Typo="Typo.caption" Class="symbol-name">@_summary.GeneratedAt.ToLocalTime().ToString("dd/MM HH:mm") · @_summary.Source</MudText>
+        }
+        <MudSpacer />
+        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="_busy" OnClick="GenerateAsync" StartIcon="@Icons.Material.Filled.Refresh">@(_summary is null ? "Gerar" : "Atualizar")</MudButton>
+        @if (_summary is not null)
+        {
+            <MudIconButton Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Size="Size.Small" aria-label="@(_expanded ? "Recolher resumo" : "Expandir resumo")" OnClick="@(() => _expanded = !_expanded)" />
+        }
+    </div>
+
+    @if (_busy)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mt-2" />
+    }
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_error</MudAlert>
+    }
+    else if (_summary is null && !_busy)
+    {
+        <MudText Typo="Typo.body2" Class="symbol-name mt-1">Ainda não há resumo. É gerado automaticamente todas as manhãs; podes pedir um agora.</MudText>
+    }
+    else if (_summary is not null)
+    {
+        <MudText Typo="Typo.body1" Class="mt-2">@(_summary.Narrative ?? _summary.Headline)</MudText>
+
+        <MudCollapse Expanded="_expanded">
+            @foreach (SummarySection section in _summary.Sections)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">@section.Title</MudText>
+                @foreach (string line in section.Lines)
+                {
+                    <MudText Typo="Typo.body2" Class="symbol-name">• @line</MudText>
+                }
+            }
+        </MudCollapse>
+    }
+</MudPaper>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private DailySummary? _summary;
+    private string? _error;
+    private bool _busy;
+    private bool _expanded;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _summary = await Api.GetDailySummaryAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+        }
+    }
+
+    private async Task GenerateAsync()
+    {
+        _busy = true;
+        _error = null;
+
+        try
+        {
+            _summary = await Api.GenerateDailySummaryAsync(_cts.Token);
+            _expanded = true;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível gerar o resumo. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+}
