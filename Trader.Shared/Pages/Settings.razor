@@ -257,6 +257,39 @@
             </MudPaper>
         </MudTabPanel>
 
+        <MudTabPanel Text="Sistema">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-1">Backups da base de dados</MudText>
+                <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                    O servidor guarda uma cópia por dia (as últimas 14) na pasta backups, ao lado da base de dados. Para restaurar, para o servidor e substitui o trader.db por uma destas cópias.
+                </MudText>
+                @if (_backupError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_backupError</MudAlert>
+                }
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="CreateBackupAsync" Class="mb-3">Fazer backup agora</MudButton>
+                @if (_backups.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Class="symbol-name">Ainda não há backups.</MudText>
+                }
+                else
+                {
+                    <MudSimpleTable Dense="true" Elevation="0">
+                        <tbody>
+                            @foreach (BackupInfo backup in _backups)
+                            {
+                                <tr>
+                                    <td>@backup.Name</td>
+                                    <td>@backup.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                    <td style="text-align:right">@((backup.SizeBytes / 1024.0 / 1024.0).ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))) MB</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                }
+            </MudPaper>
+        </MudTabPanel>
+
         <MudTabPanel Text="Scoring">
             @if (_scoring is not null)
             {
@@ -314,6 +347,8 @@
     private double _alertPrice;
     private string _alertNote = string.Empty;
     private string? _alertError;
+    private IReadOnlyList<BackupInfo> _backups = [];
+    private string? _backupError;
     private string _oldPassword = string.Empty;
     private string _newPassword = string.Empty;
     private string _userEmail = string.Empty;
@@ -341,6 +376,7 @@
             NtfySettings ntfy = await Api.GetNtfyAsync(_cts.Token);
             _ntfyTopic = ntfy.Topic;
             _ntfyServer = ntfy.Server;
+            _backups = await Api.GetBackupsAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
             _alertSymbol = _watchlist.FirstOrDefault()?.Symbol;
         }
@@ -348,6 +384,20 @@
         {
             Snackbar.Add("Não foi possível carregar as configurações do servidor.", Severity.Error);
         }
+    }
+
+    private async Task CreateBackupAsync()
+    {
+        _busy = true;
+        _backupError = await Api.CreateBackupAsync(_cts.Token);
+
+        if (_backupError is null)
+        {
+            _backups = await Api.GetBackupsAsync(_cts.Token);
+            Snackbar.Add("Backup criado.", Severity.Success);
+        }
+
+        _busy = false;
     }
 
     private async Task AddPriceAlertAsync()

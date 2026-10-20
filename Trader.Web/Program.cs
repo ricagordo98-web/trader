@@ -1,9 +1,11 @@
 using Microsoft.AspNetCore.Authentication.BearerToken;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Identity;
+using Microsoft.Data.Sqlite;
 using Microsoft.EntityFrameworkCore;
 using Trader.Core.Abstractions;
 using Trader.Infrastructure;
+using Trader.Infrastructure.Backup;
 using Trader.Infrastructure.Persistence;
 using Trader.Shared.Extensions;
 using Trader.Shared.Services;
@@ -11,7 +13,19 @@ using Trader.Web.Components;
 using Trader.Web.Endpoints;
 using Trader.Web.Hubs;
 
-var builder = WebApplication.CreateBuilder(args);
+var builder = WebApplication.CreateBuilder(new WebApplicationOptions
+{
+    Args = args,
+    ContentRootPath = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") is null or "Production" ? AppContext.BaseDirectory : null
+});
+
+builder.Host.UseWindowsService(options => options.ServiceName = "TraderServer");
+
+string contentRoot = builder.Environment.ContentRootPath;
+SqliteConnectionStringBuilder connectionString = new(builder.Configuration.GetConnectionString("Trader"));
+connectionString.DataSource = Path.GetFullPath(connectionString.DataSource, contentRoot);
+builder.Configuration["ConnectionStrings:Trader"] = connectionString.ToString();
+builder.Services.PostConfigure<BackupOptions>(options => options.Directory = Path.GetFullPath(options.Directory, contentRoot));
 
 builder.Services.AddTraderShared();
 builder.Services.AddTraderInfrastructure(builder.Configuration, Path.Combine(builder.Environment.ContentRootPath, "models", "finbert"));
@@ -80,6 +94,7 @@ app.MapSuggestionEndpoints();
 app.MapBacktestEndpoints();
 app.MapJournalEndpoints();
 app.MapAlertEndpoints();
+app.MapSystemEndpoints();
 app.MapSettingsEndpoints();
 app.MapHub<NewsHub>("/hubs/news").RequireAuthorization();
 

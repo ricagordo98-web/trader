@@ -1,4 +1,5 @@
 using Trader.Infrastructure.Alerts;
+using Trader.Infrastructure.Backup;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
@@ -18,15 +19,18 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
 {
     private readonly string _databasePath = Path.Combine(Path.GetTempPath(), $"trader-test-{Guid.NewGuid():N}.db");
 
+    public string BackupDirectory { get; } = Path.Combine(Path.GetTempPath(), $"trader-backups-{Guid.NewGuid():N}");
+
     protected override void ConfigureWebHost(IWebHostBuilder builder)
     {
         builder.UseSetting("ConnectionStrings:Trader", $"Data Source={_databasePath}");
+        builder.UseSetting("Backup:Directory", BackupDirectory);
         builder.ConfigureServices(services =>
         {
             foreach (ServiceDescriptor descriptor in services
                 .Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType is { } type
-                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker)))
+                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker)))
                 .ToList())
             {
                 services.Remove(descriptor);
@@ -38,6 +42,14 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
     {
         base.Dispose(disposing);
         SqliteConnection.ClearAllPools();
+
+        try
+        {
+            Directory.Delete(BackupDirectory, true);
+        }
+        catch (IOException)
+        {
+        }
 
         foreach (string suffix in new[] { string.Empty, "-wal", "-shm" })
         {

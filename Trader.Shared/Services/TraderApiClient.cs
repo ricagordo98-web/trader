@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
 using Trader.Core.Journal;
+using Trader.Core.Maintenance;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
 
@@ -31,6 +32,15 @@ public sealed class TraderApiClient(HttpClient httpClient)
     {
         using HttpResponseMessage response = await httpClient.DeleteAsync($"api/alerts/price/{id}", cancellationToken);
         return response.IsSuccessStatusCode;
+    }
+
+    public async Task<IReadOnlyList<BackupInfo>> GetBackupsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<BackupInfo>>("api/system/backups", cancellationToken) ?? [];
+
+    public async Task<string?> CreateBackupAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync("api/system/backups", null, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
     }
 
     public async Task<NtfySettings> GetNtfyAsync(CancellationToken cancellationToken = default) =>

@@ -1,4 +1,5 @@
 using Trader.Infrastructure.Alerts;
+using Trader.Infrastructure.Backup;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -48,6 +49,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IScoringSettings, ScoringSettings>();
         services.AddScoped<IBacktestService, BacktestService>();
         services.AddScoped<IJournalService, JournalService>();
+        services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
+        services.AddScoped<IBackupService, BackupService>();
+        services.AddHostedService<BackupWorker>();
         services.AddScoped<IAlertService, AlertService>();
         services.AddHttpClient<IAlertPublisher, NtfyPublisher>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<IInstrumentService, InstrumentService>();
