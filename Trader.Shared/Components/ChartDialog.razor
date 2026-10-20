@@ -4,6 +4,7 @@
 @inject AuthSession Session
 @inject ThemeState Theme
 @inject ISnackbar Snackbar
+@inject IDialogService DialogService
 
 <MudDialog ContentClass="chart-dialog-content">
     <TitleContent>
@@ -25,6 +26,33 @@
                     @foreach (IndicatorOption indicator in Indicators)
                     {
                         <MudMenuItem OnClick="@(() => ToggleIndicatorAsync(indicator))">@(_activeIndicators.Contains(indicator.Name) ? "✓ " : "    ")@indicator.Label</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudMenu Label="Comparar" StartIcon="@Icons.Material.Filled.CompareArrows" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    @if (_compareSymbol is not null)
+                    {
+                        <MudMenuItem OnClick="ClearCompareAsync">✕ Remover @_compareSymbol</MudMenuItem>
+                        <MudDivider />
+                    }
+                    @foreach (InstrumentQuote option in _compareOptions)
+                    {
+                        <MudMenuItem OnClick="@(() => SelectCompareAsync(option))">@(option.Symbol == _compareSymbol ? "✓ " : "    ")@option.Symbol · @option.Name</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudMenu Label="Modelos" StartIcon="@Icons.Material.Filled.Dashboard" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    <MudMenuItem OnClick="SaveTemplateAsync">Guardar indicadores atuais…</MudMenuItem>
+                    @if (_templates.Count > 0)
+                    {
+                        <MudDivider />
+                        @foreach (ChartTemplate template in _templates)
+                        {
+                            <MudMenuItem OnClick="@(() => ApplyTemplateAsync(template))">@template.Name</MudMenuItem>
+                        }
+                        <MudDivider />
+                        @foreach (ChartTemplate template in _templates)
+                        {
+                            <MudMenuItem OnClick="@(() => DeleteTemplateAsync(template))">✕ Apagar «@template.Name»</MudMenuItem>
+                        }
                     }
                 </MudMenu>
                 @foreach (ChartLevel level in _levels)
@@ -119,7 +147,15 @@
         new("priceChannelLine", "Canal de preço", Icons.Material.Filled.Reorder),
         new("fibonacciLine", "Retração de Fibonacci", Icons.Material.Filled.FormatLineSpacing),
         new("rectangle", "Retângulo", Icons.Material.Filled.CropSquare),
-        new("priceLine", "Linha de preço", Icons.Material.Filled.AttachMoney)
+        new("priceLine", "Linha de preço", Icons.Material.Filled.AttachMoney),
+        new("horizontalRayLine", "Raio horizontal", Icons.Material.Filled.ArrowForward),
+        new("arrow", "Seta", Icons.Material.Filled.NorthEast),
+        new("circle", "Círculo", Icons.Material.Filled.RadioButtonUnchecked),
+        new("triangle", "Triângulo", Icons.Material.Filled.ChangeHistory),
+        new("fibonacciExtension", "Extensão de Fibonacci", Icons.Material.Filled.Moving),
+        new("brush", "Pincel", Icons.Material.Filled.Brush),
+        new("simpleAnnotation", "Nota de texto", Icons.Material.Filled.TextFields),
+        new("simpleTag", "Etiqueta de preço", Icons.Material.Filled.Label)
     ];
 
     private readonly HashSet<string> _activeIndicators = ["VOL"];
@@ -131,6 +167,9 @@
     private string _drawingsJson = "[]";
     private string? _error;
     private string? _liveProblem;
+    private IReadOnlyList<InstrumentQuote> _compareOptions = [];
+    private IReadOnlyList<ChartTemplate> _templates = [];
+    private string? _compareSymbol;
     private HubConnection? _hub;
     private bool _streaming;
     private bool _ready;
@@ -157,6 +196,8 @@
             _drawingsJson = await Api.GetDrawingsAsync(Quote.Symbol, _cts.Token);
             _candles = await Api.GetCandlesAsync(Quote.Symbol, _timeframe.Interval, _timeframe.Range, _cts.Token);
             _levels = await LoadLevelsAsync();
+            _compareOptions = (await Api.GetInstrumentsAsync(_cts.Token)).Where(q => q.Symbol != Quote.Symbol).ToList();
+            _templates = await Api.GetChartTemplatesAsync(_cts.Token);
             _ready = true;
         }
         catch (HttpRequestException)
@@ -197,10 +238,93 @@
             _timeframe = timeframe;
             _candles = candles;
             await SwitchSubscriptionAsync(previous, timeframe);
+            await ReloadCompareAsync();
         }
         catch (HttpRequestException)
         {
             Snackbar.Add("Não foi possível carregar este intervalo.", Severity.Error);
+        }
+    }
+
+    private async Task SelectCompareAsync(InstrumentQuote option)
+    {
+        _compareSymbol = option.Symbol;
+        await ReloadCompareAsync();
+    }
+
+    private async Task ReloadCompareAsync()
+    {
+        if (_compareSymbol is null || _chart is null)
+        {
+            return;
+        }
+
+        try
+        {
+            IReadOnlyList<Candle> candles = await Api.GetCandlesAsync(_compareSymbol, _timeframe.Interval, _timeframe.Range, _cts.Token);
+            await _chart.SetCompareAsync(_compareSymbol, candles);
+        }
+        catch (HttpRequestException)
+        {
+            Snackbar.Add("Não foi possível carregar o ativo a comparar.", Severity.Warning);
+        }
+    }
+
+    private async Task ClearCompareAsync()
+    {
+        _compareSymbol = null;
+
+        if (_chart is not null)
+        {
+            await _chart.ClearCompareAsync();
+        }
+    }
+
+    private async Task SaveTemplateAsync()
+    {
+        IDialogReference dialog = await DialogService.ShowAsync<TextPromptDialog>(
+            "Guardar modelo",
+            new DialogParameters<TextPromptDialog> { { d => d.Title, "Guardar modelo de indicadores" }, { d => d.Label, "Nome do modelo" } });
+        DialogResult? result = await dialog.Result;
+
+        if (result is not { Canceled: false, Data: string name })
+        {
+            return;
+        }
+
+        List<ChartTemplate> updated = _templates
+            .Where(t => !string.Equals(t.Name, name, StringComparison.OrdinalIgnoreCase))
+            .Append(new ChartTemplate(name, _activeIndicators.OrderBy(i => i).ToList()))
+            .ToList();
+
+        await PersistTemplatesAsync(updated, $"Modelo «{name}» guardado.");
+    }
+
+    private async Task DeleteTemplateAsync(ChartTemplate template) =>
+        await PersistTemplatesAsync(_templates.Where(t => t.Name != template.Name).ToList(), $"Modelo «{template.Name}» apagado.");
+
+    private async Task PersistTemplatesAsync(List<ChartTemplate> templates, string successMessage)
+    {
+        string? error = await Api.SaveChartTemplatesAsync(templates, _cts.Token);
+
+        if (error is not null)
+        {
+            Snackbar.Add(error, Severity.Error);
+            return;
+        }
+
+        _templates = templates;
+        Snackbar.Add(successMessage, Severity.Success);
+    }
+
+    private async Task ApplyTemplateAsync(ChartTemplate template)
+    {
+        foreach (IndicatorOption option in Indicators)
+        {
+            if (template.Indicators.Contains(option.Name) != _activeIndicators.Contains(option.Name))
+            {
+                await ToggleIndicatorAsync(option);
+            }
         }
     }
 

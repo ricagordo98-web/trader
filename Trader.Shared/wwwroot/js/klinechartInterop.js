@@ -13,6 +13,141 @@ const periods = {
 };
 
 let rectangleRegistered = false;
+let extrasRegistered = false;
+let compareRegistered = false;
+
+const baseOverlay = {
+    needDefaultPointFigure: true,
+    needDefaultXAxisFigure: true,
+    needDefaultYAxisFigure: true
+};
+
+function registerExtras() {
+    if (extrasRegistered) {
+        return;
+    }
+
+    window.klinecharts.registerOverlay({
+        ...baseOverlay,
+        name: 'arrow',
+        totalStep: 3,
+        createPointFigures: ({ coordinates }) => {
+            if (coordinates.length < 2) {
+                return [];
+            }
+
+            const [a, b] = coordinates;
+            const angle = Math.atan2(b.y - a.y, b.x - a.x);
+            const head = 12;
+            const left = { x: b.x - head * Math.cos(angle - 0.45), y: b.y - head * Math.sin(angle - 0.45) };
+            const right = { x: b.x - head * Math.cos(angle + 0.45), y: b.y - head * Math.sin(angle + 0.45) };
+
+            return [
+                { type: 'line', attrs: { coordinates: [a, b] } },
+                { type: 'line', attrs: { coordinates: [left, b, right] } }
+            ];
+        }
+    });
+
+    window.klinecharts.registerOverlay({
+        ...baseOverlay,
+        name: 'circle',
+        totalStep: 3,
+        createPointFigures: ({ coordinates }) => {
+            if (coordinates.length < 2) {
+                return [];
+            }
+
+            const [center, edge] = coordinates;
+            return {
+                type: 'circle',
+                attrs: { x: center.x, y: center.y, r: Math.hypot(edge.x - center.x, edge.y - center.y) },
+                styles: { style: 'stroke_fill', color: 'rgba(76, 141, 255, 0.12)', borderColor: '#4C8DFF', borderSize: 1 }
+            };
+        }
+    });
+
+    window.klinecharts.registerOverlay({
+        ...baseOverlay,
+        name: 'triangle',
+        totalStep: 4,
+        createPointFigures: ({ coordinates }) => coordinates.length < 2 ? [] : {
+            type: 'polygon',
+            attrs: { coordinates },
+            styles: { style: 'stroke_fill', color: 'rgba(76, 141, 255, 0.12)', borderColor: '#4C8DFF', borderSize: 1 }
+        }
+    });
+
+    window.klinecharts.registerOverlay({
+        ...baseOverlay,
+        name: 'fibonacciExtension',
+        totalStep: 4,
+        createPointFigures: ({ overlay, coordinates, bounding }) => {
+            if (coordinates.length < 3) {
+                return [{ type: 'line', attrs: { coordinates } }];
+            }
+
+            const [a, b, c] = coordinates;
+            const [pa, pb, pc] = overlay.points;
+            const ratios = [0, 0.618, 1, 1.618, 2.618];
+            const figures = [{ type: 'line', attrs: { coordinates: [a, b, c] }, styles: { style: 'dashed' } }];
+
+            for (const ratio of ratios) {
+                const y = c.y + (b.y - a.y) * ratio;
+                const price = pc.value + (pb.value - pa.value) * ratio;
+                figures.push({ type: 'line', attrs: { coordinates: [{ x: c.x, y }, { x: bounding.width, y }] } });
+                figures.push({
+                    type: 'text',
+                    attrs: { x: c.x, y: y - 2, text: ratio + ' (' + price.toFixed(2) + ')', baseline: 'bottom' },
+                    ignoreEvent: true
+                });
+            }
+
+            return figures;
+        }
+    });
+
+    extrasRegistered = true;
+}
+
+function registerCompare() {
+    if (compareRegistered) {
+        return;
+    }
+
+    window.klinecharts.registerIndicator({
+        name: 'COMPARE',
+        shortName: 'COMPARE',
+        series: 'price',
+        precision: 2,
+        figures: [{ key: 'value', title: '', type: 'line', styles: () => ({ color: '#F59E0B', size: 2 }) }],
+        calc: (dataList, indicator) => {
+            const values = indicator.extendData?.values;
+            if (!values || dataList.length === 0) {
+                return dataList.map(() => ({}));
+            }
+
+            let mainBase = null;
+            let otherBase = null;
+
+            for (const bar of dataList) {
+                const value = values[bar.timestamp];
+                if (value !== undefined) {
+                    mainBase = bar.close;
+                    otherBase = value;
+                    break;
+                }
+            }
+
+            return dataList.map(bar => {
+                const value = values[bar.timestamp];
+                return value === undefined || otherBase === null ? {} : { value: mainBase * value / otherBase };
+            });
+        }
+    });
+
+    compareRegistered = true;
+}
 
 function registerRectangle() {
     if (rectangleRegistered) {
@@ -74,13 +209,14 @@ function notifyDrawingsChanged(state) {
 function serializeDrawings(state) {
     return state.chart.getOverlays()
         .filter(o => state.drawingIds.has(o.id))
-        .map(o => ({ name: o.name, points: o.points.map(p => ({ timestamp: p.timestamp, value: p.value })) }));
+        .map(o => ({ name: o.name, extendData: o.extendData ?? null, points: o.points.map(p => ({ timestamp: p.timestamp, value: p.value })) }));
 }
 
 function createDrawing(state, definition) {
     const id = state.chart.createOverlay({
         name: definition.name,
         points: definition.points,
+        extendData: definition.extendData ?? undefined,
         onDrawEnd: () => notifyDrawingsChanged(state),
         onPressedMoveEnd: () => notifyDrawingsChanged(state),
         onSelected: ({ overlay }) => { state.selectedId = overlay.id; },
@@ -98,6 +234,8 @@ function createDrawing(state, definition) {
 
 export function create(id, container, dotnet, dark, showVolume) {
     registerRectangle();
+    registerExtras();
+    registerCompare();
 
     const chart = window.klinecharts.init(container, { timezone: 'Europe/Lisbon' });
     const state = {
@@ -190,8 +328,19 @@ export function toggleIndicator(id, name, mainPane) {
 
 export function startDrawing(id, name) {
     const state = charts.get(id);
+    let extendData;
+
+    if (name === 'simpleAnnotation' || name === 'simpleTag') {
+        extendData = window.prompt('Texto da nota', 'Nota');
+
+        if (extendData === null || extendData === '') {
+            return;
+        }
+    }
+
     const overlayId = state.chart.createOverlay({
         name,
+        extendData,
         onDrawEnd: () => notifyDrawingsChanged(state),
         onPressedMoveEnd: () => notifyDrawingsChanged(state),
         onSelected: ({ overlay }) => { state.selectedId = overlay.id; },
@@ -280,5 +429,27 @@ export function setLevels(id, levels) {
         if (overlayId) {
             state.levelIds.push(overlayId);
         }
+    }
+}
+
+export function setCompare(id, label, candles) {
+    const state = charts.get(id);
+    clearCompare(id);
+
+    const values = {};
+    for (const c of candles) {
+        values[typeof c.time === 'number' ? c.time : Date.parse(c.time)] = c.close;
+    }
+
+    state.chart.createIndicator({ name: 'COMPARE', shortName: label, extendData: { values }, paneId: 'candle_pane' }, true, { id: 'candle_pane' });
+    state.compareActive = true;
+}
+
+export function clearCompare(id) {
+    const state = charts.get(id);
+
+    if (state?.compareActive) {
+        state.chart.removeIndicator({ paneId: 'candle_pane', name: 'COMPARE' });
+        state.compareActive = false;
     }
 }

@@ -2,6 +2,7 @@ using System.Net.Http.Json;
 using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
 using Trader.Core.Calendar;
+using Trader.Core.Charts;
 using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
@@ -33,6 +34,15 @@ public sealed class TraderApiClient(HttpClient httpClient)
     {
         using HttpResponseMessage response = await httpClient.DeleteAsync($"api/alerts/price/{id}", cancellationToken);
         return response.IsSuccessStatusCode;
+    }
+
+    public async Task<IReadOnlyList<ChartTemplate>> GetChartTemplatesAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<ChartTemplate>>("api/chart/templates", cancellationToken) ?? [];
+
+    public async Task<string?> SaveChartTemplatesAsync(IReadOnlyList<ChartTemplate> templates, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/chart/templates", templates, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
     }
 
     public async Task<CalendarFeed> GetCalendarAsync(int days, CancellationToken cancellationToken = default) =>

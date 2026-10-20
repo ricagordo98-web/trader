@@ -94,6 +94,22 @@
         }
     }
 
+    public async Task SetCompareAsync(string label, IReadOnlyList<Candle> candles)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setCompare", _id, label, candles);
+        }
+    }
+
+    public async Task ClearCompareAsync()
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("clearCompare", _id);
+        }
+    }
+
     public async Task PushBarAsync(Candle candle)
     {
         if (_module is not null)

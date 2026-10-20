@@ -1,0 +1,34 @@
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">@Title</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="_value" Label="@Label" MaxLength="40" Immediate="true" Variant="Variant.Outlined" Margin="Margin.Dense" AutoFocus="true" OnKeyDown="OnKeyDown" />
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="@string.IsNullOrWhiteSpace(_value)" OnClick="Submit">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private string _value = string.Empty;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string Title { get; set; } = string.Empty;
+
+    [Parameter] public string Label { get; set; } = "Nome";
+
+    private void OnKeyDown(KeyboardEventArgs args)
+    {
+        if (args.Key == "Enter" && !string.IsNullOrWhiteSpace(_value))
+        {
+            Submit();
+        }
+    }
+
+    private void Submit() => MudDialog.Close(DialogResult.Ok(_value.Trim()));
+
+    private void Cancel() => MudDialog.Cancel();
+}
