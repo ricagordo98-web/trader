@@ -115,6 +115,7 @@
         AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Icons.Material.Filled.CheckCircle,
         AlertKind.StopLoss or AlertKind.TradeStopLoss => Icons.Material.Filled.Cancel,
         AlertKind.PriceTarget => Icons.Material.Filled.NotificationsActive,
+        AlertKind.Calendar => Icons.Material.Filled.Event,
         AlertKind.Expired => Icons.Material.Filled.Schedule,
         _ => Icons.Material.Filled.AutoGraph
     };
@@ -123,7 +124,7 @@
     {
         AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Color.Success,
         AlertKind.StopLoss or AlertKind.TradeStopLoss => Color.Error,
-        AlertKind.PriceTarget => Color.Warning,
+        AlertKind.PriceTarget or AlertKind.Calendar => Color.Warning,
         AlertKind.Expired => Color.Default,
         _ => Color.Primary
     };
@@ -132,7 +133,7 @@
     {
         AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Severity.Success,
         AlertKind.StopLoss or AlertKind.TradeStopLoss => Severity.Error,
-        AlertKind.PriceTarget => Severity.Warning,
+        AlertKind.PriceTarget or AlertKind.Calendar => Severity.Warning,
         AlertKind.Expired => Severity.Normal,
         _ => Severity.Info
     };

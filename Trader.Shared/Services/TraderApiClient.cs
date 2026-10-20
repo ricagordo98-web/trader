@@ -1,6 +1,7 @@
 using System.Net.Http.Json;
 using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
+using Trader.Core.Calendar;
 using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
@@ -33,6 +34,9 @@ public sealed class TraderApiClient(HttpClient httpClient)
         using HttpResponseMessage response = await httpClient.DeleteAsync($"api/alerts/price/{id}", cancellationToken);
         return response.IsSuccessStatusCode;
     }
+
+    public async Task<CalendarFeed> GetCalendarAsync(int days, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<CalendarFeed>($"api/calendar?days={days}", cancellationToken) ?? new CalendarFeed([], []);
 
     public async Task<IReadOnlyList<BackupInfo>> GetBackupsAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<BackupInfo>>("api/system/backups", cancellationToken) ?? [];

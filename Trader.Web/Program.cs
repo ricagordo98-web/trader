@@ -19,6 +19,11 @@ var builder = WebApplication.CreateBuilder(new WebApplicationOptions
     ContentRootPath = Environment.GetEnvironmentVariable("ASPNETCORE_ENVIRONMENT") is null or "Production" ? AppContext.BaseDirectory : null
 });
 
+if (string.IsNullOrEmpty(builder.Configuration["urls"]) && !builder.Configuration.GetSection("Kestrel:Endpoints").Exists())
+{
+    builder.WebHost.UseUrls("http://localhost:5256");
+}
+
 builder.Host.UseWindowsService(options => options.ServiceName = "TraderServer");
 
 string contentRoot = builder.Environment.ContentRootPath;
@@ -95,6 +100,7 @@ app.MapBacktestEndpoints();
 app.MapJournalEndpoints();
 app.MapAlertEndpoints();
 app.MapSystemEndpoints();
+app.MapCalendarEndpoints();
 app.MapSettingsEndpoints();
 app.MapHub<NewsHub>("/hubs/news").RequireAuthorization();
 

@@ -1,0 +1,115 @@
+@page "/calendar"
+@inject TraderApiClient Api
+
+<PageTitle>Calendário · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-6 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-2">
+        <MudText Typo="Typo.h4">Calendário</MudText>
+        <MudSpacer />
+        <MudToggleGroup T="string" Value="_filter" ValueChanged="SetFilter" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="@("all")" Text="Tudo" />
+            <MudToggleItem Value="@("earnings")" Text="Resultados" />
+            <MudToggleItem Value="@("macro")" Text="Macro" />
+        </MudToggleGroup>
+        <MudSelect T="int" Value="_days" ValueChanged="SetDaysAsync" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px" Label="Período">
+            <MudSelectItem T="int" Value="7">7 dias</MudSelectItem>
+            <MudSelectItem T="int" Value="14">14 dias</MudSelectItem>
+            <MudSelectItem T="int" Value="30">30 dias</MudSelectItem>
+        </MudSelect>
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">
+        Resultados das empresas da tua watchlist e datas importantes de inflação, emprego e juros. Evita abrir posições mesmo antes de um evento destes: o preço costuma dar saltos.
+    </MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    @foreach (string note in _notes)
+    {
+        <MudAlert Severity="Severity.Info" Dense="true" Class="mb-2">@note</MudAlert>
+    }
+
+    @if (_loading)
+    {
+        <MudSkeleton Height="60px" Class="mb-2" />
+        <MudSkeleton Height="60px" Class="mb-2" />
+    }
+    else if (Visible.Count == 0)
+    {
+        <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+            <MudText Color="Color.Secondary">Sem eventos neste período.</MudText>
+        </MudPaper>
+    }
+    else
+    {
+        @foreach (IGrouping<DateOnly, CalendarEvent> day in Visible.GroupBy(e => e.Date))
+        {
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2" Style="text-transform:capitalize">@CalendarAlerts.DayLabel(day.Key, _today)</MudText>
+            <MudPaper Elevation="0" Outlined="true">
+                @foreach (CalendarEvent item in day)
+                {
+                    <div class="d-flex align-center gap-3 pa-3 calendar-row">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(item.Kind == CalendarKind.Earnings ? Color.Info : Color.Warning)" Class="ma-0">
+                            @(item.Kind == CalendarKind.Earnings ? "Resultados" : "Macro")
+                        </MudChip>
+                        <MudText Typo="Typo.body1">@item.Title</MudText>
+                        <MudSpacer />
+                        <MudText Typo="Typo.caption" Class="symbol-name">@item.Detail</MudText>
+                    </div>
+                }
+            </MudPaper>
+        }
+    }
+</MudContainer>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<CalendarEvent> _events = [];
+    private IReadOnlyList<string> _notes = [];
+    private DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+    private string _filter = "all";
+    private int _days = 14;
+    private string? _error;
+    private bool _loading = true;
+
+    private IReadOnlyList<CalendarEvent> Visible => _filter switch
+    {
+        "earnings" => _events.Where(e => e.Kind == CalendarKind.Earnings).ToList(),
+        "macro" => _events.Where(e => e.Kind == CalendarKind.Macro).ToList(),
+        _ => _events
+    };
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private void SetFilter(string filter) => _filter = filter;
+
+    private Task SetDaysAsync(int days)
+    {
+        _days = days;
+        return LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            CalendarFeed feed = await Api.GetCalendarAsync(_days, _cts.Token);
+            _events = feed.Events;
+            _notes = feed.Notes;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter o calendário. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+}

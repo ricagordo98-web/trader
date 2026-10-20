@@ -8,7 +8,8 @@ public enum AlertKind
     Expired,
     PriceTarget,
     TradeStopLoss,
-    TradeTakeProfit
+    TradeTakeProfit,
+    Calendar
 }
 
 public sealed class Alert

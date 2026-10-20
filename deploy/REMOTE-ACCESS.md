@@ -37,7 +37,6 @@ O Tailscale cria uma rede privada e cifrada entre o PC e o telemóvel. Não abre
 
    ```json
    {
-     "Urls": "http://localhost:5256",
      "Kestrel": {
        "Endpoints": {
          "Local": { "Url": "http://localhost:5256" },

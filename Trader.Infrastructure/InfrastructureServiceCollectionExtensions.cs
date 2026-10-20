@@ -1,5 +1,6 @@
 using Trader.Infrastructure.Alerts;
 using Trader.Infrastructure.Backup;
+using Trader.Infrastructure.Calendar;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Configuration;
@@ -52,6 +53,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
         services.AddScoped<IBackupService, BackupService>();
         services.AddHostedService<BackupWorker>();
+        services.AddHttpClient<ICalendarService, CalendarService>(client => client.Timeout = TimeSpan.FromSeconds(20));
+        services.AddHostedService<CalendarAlertWorker>();
         services.AddScoped<IAlertService, AlertService>();
         services.AddHttpClient<IAlertPublisher, NtfyPublisher>(client => client.Timeout = TimeSpan.FromSeconds(10));
         services.AddScoped<IInstrumentService, InstrumentService>();

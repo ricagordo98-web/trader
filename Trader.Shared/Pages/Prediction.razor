@@ -54,6 +54,12 @@
                                     <div class="d-flex align-center gap-2 flex-wrap">
                                         <MudText Typo="Typo.h6">@suggestion.Symbol</MudText>
                                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(buy ? Color.Success : Color.Error)" Class="ma-0">@(buy ? "COMPRAR" : "VENDER")</MudChip>
+                                        @if (_earnings.TryGetValue(suggestion.Symbol, out DateOnly earningsDate))
+                                        {
+                                            <MudTooltip Text="Os resultados costumam provocar grandes saltos de preço. Pondera esperar.">
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Class="ma-0">@EarningsLabel(earningsDate)</MudChip>
+                                            </MudTooltip>
+                                        }
                                     </div>
                                     <MudText Typo="Typo.body2" Class="symbol-name">@suggestion.Name</MudText>
                                     <MudText Typo="Typo.caption" Class="symbol-name">
@@ -244,6 +250,7 @@
 
     private readonly CancellationTokenSource _cts = new();
     private IReadOnlyList<SuggestionDto> _open = [];
+    private Dictionary<string, DateOnly> _earnings = [];
     private IReadOnlyList<SuggestionDto> _closed = [];
     private Dictionary<string, InstrumentQuote> _quotes = [];
     private TrackRecordDto? _record;
@@ -265,6 +272,10 @@
             _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token);
             _record = await Api.GetTrackRecordAsync(_cts.Token);
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
+            _earnings = (await Api.GetCalendarAsync(7, _cts.Token)).Events
+                .Where(e => e is { Kind: CalendarKind.Earnings, Symbol: not null })
+                .GroupBy(e => e.Symbol!)
+                .ToDictionary(g => g.Key, g => g.Min(e => e.Date));
         }
         catch (HttpRequestException)
         {
@@ -331,6 +342,18 @@
 
     private static Color SignalColor(double value, TradeDirection direction) =>
         Math.Abs(value) < 0.1 ? Color.Default : (value > 0) == (direction == TradeDirection.Buy) ? Color.Success : Color.Warning;
+
+    private static string EarningsLabel(DateOnly date)
+    {
+        int days = date.DayNumber - DateOnly.FromDateTime(DateTime.UtcNow).DayNumber;
+
+        return days switch
+        {
+            <= 0 => "Resultados hoje",
+            1 => "Resultados amanhã",
+            _ => $"Resultados em {days} dias"
+        };
+    }
 
     private static string StatusLabel(SuggestionStatus status) => status switch
     {
