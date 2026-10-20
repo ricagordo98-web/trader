@@ -29,6 +29,12 @@
                 {
                     <span class="chart-legend"><span class="chart-legend-dot" style="background:@level.Color"></span>@level.Label @level.Price.ToString(PricePrecision > 3 ? "F5" : "F2", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</span>
                 }
+                @if (_ready)
+                {
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(_liveProblem is null ? Color.Success : Color.Warning)" Class="ma-0">
+                        @(_liveProblem ?? "Em direto")
+                    </MudChip>
+                }
                 <MudSpacer />
                 <MudTooltip Text="Apagar selecionado (Del)">
                     <MudIconButton Icon="@Icons.Material.Filled.Backspace" Size="Size.Small" aria-label="Apagar desenho selecionado" OnClick="RemoveSelectedAsync" />
@@ -122,6 +128,7 @@
     private Timeframe _timeframe = Timeframes[4];
     private string _drawingsJson = "[]";
     private string? _error;
+    private string? _liveProblem;
     private bool _ready;
 
     [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
@@ -263,16 +270,36 @@
                         {
                             await _chart.PushBarAsync(candle);
                         }
+
+                        SetLiveProblem(null);
                     });
                 }
-                catch (HttpRequestException)
+                catch (HttpRequestException ex)
                 {
+                    await InvokeAsync(() => SetLiveProblem(ex.StatusCode == System.Net.HttpStatusCode.NotFound
+                        ? "Servidor desatualizado: reinicia-o"
+                        : "Sem dados em direto"));
+                }
+                catch (Exception ex) when (ex is not OperationCanceledException)
+                {
+                    await InvokeAsync(() => SetLiveProblem("Erro nos dados em direto"));
                 }
             }
         }
         catch (OperationCanceledException)
         {
         }
+    }
+
+    private void SetLiveProblem(string? problem)
+    {
+        if (_liveProblem == problem)
+        {
+            return;
+        }
+
+        _liveProblem = problem;
+        StateHasChanged();
     }
 
     private void OnThemeChanged() => InvokeAsync(StateHasChanged);
