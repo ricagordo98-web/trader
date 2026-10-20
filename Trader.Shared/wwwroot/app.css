@@ -148,3 +148,10 @@ a.news-title:hover { color: var(--mud-palette-primary); }
 .chart-panel-live { width: 8px; height: 8px; border-radius: 50%; background: var(--mud-palette-gray-light); margin-right: 6px; }
 .chart-panel-live.on { background: #22C55E; box-shadow: 0 0 6px #22C55E; }
 @media (max-width: 899px) { .charts-grid { grid-template-columns: 1fr; } .chart-panel { height: 380px; } }
+
+.heatmap-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; }
+.heat-tile { display: flex; flex-direction: column; align-items: flex-start; gap: 2px; padding: 12px; border: 1px solid var(--mud-palette-lines-default); border-radius: 10px; color: var(--mud-palette-text-primary); cursor: pointer; text-align: left; font: inherit; transition: transform .12s ease, border-color .12s ease; }
+.heat-tile:hover { transform: translateY(-2px); border-color: var(--mud-palette-primary); }
+.heat-symbol { font-weight: 700; font-size: 1.05rem; }
+.heat-change { font-variant-numeric: tabular-nums; font-size: 1.15rem; font-weight: 600; }
+.heat-name { font-size: .72rem; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }

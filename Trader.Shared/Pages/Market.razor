@@ -1,0 +1,207 @@
+@page "/market"
+@using System.Globalization
+@inject TraderApiClient Api
+@inject IDialogService DialogService
+@inject ThemeState Theme
+
+<PageTitle>Mercado · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-2">
+        <MudText Typo="Typo.h4">Mercado</MudText>
+        <MudSpacer />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" aria-label="Atualizar" OnClick="LoadAsync" />
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">Visão geral da watchlist: o mapa de calor mostra a variação do dia; o filtro encontra ativos por variação, sentimento, sugestões e resultados próximos.</MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <MudTabs Elevation="0" Rounded="true" ApplyEffectsToContainer="true" PanelClass="pt-4">
+        <MudTabPanel Text="Mapa de calor">
+            @if (_loading)
+            {
+                <MudSkeleton Height="120px" />
+            }
+            else
+            {
+                @foreach (IGrouping<AssetClass, ScreenerRow> group in _rows.GroupBy(r => r.Quote.AssetClass).OrderBy(g => g.Key))
+                {
+                    <MudText Typo="Typo.subtitle1" Class="mt-2 mb-2">@ClassLabel(group.Key)</MudText>
+                    <div class="heatmap-grid">
+                        @foreach (ScreenerRow row in group.OrderByDescending(r => r.Quote.ChangePercent ?? double.MinValue))
+                        {
+                            <button type="button" class="heat-tile" style="background:@Screener.HeatColor(row.Quote.ChangePercent, Theme.IsDark)" aria-label="@($"Abrir gráfico de {row.Quote.Symbol}")" @onclick="@(() => OpenChartAsync(row.Quote))">
+                                <span class="heat-symbol">@row.Quote.Symbol</span>
+                                <span class="heat-change">@(row.Quote.ChangePercent is { } c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" : "—")</span>
+                                <span class="heat-name">@row.Quote.Name</span>
+                            </button>
+                        }
+                    </div>
+                }
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Filtro">
+            <MudGrid Spacing="2" Class="mb-3">
+                <MudItem xs="12" sm="6" md="3">
+                    <MudTextField T="string" @bind-Value="_filter.Search" Immediate="true" Placeholder="Pesquisar" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudSelect T="AssetClass?" @bind-Value="_filter.AssetClass" Label="Classe" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        @foreach (AssetClass assetClass in Enum.GetValues<AssetClass>())
+                        {
+                            <MudSelectItem T="AssetClass?" Value="@assetClass">@ClassLabel(assetClass)</MudSelectItem>
+                        }
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudSelect T="SentimentFilter" @bind-Value="_filter.Sentiment" Label="Sentimento" Variant="Variant.Outlined" Margin="Margin.Dense">
+                        <MudSelectItem Value="SentimentFilter.Any">Qualquer</MudSelectItem>
+                        <MudSelectItem Value="SentimentFilter.Positive">Positivo</MudSelectItem>
+                        <MudSelectItem Value="SentimentFilter.Neutral">Neutro</MudSelectItem>
+                        <MudSelectItem Value="SentimentFilter.Negative">Negativo</MudSelectItem>
+                    </MudSelect>
+                </MudItem>
+                <MudItem xs="6" md="2">
+                    <MudNumericField T="double" @bind-Value="_filter.MinAbsChangePercent" Label="Variação mín. (±%)" Min="0" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" />
+                </MudItem>
+                <MudItem xs="6" md="3" Class="d-flex align-center gap-3 flex-wrap">
+                    <MudCheckBox T="bool" @bind-Value="_filter.OnlyWithSuggestion" Label="Com sugestão" Color="Color.Primary" />
+                    <MudCheckBox T="bool" @bind-Value="_filter.OnlyEarningsSoon" Label="Resultados em 7 dias" Color="Color.Primary" />
+                </MudItem>
+            </MudGrid>
+
+            @{
+                IReadOnlyList<ScreenerRow> visible = Screener.Apply(_rows, _filter, _sort, _descending);
+            }
+
+            <MudText Typo="Typo.caption" Class="symbol-name mb-2">@visible.Count de @_rows.Count ativos</MudText>
+            <MudPaper Elevation="0" Outlined="true">
+                <div style="overflow-x:auto">
+                    <MudSimpleTable Dense="true" Hover="true" Elevation="0">
+                        <thead>
+                            <tr>
+                                <th><MudLink OnClick="@(() => SortBy(ScreenerSort.Symbol))">Ativo @Arrow(ScreenerSort.Symbol)</MudLink></th>
+                                <th>Classe</th>
+                                <th style="text-align:right">Preço</th>
+                                <th style="text-align:right"><MudLink OnClick="@(() => SortBy(ScreenerSort.Change))">Variação @Arrow(ScreenerSort.Change)</MudLink></th>
+                                <th style="text-align:right"><MudLink OnClick="@(() => SortBy(ScreenerSort.Sentiment))">Sentimento 24h @Arrow(ScreenerSort.Sentiment)</MudLink></th>
+                                <th style="text-align:right"><MudLink OnClick="@(() => SortBy(ScreenerSort.Articles))">Notícias @Arrow(ScreenerSort.Articles)</MudLink></th>
+                                <th><MudLink OnClick="@(() => SortBy(ScreenerSort.Confidence))">Sugestão @Arrow(ScreenerSort.Confidence)</MudLink></th>
+                                <th>Resultados</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (ScreenerRow row in visible)
+                            {
+                                <tr style="cursor:pointer" @onclick="@(() => OpenChartAsync(row.Quote))">
+                                    <td><strong>@row.Quote.Symbol</strong> <span class="symbol-name">@row.Quote.Name</span></td>
+                                    <td>@ClassLabel(row.Quote.AssetClass)</td>
+                                    <td style="text-align:right">@(row.Quote.Price?.ToString(row.Quote.AssetClass == AssetClass.Forex ? "0.00000" : "0.00", CultureInfo.InvariantCulture) ?? "—")</td>
+                                    <td style="text-align:right"><MudText Typo="Typo.body2" Color="@ChangeColor(row.Quote.ChangePercent)">@(row.Quote.ChangePercent is { } c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" : "—")</MudText></td>
+                                    <td style="text-align:right">@(row.Sentiment is { } s ? s.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) : "—")</td>
+                                    <td style="text-align:right">@row.ArticleCount</td>
+                                    <td>
+                                        @if (row.Suggestion is { } suggestion)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(suggestion.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">
+                                                @(suggestion.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER") @((suggestion.Confidence * 100).ToString("0", CultureInfo.InvariantCulture))%
+                                            </MudChip>
+                                        }
+                                    </td>
+                                    <td>@(row.EarningsDate is { } date ? date.ToString("dd/MM", CultureInfo.InvariantCulture) : string.Empty)</td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </div>
+            </MudPaper>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private readonly ScreenerFilterModel _filter = new();
+    private IReadOnlyList<ScreenerRow> _rows = [];
+    private ScreenerSort _sort = ScreenerSort.Change;
+    private bool _descending = true;
+    private bool _loading = true;
+    private string? _error;
+
+    private sealed class ScreenerFilterModel
+    {
+        public AssetClass? AssetClass { get; set; }
+        public double MinAbsChangePercent { get; set; }
+        public SentimentFilter Sentiment { get; set; }
+        public bool OnlyWithSuggestion { get; set; }
+        public bool OnlyEarningsSoon { get; set; }
+        public string? Search { get; set; }
+
+        public static implicit operator ScreenerFilter(ScreenerFilterModel model) =>
+            new(model.AssetClass, model.MinAbsChangePercent, model.Sentiment, model.OnlyWithSuggestion, model.OnlyEarningsSoon, model.Search);
+    }
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            IReadOnlyList<InstrumentQuote> quotes = await Api.GetInstrumentsAsync(_cts.Token);
+            IReadOnlyList<SentimentSummary> sentiment = await Api.GetSentimentSummaryAsync(24, _cts.Token);
+            IReadOnlyList<SuggestionDto> suggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
+            CalendarFeed calendar = await Api.GetCalendarAsync(7, _cts.Token);
+
+            Dictionary<string, DateOnly> earnings = calendar.Events
+                .Where(e => e is { Kind: CalendarKind.Earnings, Symbol: not null })
+                .GroupBy(e => e.Symbol!)
+                .ToDictionary(g => g.Key, g => g.Min(e => e.Date));
+
+            _rows = Screener.Build(quotes, sentiment, suggestions, earnings);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter os dados. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private void SortBy(ScreenerSort sort)
+    {
+        _descending = _sort == sort ? !_descending : sort != ScreenerSort.Symbol;
+        _sort = sort;
+    }
+
+    private string Arrow(ScreenerSort sort) => _sort != sort ? string.Empty : _descending ? "↓" : "↑";
+
+    private async Task OpenChartAsync(InstrumentQuote quote)
+    {
+        DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote } };
+        await DialogService.ShowAsync<ChartDialog>(quote.Symbol, parameters, new DialogOptions { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true });
+    }
+
+    private static Color ChangeColor(double? change) => change switch
+    {
+        > 0 => Color.Success,
+        < 0 => Color.Error,
+        _ => Color.Default
+    };
+
+    private static string ClassLabel(AssetClass assetClass) => assetClass switch
+    {
+        AssetClass.Stock => "Ações",
+        AssetClass.Commodity => "Mercadorias",
+        AssetClass.Etf => "ETFs",
+        _ => "Forex"
+    };
+}
