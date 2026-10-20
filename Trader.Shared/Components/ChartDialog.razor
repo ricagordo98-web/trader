@@ -76,8 +76,10 @@
     private static readonly Timeframe[] Timeframes =
     [
         new("1m", "1m", "5d", "1d"),
+        new("2m", "2m", "1mo", "1d"),
         new("5m", "5m", "1mo", "1d"),
         new("15m", "15m", "1mo", "1d"),
+        new("30m", "30m", "1mo", "5d"),
         new("1H", "60m", "6mo", "5d"),
         new("1D", "1d", "2y", "5d"),
         new("1W", "1wk", "10y", "1mo"),
@@ -153,6 +155,7 @@
         }
 
         _ = RunLiveUpdatesAsync(_cts.Token);
+        _ = RunTickUpdatesAsync(_cts.Token);
     }
 
     private async Task<IReadOnlyList<ChartLevel>> LoadLevelsAsync()
@@ -262,6 +265,37 @@
                             await _chart.PushBarAsync(candle);
                         }
                     });
+                }
+                catch (HttpRequestException)
+                {
+                }
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task RunTickUpdatesAsync(CancellationToken cancellationToken)
+    {
+        using PeriodicTimer timer = new(TimeSpan.FromSeconds(1));
+
+        try
+        {
+            while (await timer.WaitForNextTickAsync(cancellationToken))
+            {
+                Timeframe timeframe = _timeframe;
+
+                try
+                {
+                    LiveTick? tick = await Api.GetTickAsync(Quote.Symbol, cancellationToken);
+
+                    if (tick is null || _chart is null || timeframe != _timeframe)
+                    {
+                        continue;
+                    }
+
+                    await InvokeAsync(() => _chart.PushTickAsync(tick));
                 }
                 catch (HttpRequestException)
                 {

@@ -43,6 +43,16 @@ public sealed class TraderApiClient(HttpClient httpClient)
             $"api/instruments/{Uri.EscapeDataString(symbol)}/candles?interval={interval}&range={range}",
             cancellationToken) ?? [];
 
+    public async Task<LiveTick?> GetTickAsync(string symbol, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.GetAsync($"api/instruments/{Uri.EscapeDataString(symbol)}/tick", cancellationToken);
+        response.EnsureSuccessStatusCode();
+
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent
+            ? null
+            : await response.Content.ReadFromJsonAsync<LiveTick>(cancellationToken);
+    }
+
     public async Task<string> GetDrawingsAsync(string symbol, CancellationToken cancellationToken = default) =>
         await httpClient.GetStringAsync($"api/instruments/{Uri.EscapeDataString(symbol)}/drawings", cancellationToken);
 

@@ -25,13 +25,19 @@ public static class YahooChartParser
                 ? price.GetDouble()
                 : null;
 
+        DateTimeOffset? lastPriceTime = meta.ValueKind == JsonValueKind.Object
+            && meta.TryGetProperty("regularMarketTime", out JsonElement marketTime)
+            && marketTime.ValueKind == JsonValueKind.Number
+                ? DateTimeOffset.FromUnixTimeSeconds(marketTime.GetInt64())
+                : null;
+
         if (!result.TryGetProperty("timestamp", out JsonElement timestamps)
             || timestamps.ValueKind != JsonValueKind.Array
             || !result.TryGetProperty("indicators", out JsonElement indicators)
             || !indicators.TryGetProperty("quote", out JsonElement quotes)
             || quotes.GetArrayLength() == 0)
         {
-            return new ChartSeries(lastPrice, []);
+            return new ChartSeries(lastPrice, [], lastPriceTime);
         }
 
         JsonElement quote = quotes[0];
@@ -66,6 +72,6 @@ public static class YahooChartParser
                 candleVolume));
         }
 
-        return new ChartSeries(lastPrice, candles);
+        return new ChartSeries(lastPrice, candles, lastPriceTime);
     }
 }

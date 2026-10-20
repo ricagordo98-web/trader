@@ -15,6 +15,7 @@ public sealed class MarketDataService(
 {
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(60);
     private static readonly TimeSpan CandleCacheDuration = TimeSpan.FromSeconds(30);
+    private static readonly TimeSpan TickCacheDuration = TimeSpan.FromSeconds(1);
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetQuotesAsync(AssetClass? assetClass, CancellationToken cancellationToken)
     {
@@ -58,6 +59,25 @@ public sealed class MarketDataService(
         ChartSeries series = await provider.GetChartAsync(symbol, interval, range, cancellationToken);
         cache.Set(key, series.Candles, CandleCacheDuration);
         return series.Candles;
+    }
+
+    public async Task<LiveTick?> GetLiveTickAsync(string symbol, CancellationToken cancellationToken)
+    {
+        string key = $"tick:{symbol}";
+
+        if (cache.TryGetValue(key, out LiveTick? cached))
+        {
+            return cached;
+        }
+
+        ChartSeries series = await provider.GetChartAsync(symbol, "1m", "1d", cancellationToken);
+        double? price = series.LastPrice ?? series.Candles.LastOrDefault()?.Close;
+        LiveTick? tick = price is { } value
+            ? new LiveTick(symbol, value, series.LastPriceTime ?? series.Candles.LastOrDefault()?.Time ?? DateTimeOffset.UtcNow)
+            : null;
+
+        cache.Set(key, tick, TickCacheDuration);
+        return tick;
     }
 
     private async Task<InstrumentQuote> GetQuoteAsync(Instrument instrument, CancellationToken cancellationToken)

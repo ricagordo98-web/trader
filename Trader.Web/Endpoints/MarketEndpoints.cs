@@ -6,7 +6,7 @@ namespace Trader.Web.Endpoints;
 
 public static class MarketEndpoints
 {
-    private static readonly HashSet<string> AllowedIntervals = ["1m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"];
+    private static readonly HashSet<string> AllowedIntervals = ["1m", "2m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"];
     private static readonly HashSet<string> AllowedRanges = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"];
 
     public static IEndpointRouteBuilder MapMarketEndpoints(this IEndpointRouteBuilder app)
@@ -42,6 +42,18 @@ public static class MarketEndpoints
                 return Results.Problem(
                     title: "Market data provider unavailable",
                     statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        group.MapGet("/instruments/{symbol}/tick", async (string symbol, IMarketDataService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                return await service.GetLiveTickAsync(symbol, cancellationToken) is { } tick ? Results.Ok(tick) : Results.NoContent();
+            }
+            catch (HttpRequestException)
+            {
+                return Results.Problem(title: "Market data provider unavailable", statusCode: StatusCodes.Status502BadGateway);
             }
         });
 

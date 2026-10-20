@@ -94,6 +94,14 @@
         }
     }
 
+    public async Task PushTickAsync(LiveTick tick)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("pushTick", _id, Interval, tick.Price, tick.Time.ToUnixTimeMilliseconds());
+        }
+    }
+
     public async Task PushBarAsync(Candle candle)
     {
         if (_module is not null)
