@@ -172,6 +172,47 @@ public class BacktestRunnerTests
     }
 
     [Fact]
+    public void Run_WithSentiment_OnlyTestsDaysCoveredByArticles()
+    {
+        List<SymbolHistory> histories = Histories(900);
+        DateTimeOffset firstArticle = histories[0].Candles[500].Time;
+        Dictionary<string, IReadOnlyList<ArticleSentimentRow>> rows = histories.ToDictionary(
+            h => h.Symbol,
+            h => (IReadOnlyList<ArticleSentimentRow>)Enumerable.Range(0, 300)
+                .Select(d => new ArticleSentimentRow("t", $"https://x/{d}", "src", SourceType.News, d % 2 == 0 ? 0.8 : 0.6, firstArticle.AddDays(d)))
+                .ToList());
+
+        BacktestResult result = BacktestRunner.Run(histories, new ScoringOptions(), new BacktestRequest { UseSentiment = true }, DateTimeOffset.UtcNow, rows);
+
+        result.UsedSentiment.Should().BeTrue();
+        result.From.Should().BeOnOrAfter(firstArticle.AddDays(3));
+        result.Notes[0].Should().Contain("reconstruído");
+    }
+
+    [Fact]
+    public void Run_WithSentimentButNoArticles_TestsNothing()
+    {
+        BacktestResult result = BacktestRunner.Run(
+            Histories(900),
+            new ScoringOptions(),
+            new BacktestRequest { UseSentiment = true },
+            DateTimeOffset.UtcNow,
+            new Dictionary<string, IReadOnlyList<ArticleSentimentRow>>());
+
+        result.SymbolsTested.Should().Be(0);
+        result.Strategy.Trades.Should().Be(0);
+    }
+
+    [Fact]
+    public void Run_WithoutSentiment_KeepsTechnicalOnlyNote()
+    {
+        BacktestResult result = BacktestRunner.Run(Histories(900), new ScoringOptions(), new BacktestRequest(), DateTimeOffset.UtcNow);
+
+        result.UsedSentiment.Should().BeFalse();
+        result.Notes[0].Should().Contain("sinais técnicos");
+    }
+
+    [Fact]
     public void Run_HigherCosts_ReduceNetResultButNotGross()
     {
         BacktestResult cheap = BacktestRunner.Run(Histories(900), new ScoringOptions(), new BacktestRequest(), DateTimeOffset.UtcNow);

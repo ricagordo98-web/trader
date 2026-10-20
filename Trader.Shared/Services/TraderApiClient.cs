@@ -141,7 +141,7 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<TrackRecordDto> GetTrackRecordAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<TrackRecordDto>("api/suggestions/track-record", cancellationToken)
-        ?? new TrackRecordDto(0, 0, 0, 0, 0, 0, null, [], [], []);
+        ?? new TrackRecordDto(0, 0, 0, 0, 0, 0, null, [], [], [], []);
 
     public async Task RefreshSuggestionsAsync(CancellationToken cancellationToken = default)
     {

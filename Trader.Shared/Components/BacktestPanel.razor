@@ -15,6 +15,9 @@
             <MudSelectItem Value="@("5y")">5 anos</MudSelectItem>
             <MudSelectItem Value="@("10y")">10 anos</MudSelectItem>
         </MudSelect>
+        <MudTooltip Text="Reconstrói o sentimento a partir das notícias que o servidor guardou. Só há dados desde que começou a recolher, por isso o teste cobre poucos dias.">
+            <MudCheckBox T="bool" @bind-Value="_request.UseSentiment" Label="Incluir sentimento (período curto)" Disabled="_running" Color="Color.Primary" />
+        </MudTooltip>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_running" OnClick="RunAsync" StartIcon="@Icons.Material.Filled.PlayArrow">
             @(_running ? "A simular…" : "Executar backtest")
         </MudButton>
@@ -187,6 +190,7 @@ else
             if (_result is not null)
             {
                 _request.Range = _result.Range;
+                _request.UseSentiment = _result.UsedSentiment;
                 _request.Costs = _result.Costs;
             }
         }

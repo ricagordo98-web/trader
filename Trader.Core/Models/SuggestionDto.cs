@@ -28,7 +28,9 @@ public sealed record SuggestionDto(
 
 public sealed record CurvePoint(DateTimeOffset Time, double CumulativeR);
 
-public sealed record AccuracyStat(string Name, string Label, int Count, double WinRate);
+public sealed record AccuracyStat(string Name, string Label, int Count, double WinRate, double AverageR = 0);
+
+public sealed record CalibrationBucket(string Label, int Count, double AverageConfidence, double WinRate, double AverageR);
 
 public sealed record TrackRecordDto(
     int ClosedCount,
@@ -40,4 +42,5 @@ public sealed record TrackRecordDto(
     double? ProfitFactor,
     IReadOnlyList<CurvePoint> Curve,
     IReadOnlyList<AccuracyStat> BySignal,
-    IReadOnlyList<AccuracyStat> BySource);
+    IReadOnlyList<AccuracyStat> BySource,
+    IReadOnlyList<CalibrationBucket> Calibration);

@@ -39,9 +39,10 @@ public sealed class BacktestService(
             List<Instrument> instruments = await dbContext.Instruments.AsNoTracking().OrderBy(i => i.SortOrder).ToListAsync(cancellationToken);
             ScoringOptions scoring = await scoringSettings.GetAsync(cancellationToken);
             List<SymbolHistory> histories = await LoadHistoriesAsync(instruments, request.Range, cancellationToken);
+            IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>? sentiment = request.UseSentiment ? await LoadSentimentAsync(cancellationToken) : null;
 
             BacktestResult result = await Task.Run(
-                () => BacktestRunner.Run(histories, scoring, request, DateTimeOffset.UtcNow),
+                () => BacktestRunner.Run(histories, scoring, request, DateTimeOffset.UtcNow, sentiment),
                 cancellationToken);
 
             await SaveAsync(result, cancellationToken);
@@ -94,6 +95,24 @@ public sealed class BacktestService(
             .ToArray();
 
         return (await Task.WhenAll(tasks)).OfType<SymbolHistory>().ToList();
+    }
+
+    private async Task<IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>> LoadSentimentAsync(CancellationToken cancellationToken)
+    {
+        var rows = await (
+            from articleSymbol in dbContext.Set<ArticleSymbol>().AsNoTracking()
+            join article in dbContext.Articles.AsNoTracking() on articleSymbol.ArticleId equals article.Id
+            where article.Sentiment != null
+            select new { articleSymbol.Symbol, article.Title, article.Url, article.Source, article.SourceType, Sentiment = article.Sentiment!.Value, article.PublishedAt })
+            .ToListAsync(cancellationToken);
+
+        return rows
+            .GroupBy(r => r.Symbol)
+            .ToDictionary(
+                g => g.Key,
+                g => (IReadOnlyList<ArticleSentimentRow>)g
+                    .Select(r => new ArticleSentimentRow(r.Title, r.Url, r.Source, r.SourceType, r.Sentiment, r.PublishedAt))
+                    .ToList());
     }
 
     private async Task SaveAsync(BacktestResult result, CancellationToken cancellationToken)

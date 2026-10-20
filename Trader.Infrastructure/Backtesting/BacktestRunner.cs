@@ -13,9 +13,10 @@ public static class BacktestRunner
 
     private static readonly SentimentSnapshot NoSentiment = new(0, 0, null, []);
 
-    private static readonly IReadOnlyList<string> Notes =
+    private const string TechnicalOnlyNote = "Só foram usados sinais técnicos (tendência, momentum e Bollinger). Não existe sentimento histórico, por isso o sinal mais importante do motor ao vivo não foi testado.";
+
+    private static readonly IReadOnlyList<string> CommonNotes =
     [
-        "Só foram usados sinais técnicos (tendência, momentum e Bollinger). Não existe sentimento histórico, por isso o sinal mais importante do motor ao vivo não foi testado.",
         "As entradas são ao fecho do dia do sinal. SL e TP são verificados com velas diárias; se ambos forem tocados no mesmo dia assume-se que o SL veio primeiro (pessimista).",
         "Os custos são pressupostos editáveis (spread de ida e volta mais financiamento por dia), não os valores exatos da tua corretora.",
         "Os parâmetros do motor não foram otimizados neste histórico. Se os ajustares para melhorar este resultado, o resultado deixa de ser fiável (sobreajuste).",
@@ -23,8 +24,15 @@ public static class BacktestRunner
         "Cada ativo tem no máximo uma operação aberta; entre ativos diferentes as operações podem sobrepor-se e o R total soma-as como se fossem independentes."
     ];
 
-    public static BacktestResult Run(IReadOnlyList<SymbolHistory> histories, ScoringOptions scoring, BacktestRequest request, DateTimeOffset generatedAt)
+    public static BacktestResult Run(
+        IReadOnlyList<SymbolHistory> histories,
+        ScoringOptions scoring,
+        BacktestRequest request,
+        DateTimeOffset generatedAt,
+        IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>? sentimentRows = null)
     {
+        bool useSentiment = request.UseSentiment && sentimentRows is not null;
+        DateTimeOffset sentimentFrom = DateTimeOffset.MaxValue;
         SuggestionEngine engine = new(scoring);
         List<BacktestTrade> strategy = [];
         List<BacktestTrade> baseline = [];
@@ -43,15 +51,36 @@ public static class BacktestRunner
                 continue;
             }
 
+            IReadOnlyList<ArticleSentimentRow>? rows = null;
+            DateTimeOffset firstDay = candles[WarmupBars].Time;
+
+            if (useSentiment)
+            {
+                if (!sentimentRows!.TryGetValue(history.Symbol, out rows) || rows.Count == 0)
+                {
+                    continue;
+                }
+
+                DateTimeOffset start = rows.Min(r => r.PublishedAt).AddDays(SentimentWarmupDays);
+                firstDay = start > firstDay ? start : firstDay;
+                sentimentFrom = firstDay < sentimentFrom ? firstDay : sentimentFrom;
+            }
+
             tested++;
-            from = candles[WarmupBars].Time < from ? candles[WarmupBars].Time : from;
+            from = firstDay < from ? firstDay : from;
             to = candles[^1].Time > to ? candles[^1].Time : to;
             buyAndHold.Add((candles[^1].Close / candles[WarmupBars].Close - 1) * 100);
 
             for (int i = WarmupBars; i < candles.Count - 1; i++)
             {
+                if (candles[i].Time < firstDay)
+                {
+                    continue;
+                }
+
                 MarketSnapshot? snapshot = series.Snapshots[i];
-                SuggestionDraft? draft = snapshot is null ? null : engine.Evaluate(snapshot, NoSentiment);
+                SentimentSnapshot sentiment = rows is null ? NoSentiment : SentimentAt(rows, candles[i].Time, scoring);
+                SuggestionDraft? draft = snapshot is null ? null : engine.Evaluate(snapshot, sentiment);
 
                 if (snapshot is null || draft is null)
                 {
@@ -107,8 +136,28 @@ public static class BacktestRunner
             Group(strategy, t => t.Symbol).OrderByDescending(g => g.Stats.TotalNetR).ToList(),
             BacktestStatistics.EquityCurve(strategy),
             BacktestStatistics.Evaluate(strategyStats, baselineStats, firstHalf, secondHalf),
-            Notes);
+            BuildNotes(useSentiment, sentimentFrom, to),
+            useSentiment);
     }
+
+    private const int SentimentWarmupDays = 3;
+    private static readonly TimeSpan CloseOffset = TimeSpan.FromHours(21);
+
+    private static SentimentSnapshot SentimentAt(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset day, ScoringOptions scoring)
+    {
+        DateTimeOffset asOf = new DateTimeOffset(day.UtcDateTime.Date, TimeSpan.Zero) + CloseOffset;
+
+        return SentimentAggregator.Build(rows.Where(r => r.PublishedAt <= asOf).ToList(), asOf, scoring);
+    }
+
+    private static IReadOnlyList<string> BuildNotes(bool useSentiment, DateTimeOffset sentimentFrom, DateTimeOffset to) =>
+        useSentiment
+            ?
+            [
+                $"O sentimento foi reconstruído a partir das notícias que este servidor guardou, só para os dias entre {sentimentFrom:dd/MM/yyyy} e {to:dd/MM/yyyy}. É um histórico curto: poucas operações não provam nada, só indicam o rumo.",
+                .. CommonNotes
+            ]
+            : [TechnicalOnlyNote, .. CommonNotes];
 
     private static List<BacktestGroup> Group(IReadOnlyList<BacktestTrade> trades, Func<BacktestTrade, string> key) =>
         trades

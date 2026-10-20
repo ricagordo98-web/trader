@@ -265,3 +265,43 @@ public class IndicatorCalculatorTests
     private static Candle Candle(int day, double close) =>
         new(new DateTimeOffset(2026, 1, 1, 0, 0, 0, TimeSpan.Zero).AddDays(day), close - 0.3, close + 0.8, close - 0.8, close, 1000);
 }
+
+public class CalibrationTests
+{
+    private static SuggestionDto Closed(double confidence, double r) => new(
+        1, "AAPL", "Apple", TradeDirection.Buy, confidence, 100, 98, 105, 2.5, string.Empty,
+        DateTimeOffset.UnixEpoch, DateTimeOffset.UnixEpoch.AddDays(5), r > 0 ? SuggestionStatus.HitTakeProfit : SuggestionStatus.HitStopLoss,
+        DateTimeOffset.UnixEpoch.AddDays(1), 101, r, [], []);
+
+    [Fact]
+    public void Calibrate_GroupsByConfidenceBandAndMeasuresRealHitRate()
+    {
+        SuggestionDto[] closed =
+        [
+            Closed(0.62, 2), Closed(0.63, -1), Closed(0.64, -1), Closed(0.61, 2),
+            Closed(0.85, 2), Closed(0.90, 2)
+        ];
+
+        IReadOnlyList<CalibrationBucket> buckets = TrackRecordCalculator.Calibrate(closed);
+
+        buckets.Select(b => b.Label).Should().Equal("60–65%", "80%+");
+        buckets[0].Count.Should().Be(4);
+        buckets[0].WinRate.Should().Be(0.5);
+        buckets[0].AverageR.Should().BeApproximately(0.5, 1e-9);
+        buckets[1].WinRate.Should().Be(1);
+    }
+
+    [Fact]
+    public void Calibrate_NoClosedSuggestions_ReturnsEmpty() =>
+        TrackRecordCalculator.Calibrate([]).Should().BeEmpty();
+
+    [Fact]
+    public void Calculate_IncludesCalibrationAndSignalAverageR()
+    {
+        SuggestionDto[] closed = [Closed(0.7, 2), Closed(0.7, -1)];
+
+        TrackRecordDto record = TrackRecordCalculator.Calculate(closed, 0);
+
+        record.Calibration.Should().ContainSingle().Which.Label.Should().Be("70–80%");
+    }
+}

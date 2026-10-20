@@ -15,7 +15,7 @@ public static class TrackRecordCalculator
 
         if (ordered.Count == 0)
         {
-            return new TrackRecordDto(0, openCount, 0, 0, 0, 0, null, [], [], []);
+            return new TrackRecordDto(0, openCount, 0, 0, 0, 0, null, [], [], [], []);
         }
 
         double totalR = ordered.Sum(s => s.RMultiple!.Value);
@@ -35,9 +35,9 @@ public static class TrackRecordCalculator
         List<AccuracyStat> bySignal = ordered
             .SelectMany(s => s.Signals
                 .Where(signal => Math.Sign(signal.Value) == DirectionSign(s) && Math.Abs(signal.Value) >= AgreementFloor)
-                .Select(signal => (Key: signal.Name, Label: signal.Label, Win: s.RMultiple > 0)))
+                .Select(signal => (Key: signal.Name, Label: signal.Label, Win: s.RMultiple > 0, R: s.RMultiple!.Value)))
             .GroupBy(x => x.Key)
-            .Select(g => new AccuracyStat(g.Key, g.First().Label, g.Count(), g.Count(x => x.Win) / (double)g.Count()))
+            .Select(g => new AccuracyStat(g.Key, g.First().Label, g.Count(), g.Count(x => x.Win) / (double)g.Count(), g.Average(x => x.R)))
             .OrderByDescending(x => x.Count)
             .ToList();
 
@@ -58,8 +58,29 @@ public static class TrackRecordCalculator
             grossLoss > 0 ? grossProfit / grossLoss : null,
             curve,
             bySignal,
-            bySource);
+            bySource,
+            Calibrate(ordered));
     }
+
+    private static readonly (double From, double To, string Label)[] ConfidenceBands =
+    [
+        (0.60, 0.65, "60–65%"),
+        (0.65, 0.70, "65–70%"),
+        (0.70, 0.80, "70–80%"),
+        (0.80, 1.01, "80%+")
+    ];
+
+    public static IReadOnlyList<CalibrationBucket> Calibrate(IReadOnlyList<SuggestionDto> closed) =>
+        ConfidenceBands
+            .Select(band => (band.Label, Items: closed.Where(s => s.RMultiple is not null && s.Confidence >= band.From && s.Confidence < band.To).ToList()))
+            .Where(x => x.Items.Count > 0)
+            .Select(x => new CalibrationBucket(
+                x.Label,
+                x.Items.Count,
+                x.Items.Average(s => s.Confidence),
+                x.Items.Count(s => s.RMultiple > 0) / (double)x.Items.Count,
+                x.Items.Average(s => s.RMultiple!.Value)))
+            .ToList();
 
     private static int DirectionSign(SuggestionDto suggestion) => suggestion.Direction == TradeDirection.Buy ? 1 : -1;
 }
