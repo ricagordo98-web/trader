@@ -159,30 +159,6 @@ public class SummaryRedundancyTests
 public class NewSourceParserTests
 {
     [Fact]
-    public void AlphaVantageParse_FeedItem_MapsTimeAndTickers()
-    {
-        const string json = """
-            {"feed":[{"title":"Apple beats","url":"https://x.test/a","time_published":"20260105T153000","summary":"S","source":"Reuters",
-            "ticker_sentiment":[{"ticker":"AAPL"},{"ticker":"FOREX:EUR"}]}]}
-            """;
-
-        RawArticle article = AlphaVantageConnector.Parse(json).Single();
-
-        article.Title.Should().Be("Apple beats");
-        article.PublishedAt.Should().Be(new DateTimeOffset(2026, 1, 5, 15, 30, 0, TimeSpan.Zero));
-        article.Symbols.Should().Equal("AAPL");
-        article.Source.Should().Be("Reuters");
-    }
-
-    [Fact]
-    public void AlphaVantageParse_RateLimitMessage_Throws()
-    {
-        Action act = () => AlphaVantageConnector.Parse("""{"Information":"Thank you ... rate limit is 25 requests per day"}""");
-
-        act.Should().Throw<System.Text.Json.JsonException>().WithMessage("*rate limit*");
-    }
-
-    [Fact]
     public void MarketauxParse_Item_MapsEntitiesAsSymbols()
     {
         const string json = """

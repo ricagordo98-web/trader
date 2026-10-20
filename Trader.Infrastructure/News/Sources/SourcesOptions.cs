@@ -12,7 +12,6 @@ public sealed class SourcesOptions
     public FinnhubOptions Finnhub { get; set; } = new();
     public RedditOptions Reddit { get; set; } = new();
     public EdgarOptions Edgar { get; set; } = new();
-    public AlphaVantageOptions AlphaVantage { get; set; } = new();
     public MarketauxOptions Marketaux { get; set; } = new();
     public FredOptions Fred { get; set; } = new();
     public HackerNewsOptions HackerNews { get; set; } = new();
@@ -65,12 +64,6 @@ public sealed class EdgarOptions
 {
     public string ContactEmail { get; set; } = string.Empty;
     public int IntervalMinutes { get; set; } = 15;
-}
-
-public sealed class AlphaVantageOptions
-{
-    public string ApiKey { get; set; } = string.Empty;
-    public int IntervalMinutes { get; set; } = 90;
 }
 
 public sealed class MarketauxOptions

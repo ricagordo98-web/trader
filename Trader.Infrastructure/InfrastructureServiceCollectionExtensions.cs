@@ -58,7 +58,6 @@ public static class InfrastructureServiceCollectionExtensions
         AddConnector<FinnhubConnector>(services, 20);
         AddConnector<RedditConnector>(services, 20);
         AddConnector<EdgarConnector>(services, 20);
-        AddConnector<AlphaVantageConnector>(services, 30);
         AddConnector<MarketauxConnector>(services, 20);
         AddConnector<FredConnector>(services, 20);
         AddConnector<HackerNewsConnector>(services, 20);
