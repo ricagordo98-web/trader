@@ -6,9 +6,6 @@ namespace Trader.Web.Endpoints;
 
 public static class MarketEndpoints
 {
-    private static readonly HashSet<string> AllowedIntervals = ["1m", "2m", "5m", "15m", "30m", "60m", "1d", "1wk", "1mo"];
-    private static readonly HashSet<string> AllowedRanges = ["1d", "5d", "1mo", "3mo", "6mo", "1y", "2y", "5y", "10y", "max"];
-
     public static IEndpointRouteBuilder MapMarketEndpoints(this IEndpointRouteBuilder app)
     {
         RouteGroupBuilder group = app.MapGroup("/api").RequireAuthorization();
@@ -26,7 +23,7 @@ public static class MarketEndpoints
             string resolvedInterval = interval ?? "1d";
             string resolvedRange = range ?? "1y";
 
-            if (!AllowedIntervals.Contains(resolvedInterval) || !AllowedRanges.Contains(resolvedRange))
+            if (!ChartParameters.IsValid(resolvedInterval, resolvedRange))
             {
                 return Results.Problem(
                     title: "Invalid interval or range",
@@ -52,7 +49,7 @@ public static class MarketEndpoints
             IMarketDataService service,
             CancellationToken cancellationToken) =>
         {
-            if (!AllowedIntervals.Contains(interval) || !AllowedRanges.Contains(range))
+            if (!ChartParameters.IsValid(interval, range))
             {
                 return Results.Problem(title: "Invalid interval or range", statusCode: StatusCodes.Status400BadRequest);
             }

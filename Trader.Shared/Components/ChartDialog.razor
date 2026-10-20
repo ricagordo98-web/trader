@@ -1,5 +1,7 @@
-@implements IDisposable
+@using Microsoft.AspNetCore.SignalR.Client
+@implements IAsyncDisposable
 @inject TraderApiClient Api
+@inject AuthSession Session
 @inject ThemeState Theme
 @inject ISnackbar Snackbar
 
@@ -129,6 +131,8 @@
     private string _drawingsJson = "[]";
     private string? _error;
     private string? _liveProblem;
+    private HubConnection? _hub;
+    private bool _streaming;
     private bool _ready;
 
     [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
@@ -162,6 +166,7 @@
         }
 
         _ = RunLiveUpdatesAsync(_cts.Token);
+        _ = StartStreamingAsync();
     }
 
     private async Task<IReadOnlyList<ChartLevel>> LoadLevelsAsync()
@@ -188,8 +193,10 @@
         try
         {
             IReadOnlyList<Candle> candles = await Api.GetCandlesAsync(Quote.Symbol, timeframe.Interval, timeframe.Range, _cts.Token);
+            Timeframe previous = _timeframe;
             _timeframe = timeframe;
             _candles = candles;
+            await SwitchSubscriptionAsync(previous, timeframe);
         }
         catch (HttpRequestException)
         {
@@ -255,6 +262,11 @@
             {
                 Timeframe timeframe = _timeframe;
 
+                if (_streaming)
+                {
+                    continue;
+                }
+
                 try
                 {
                     IReadOnlyList<Candle> latest = await Api.GetLiveCandlesAsync(Quote.Symbol, timeframe.Interval, timeframe.LiveRange, cancellationToken);
@@ -291,6 +303,81 @@
         }
     }
 
+    private async Task StartStreamingAsync()
+    {
+        try
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Api.NewsHubUrl, options => options.AccessTokenProvider = () => Session.GetAccessTokenAsync())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.On<LiveCandles>("LiveCandles", OnLiveCandlesAsync);
+            _hub.Reconnecting += _ => SetStreamingAsync(false);
+            _hub.Reconnected += async _ =>
+            {
+                await SubscribeAsync(_timeframe);
+                await SetStreamingAsync(true);
+            };
+            _hub.Closed += _ => SetStreamingAsync(false);
+
+            await _hub.StartAsync(_cts.Token);
+            await SubscribeAsync(_timeframe);
+            _streaming = true;
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException or InvalidOperationException)
+        {
+            _streaming = false;
+        }
+    }
+
+    private Task SetStreamingAsync(bool streaming)
+    {
+        _streaming = streaming;
+        return Task.CompletedTask;
+    }
+
+    private Task SubscribeAsync(Timeframe timeframe) =>
+        _hub is { State: HubConnectionState.Connected }
+            ? _hub.InvokeAsync("SubscribeLive", Quote.Symbol, timeframe.Interval, timeframe.LiveRange, _cts.Token)
+            : Task.CompletedTask;
+
+    private async Task SwitchSubscriptionAsync(Timeframe previous, Timeframe next)
+    {
+        if (_hub is not { State: HubConnectionState.Connected })
+        {
+            return;
+        }
+
+        try
+        {
+            await _hub.InvokeAsync("UnsubscribeLive", Quote.Symbol, previous.Interval, previous.LiveRange, _cts.Token);
+            await SubscribeAsync(next);
+        }
+        catch (Exception ex) when (ex is Microsoft.AspNetCore.SignalR.HubException or OperationCanceledException)
+        {
+            _streaming = false;
+        }
+    }
+
+    private Task OnLiveCandlesAsync(LiveCandles message)
+    {
+        if (_chart is null || message.Symbol != Quote.Symbol || message.Interval != _timeframe.Interval)
+        {
+            return Task.CompletedTask;
+        }
+
+        return InvokeAsync(async () =>
+        {
+            foreach (Candle candle in message.Candles.TakeLast(2))
+            {
+                await _chart.PushBarAsync(candle);
+            }
+
+            SetLiveProblem(null);
+        });
+    }
+
     private void SetLiveProblem(string? problem)
     {
         if (_liveProblem == problem)
@@ -304,10 +391,16 @@
 
     private void OnThemeChanged() => InvokeAsync(StateHasChanged);
 
-    public void Dispose()
+    public async ValueTask DisposeAsync()
     {
         Theme.Changed -= OnThemeChanged;
         _cts.Cancel();
+
+        if (_hub is not null)
+        {
+            await _hub.DisposeAsync();
+        }
+
         _cts.Dispose();
     }
 }

@@ -16,6 +16,8 @@ var builder = WebApplication.CreateBuilder(args);
 builder.Services.AddTraderShared();
 builder.Services.AddTraderInfrastructure(builder.Configuration, Path.Combine(builder.Environment.ContentRootPath, "models", "finbert"));
 builder.Services.AddSignalR();
+builder.Services.AddSingleton<LiveSubscriptions>();
+builder.Services.AddHostedService<LiveCandlePublisher>();
 builder.Services.AddSingleton<INewsNotifier, SignalRNewsNotifier>();
 builder.Services.AddSingleton<IAlertNotifier, SignalRAlertNotifier>();
 
