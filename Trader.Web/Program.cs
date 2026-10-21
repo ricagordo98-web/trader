@@ -74,7 +74,9 @@ var app = builder.Build();
 
 using (IServiceScope scope = app.Services.CreateScope())
 {
-    await scope.ServiceProvider.GetRequiredService<TraderDbContext>().Database.MigrateAsync();
+    TraderDbContext dbContext = scope.ServiceProvider.GetRequiredService<TraderDbContext>();
+    await dbContext.Database.MigrateAsync();
+    await InstrumentCatalog.ApplyAsync(dbContext, scope.ServiceProvider.GetRequiredService<ILogger<Program>>(), CancellationToken.None);
 }
 
 if (!app.Environment.IsDevelopment())

@@ -39,6 +39,8 @@ public static class PositionCalculator
     {
         AssetClass.Forex => 30,
         AssetClass.Commodity => 10,
+        AssetClass.Index => 20,
+        AssetClass.Crypto => 2,
         _ => 5
     };
 

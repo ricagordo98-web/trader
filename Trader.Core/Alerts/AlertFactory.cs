@@ -6,6 +6,8 @@ namespace Trader.Core.Alerts;
 
 public static class AlertFactory
 {
+    private const int MaxIndividualSuggestionAlerts = 3;
+
     public static Alert ForNewSuggestion(Suggestion suggestion, DateTimeOffset now) => new()
     {
         Kind = AlertKind.NewSuggestion,
@@ -17,6 +19,30 @@ public static class AlertFactory
         SuggestionId = suggestion.Id,
         CreatedAt = now
     };
+
+    public static IReadOnlyList<Alert> ForNewSuggestions(IReadOnlyList<Suggestion> suggestions, DateTimeOffset now)
+    {
+        if (suggestions.Count <= MaxIndividualSuggestionAlerts)
+        {
+            return suggestions.Select(s => ForNewSuggestion(s, now)).ToList();
+        }
+
+        string top = string.Join(
+            ", ",
+            suggestions.OrderByDescending(s => s.Confidence).Take(3).Select(s => $"{(s.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER")} {s.Symbol}"));
+
+        return
+        [
+            new Alert
+            {
+                Kind = AlertKind.NewSuggestion,
+                Symbol = "SUGESTÕES",
+                Title = $"{suggestions.Count} novas sugestões",
+                Message = $"Mais fortes: {top}",
+                CreatedAt = now
+            }
+        ];
+    }
 
     public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now) => new()
     {

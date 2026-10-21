@@ -18,7 +18,7 @@ public static class BacktestRequestValidator
         foreach (double value in new[]
         {
             costs.StockRoundTripPercent, costs.EtfRoundTripPercent, costs.CommodityRoundTripPercent,
-            costs.ForexRoundTripPercent, costs.OvernightPercentPerDay
+            costs.ForexRoundTripPercent, costs.CryptoRoundTripPercent, costs.IndexRoundTripPercent, costs.OvernightPercentPerDay
         })
         {
             if (value is < 0 or > 5 || double.IsNaN(value))

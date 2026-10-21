@@ -142,7 +142,7 @@ public sealed class SuggestionService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        await alerts.RaiseAsync(added.Select(s => AlertFactory.ForNewSuggestion(s, now)).ToList(), cancellationToken);
+        await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
         logger.LogInformation("Suggestion cycle created {Count} suggestions", created);
         return created;
     }

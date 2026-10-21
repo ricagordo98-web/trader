@@ -176,11 +176,9 @@
 
     [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
 
-    private bool HasVolume => Quote.AssetClass != AssetClass.Forex;
+    private bool HasVolume => Quote.AssetClass is not (AssetClass.Forex or AssetClass.Index);
 
-    private int PricePrecision => Quote.AssetClass == AssetClass.Forex
-        ? (Quote.Symbol.Contains("JPY", StringComparison.Ordinal) ? 3 : 5)
-        : 2;
+    private int PricePrecision => PriceFormat.Decimals(Quote.AssetClass, Quote.Symbol, Quote.Price);
 
     protected override async Task OnInitializedAsync()
     {

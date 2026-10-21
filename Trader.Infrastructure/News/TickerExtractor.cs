@@ -3,7 +3,7 @@ using Trader.Core.Abstractions;
 
 namespace Trader.Infrastructure.News;
 
-public sealed class TickerExtractor : ITickerExtractor
+public sealed partial class TickerExtractor : ITickerExtractor
 {
     private sealed record Rule(string Symbol, Regex Pattern);
 
@@ -70,11 +70,14 @@ public sealed class TickerExtractor : ITickerExtractor
             ("EURGBP=X", @"EUR/GBP|EURGBP")
         ];
 
+        stocks = [.. stocks, .. CatalogStocks()];
+        insensitive = [.. insensitive, .. CatalogPatterns()];
+
         List<Rule> rules = [];
 
         foreach ((string symbol, string ticker, string[] names) in stocks)
         {
-            string alternatives = string.Join('|', new[] { ticker }.Concat(names.Select(Regex.Escape)).Select(a => $@"\b{a}\b"));
+            string alternatives = string.Join('|', (ticker.Length >= 3 ? new[] { ticker } : Array.Empty<string>()).Concat(names.Select(Regex.Escape)).Select(a => $@"\b{a}\b"));
             rules.Add(new Rule(symbol, new Regex(
                 $@"\$(?i:{ticker})\b|{alternatives}",
                 RegexOptions.Compiled | RegexOptions.CultureInvariant)));

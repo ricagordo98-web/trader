@@ -8,6 +8,8 @@ public sealed class CostModel
     public double EtfRoundTripPercent { get; set; } = 0.10;
     public double CommodityRoundTripPercent { get; set; } = 0.06;
     public double ForexRoundTripPercent { get; set; } = 0.02;
+    public double CryptoRoundTripPercent { get; set; } = 0.40;
+    public double IndexRoundTripPercent { get; set; } = 0.04;
     public double OvernightPercentPerDay { get; set; } = 0.015;
 
     public double RoundTripPercent(AssetClass assetClass) => assetClass switch
@@ -15,6 +17,8 @@ public sealed class CostModel
         AssetClass.Stock => StockRoundTripPercent,
         AssetClass.Etf => EtfRoundTripPercent,
         AssetClass.Commodity => CommodityRoundTripPercent,
+        AssetClass.Crypto => CryptoRoundTripPercent,
+        AssetClass.Index => IndexRoundTripPercent,
         _ => ForexRoundTripPercent
     };
 

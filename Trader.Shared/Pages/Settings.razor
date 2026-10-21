@@ -96,6 +96,8 @@
                             <MudSelectItem Value="AssetClass.Commodity">Mercadoria</MudSelectItem>
                             <MudSelectItem Value="AssetClass.Etf">ETF</MudSelectItem>
                             <MudSelectItem Value="AssetClass.Forex">Forex</MudSelectItem>
+                            <MudSelectItem Value="AssetClass.Crypto">Cripto</MudSelectItem>
+                            <MudSelectItem Value="AssetClass.Index">Índice</MudSelectItem>
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="6" sm="1"><MudTextField T="string" @bind-Value="_newCurrency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
@@ -560,6 +562,8 @@
         AssetClass.Stock => "Ação",
         AssetClass.Commodity => "Mercadoria",
         AssetClass.Etf => "ETF",
+        AssetClass.Crypto => "Cripto",
+        AssetClass.Index => "Índice",
         _ => "Forex"
     };
 

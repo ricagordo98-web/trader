@@ -5,5 +5,7 @@ public enum AssetClass
     Stock,
     Commodity,
     Etf,
-    Forex
+    Forex,
+    Crypto,
+    Index
 }

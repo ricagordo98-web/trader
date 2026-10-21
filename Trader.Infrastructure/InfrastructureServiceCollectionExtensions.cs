@@ -68,6 +68,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ISourceStatusRegistry, SourceStatusRegistry>();
         services.AddSingleton<ISymbolProvider, SymbolProvider>();
         services.AddHostedService<SuggestionWorker>();
+        services.AddHostedService<QuoteWarmupWorker>();
         services.AddHostedService<PriceWatchWorker>();
 
         AddConnector<RssConnector>(services, 20);

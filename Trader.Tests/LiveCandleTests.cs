@@ -214,3 +214,35 @@ public class LiveTradeFeedTests
         feed.Track("AAPL").Should().BeFalse();
     }
 }
+
+public class CryptoLiveVolumeTests
+{
+    private static readonly DateTimeOffset Start = new(2026, 1, 5, 15, 0, 0, TimeSpan.Zero);
+
+    [Fact]
+    public async Task GetLiveCandlesAsync_Crypto_IgnoresRollingDayVolumeAndUsesDollarTradeVolume()
+    {
+        IMarketDataProvider provider = Substitute.For<IMarketDataProvider>();
+        provider.GetChartAsync("BTC-USD", "1m", "1d", Arg.Any<CancellationToken>()).Returns(new ChartSeries(
+            80000,
+            [new Candle(Start, 80000, 80010, 79990, 80000, 1_000_000)],
+            Start.AddMinutes(1).AddSeconds(5),
+            DayVolume: 50_000_000_000));
+
+        ILiveTradeFeed feed = Substitute.For<ILiveTradeFeed>();
+        feed.Track("BTC-USD").Returns(true);
+        feed.GetTrades("BTC-USD", Arg.Any<DateTimeOffset>()).Returns([new LiveTrade(Start.AddMinutes(1).AddSeconds(2), 80100, 0.5)]);
+
+        MarketDataService service = new(
+            new TraderDbContext(new DbContextOptionsBuilder<TraderDbContext>().UseSqlite("Data Source=:memory:").Options),
+            provider,
+            new MemoryCache(new MemoryCacheOptions()),
+            feed,
+            NullLogger<MarketDataService>.Instance);
+
+        IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync("BTC-USD", "1m", "1d", CancellationToken.None);
+
+        candles[^1].Volume.Should().BeApproximately(0.5 * 80100, 1e-6);
+        candles[^1].Time.Should().Be(Start.AddMinutes(1));
+    }
+}

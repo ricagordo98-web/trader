@@ -14,7 +14,7 @@ public sealed class MarketDataService(
     ILiveTradeFeed tradeFeed,
     ILogger<MarketDataService> logger) : IMarketDataService
 {
-    private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(60);
+    private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(120);
     private static readonly TimeSpan CandleCacheDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LiveCacheDuration = TimeSpan.FromSeconds(2);
 
@@ -82,8 +82,16 @@ public sealed class MarketDataService(
             ? tradeFeed.GetTrades(symbol, series.Candles[^1].Time)
             : [];
 
+        if (IsCrypto(symbol))
+        {
+            series = series with { DayVolume = null };
+            trades = trades.Select(t => t with { Volume = t.Volume * t.Price }).ToList();
+        }
+
         return LiveCandleBuilder.Build(interval, series, trades);
     }
+
+    private static bool IsCrypto(string symbol) => symbol.EndsWith("-USD", StringComparison.OrdinalIgnoreCase);
 
     private async Task<InstrumentQuote> GetQuoteAsync(Instrument instrument, CancellationToken cancellationToken)
     {

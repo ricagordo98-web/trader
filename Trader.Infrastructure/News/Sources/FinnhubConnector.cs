@@ -8,7 +8,7 @@ namespace Trader.Infrastructure.News.Sources;
 
 public sealed class FinnhubConnector(HttpClient httpClient, IOptions<SourcesOptions> options, ILogger<FinnhubConnector> logger) : ISourceConnector
 {
-    private static readonly string[] Categories = ["general", "forex", "merger"];
+    private static readonly string[] Categories = ["general", "forex", "crypto", "merger"];
 
     private readonly FinnhubOptions _options = options.Value.Finnhub;
 

@@ -1,4 +1,5 @@
 using Trader.Infrastructure.Alerts;
+using Trader.Infrastructure.MarketData;
 using Trader.Infrastructure.Backup;
 using Trader.Infrastructure.Calendar;
 using Trader.Infrastructure.Summary;
@@ -32,7 +33,7 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
             foreach (ServiceDescriptor descriptor in services
                 .Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType is { } type
-                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker) || type == typeof(SummaryWorker)))
+                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker) || type == typeof(SummaryWorker) || type == typeof(QuoteWarmupWorker)))
                 .ToList())
             {
                 services.Remove(descriptor);

@@ -22,7 +22,7 @@ public class TickerExtractorTests
 
     [Theory]
     [InlineData("I ate an apple for lunch")]
-    [InlineData("Goldman Sachs raises its outlook")]
+    [InlineData("Analysts raise their outlook for the quarter")]
     [InlineData("Stocks were mixed on Tuesday")]
     public void Extract_NoEntity_ReturnsEmpty(string text)
     {

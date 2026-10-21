@@ -7,6 +7,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Trader.Core.Abstractions;
 using Trader.Core.Calendar;
+using Trader.Core.Models;
 using Trader.Infrastructure.News.Sources;
 using Trader.Infrastructure.Persistence;
 
@@ -32,6 +33,8 @@ public sealed partial class CalendarService(
     ];
 
     private static readonly TimeSpan CacheDuration = TimeSpan.FromHours(3);
+    private static readonly TimeSpan EarningsCacheDuration = TimeSpan.FromHours(12);
+    private const int MaxUncachedEarningsPerCall = 40;
 
     // Decision days of the 2026 FOMC meetings, as published by the Federal Reserve.
     private static readonly DateOnly[] FomcDecisions =
@@ -64,8 +67,14 @@ public sealed partial class CalendarService(
         }
         else
         {
-            HashSet<string> watchlist = (await dbContext.Instruments.Select(i => i.Symbol).ToListAsync(cancellationToken)).ToHashSet(StringComparer.OrdinalIgnoreCase);
-            events.AddRange(await LoadEarningsAsync(finnhubKey, today, end, watchlist, notes, cancellationToken));
+            var instruments = await dbContext.Instruments.Select(i => new { i.Symbol, i.AssetClass }).ToListAsync(cancellationToken);
+            HashSet<string> watchlist = instruments.Select(i => i.Symbol).ToHashSet(StringComparer.OrdinalIgnoreCase);
+            List<string> equities = instruments
+                .Where(i => i.AssetClass == AssetClass.Stock && EquitySymbol().IsMatch(i.Symbol))
+                .Select(i => i.Symbol)
+                .ToList();
+
+            events.AddRange(await LoadEarningsAsync(finnhubKey, today, end, watchlist, equities, notes, cancellationToken));
         }
 
         if (string.IsNullOrWhiteSpace(fredKey))
@@ -91,13 +100,28 @@ public sealed partial class CalendarService(
         return feed;
     }
 
-    private async Task<IEnumerable<CalendarEvent>> LoadEarningsAsync(string apiKey, DateOnly from, DateOnly to, HashSet<string> watchlist, List<string> notes, CancellationToken cancellationToken)
+    private async Task<IEnumerable<CalendarEvent>> LoadEarningsAsync(string apiKey, DateOnly from, DateOnly to, HashSet<string> watchlist, List<string> equities, List<string> notes, CancellationToken cancellationToken)
     {
+        List<CalendarEvent> events = [];
+        List<string> missing = [];
+
+        foreach (string symbol in equities)
+        {
+            if (cache.TryGetValue($"earnings:{symbol}:{from:yyyyMMdd}:{to:yyyyMMdd}", out IReadOnlyList<CalendarEvent>? cached) && cached is not null)
+            {
+                events.AddRange(cached);
+            }
+            else
+            {
+                missing.Add(symbol);
+            }
+        }
+
         using SemaphoreSlim gate = new(4);
         bool failed = false;
 
-        IEnumerable<Task<IReadOnlyList<CalendarEvent>>> tasks = watchlist
-            .Where(symbol => EquitySymbol().IsMatch(symbol))
+        IEnumerable<Task<IReadOnlyList<CalendarEvent>>> tasks = missing
+            .Take(MaxUncachedEarningsPerCall)
             .Select(async symbol =>
             {
                 await gate.WaitAsync(cancellationToken);
@@ -108,7 +132,9 @@ public sealed partial class CalendarService(
                         $"https://finnhub.io/api/v1/calendar/earnings?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&symbol={Uri.EscapeDataString(symbol)}&token={Uri.EscapeDataString(apiKey)}",
                         cancellationToken);
 
-                    return ParseEarnings(json, watchlist);
+                    IReadOnlyList<CalendarEvent> parsed = ParseEarnings(json, watchlist);
+                    cache.Set($"earnings:{symbol}:{from:yyyyMMdd}:{to:yyyyMMdd}", parsed, EarningsCacheDuration);
+                    return parsed;
                 }
                 catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
                 {
@@ -122,14 +148,19 @@ public sealed partial class CalendarService(
                 }
             });
 
-        IReadOnlyList<CalendarEvent>[] results = await Task.WhenAll(tasks);
+        events.AddRange((await Task.WhenAll(tasks)).SelectMany(r => r));
 
         if (failed)
         {
             notes.Add("Alguns resultados de empresas não puderam ser obtidos.");
         }
 
-        return results.SelectMany(r => r);
+        if (missing.Count > MaxUncachedEarningsPerCall)
+        {
+            notes.Add($"A carregar os resultados de mais {missing.Count - MaxUncachedEarningsPerCall} empresas: atualiza daqui a um minuto.");
+        }
+
+        return events;
     }
 
     [GeneratedRegex("^[A-Z]{1,5}$")]

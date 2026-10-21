@@ -50,6 +50,10 @@ SEC EDGAR requires a contact address in the User-Agent. StockTwits is disabled b
 
 See [deploy/REMOTE-ACCESS.md](deploy/REMOTE-ACCESS.md): Windows service, daily database backups and private remote access with Tailscale.
 
+## Watchlist catalog
+
+On first start (and when `InstrumentCatalog.CurrentVersion` is raised) the server adds the catalog instruments that are missing: more US and European stocks, ETFs (including UCITS in EUR), commodities, indices, forex crosses and crypto (Yahoo `-USD` symbols). It runs once per catalog version, so anything you remove from the watchlist stays removed. Add your own symbols in Settings > Watchlist.
+
 ## Accounts
 
 Every API route and the SignalR hub require a signed-in user (ASP.NET Core Identity, bearer tokens).

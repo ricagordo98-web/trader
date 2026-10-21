@@ -33,6 +33,8 @@
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.EtfRoundTripPercent" Label="ETFs (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.CommodityRoundTripPercent" Label="Mercadorias (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.ForexRoundTripPercent" Label="Forex (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.CryptoRoundTripPercent" Label="Cripto (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.IndexRoundTripPercent" Label="Índices (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.OvernightPercentPerDay" Label="Financiamento por dia (%)" Min="0" Max="5" Step="0.005" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
             </MudGrid>
         </MudExpansionPanel>
@@ -260,6 +262,8 @@ else
         "Etf" => "ETFs",
         "Commodity" => "Mercadorias",
         "Forex" => "Forex",
+        "Crypto" => "Cripto",
+        "Index" => "Índices",
         "Buy" => "Compras",
         "Sell" => "Vendas",
         _ => name

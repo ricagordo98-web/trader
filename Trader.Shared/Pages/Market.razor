@@ -100,7 +100,7 @@
                                 <tr style="cursor:pointer" @onclick="@(() => OpenChartAsync(row.Quote))">
                                     <td><strong>@row.Quote.Symbol</strong> <span class="symbol-name">@row.Quote.Name</span></td>
                                     <td>@ClassLabel(row.Quote.AssetClass)</td>
-                                    <td style="text-align:right">@(row.Quote.Price?.ToString(row.Quote.AssetClass == AssetClass.Forex ? "0.00000" : "0.00", CultureInfo.InvariantCulture) ?? "—")</td>
+                                    <td style="text-align:right">@(row.Quote.Price?.ToString("F" + PriceFormat.Decimals(row.Quote.AssetClass, row.Quote.Symbol, row.Quote.Price), CultureInfo.InvariantCulture) ?? "—")</td>
                                     <td style="text-align:right"><MudText Typo="Typo.body2" Color="@ChangeColor(row.Quote.ChangePercent)">@(row.Quote.ChangePercent is { } c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" : "—")</MudText></td>
                                     <td style="text-align:right">@(row.Sentiment is { } s ? s.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) : "—")</td>
                                     <td style="text-align:right">@row.ArticleCount</td>
@@ -202,6 +202,8 @@
         AssetClass.Stock => "Ações",
         AssetClass.Commodity => "Mercadorias",
         AssetClass.Etf => "ETFs",
+        AssetClass.Crypto => "Cripto",
+        AssetClass.Index => "Índices",
         _ => "Forex"
     };
 }

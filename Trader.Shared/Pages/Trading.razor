@@ -36,7 +36,7 @@
                                 <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
                             </MudTd>
                             <MudTd Style="text-align:right;white-space:nowrap">
-                                @(context.Price is null ? "—" : $"{context.Price.Value.ToString(PriceFormat(context.AssetClass), _culture)} {context.Currency}")
+                                @(context.Price is null ? "—" : $"{context.Price.Value.ToString("F" + PriceFormat.Decimals(context.AssetClass, context.Symbol, context.Price), _culture)} {context.Currency}")
                             </MudTd>
                             <MudTd Style="text-align:right">
                                 @if (context.ChangePercent is { } pct)
@@ -82,7 +82,9 @@
         (AssetClass.Stock, "Ações"),
         (AssetClass.Commodity, "Mercadorias"),
         (AssetClass.Etf, "ETFs"),
-        (AssetClass.Forex, "Forex")
+        (AssetClass.Forex, "Forex"),
+        (AssetClass.Crypto, "Cripto"),
+        (AssetClass.Index, "Índices")
     ];
 
     private IReadOnlyList<InstrumentQuote> _quotes = [];
@@ -129,5 +131,4 @@
         await DialogService.ShowAsync<ChartDialog>(quote.Symbol, parameters, options);
     }
 
-    private static string PriceFormat(AssetClass assetClass) => assetClass == AssetClass.Forex ? "F5" : "N2";
 }

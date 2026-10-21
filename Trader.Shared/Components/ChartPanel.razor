@@ -73,9 +73,9 @@
 
     private InstrumentQuote? Quote => Instruments.FirstOrDefault(i => i.Symbol == Symbol);
 
-    private bool HasVolume => Quote?.AssetClass != AssetClass.Forex;
+    private bool HasVolume => Quote?.AssetClass is not (AssetClass.Forex or AssetClass.Index);
 
-    private int Precision => Quote?.AssetClass == AssetClass.Forex ? (Symbol.Contains("JPY", StringComparison.Ordinal) ? 3 : 5) : 2;
+    private int Precision => PriceFormat.Decimals(Quote?.AssetClass ?? AssetClass.Stock, Symbol, Quote?.Price);
 
     protected override async Task OnParametersSetAsync()
     {
