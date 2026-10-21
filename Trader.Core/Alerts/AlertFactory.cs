@@ -1,4 +1,5 @@
 using System.Globalization;
+using Trader.Core.Intraday;
 using Trader.Core.Journal;
 using Trader.Core.Models;
 
@@ -38,6 +39,35 @@ public static class AlertFactory
                 Kind = AlertKind.NewSuggestion,
                 Symbol = "SUGESTÕES",
                 Title = $"{suggestions.Count} novas sugestões",
+                Message = $"Mais fortes: {top}",
+                CreatedAt = now
+            }
+        ];
+    }
+
+    public static IReadOnlyList<Alert> ForRadarEvents(IReadOnlyList<RadarEvent> events, DateTimeOffset now)
+    {
+        if (events.Count <= MaxIndividualSuggestionAlerts)
+        {
+            return events.Select(e => new Alert
+            {
+                Kind = AlertKind.Radar,
+                Symbol = e.Symbol,
+                Title = $"Radar: {e.Symbol} {(e.Direction == TradeDirection.Buy ? "↑" : "↓")} {e.Detail}",
+                Message = string.Create(CultureInfo.InvariantCulture, $"{e.Name} · preço {e.Price:0.#####}"),
+                CreatedAt = now
+            }).ToList();
+        }
+
+        string top = string.Join(", ", events.OrderByDescending(e => e.Strength).Take(4).Select(e => $"{e.Symbol} {(e.Direction == TradeDirection.Buy ? "↑" : "↓")}"));
+
+        return
+        [
+            new Alert
+            {
+                Kind = AlertKind.Radar,
+                Symbol = "RADAR",
+                Title = $"Radar: {events.Count} movimentos anormais",
                 Message = $"Mais fortes: {top}",
                 CreatedAt = now
             }

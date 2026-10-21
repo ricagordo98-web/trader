@@ -787,6 +787,13 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .IsRequired()
                         .HasColumnType("TEXT");
 
+                    b.Property<string>("Horizon")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("Swing");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)

@@ -98,6 +98,7 @@ app.MapAuthEndpoints();
 app.MapMarketEndpoints();
 app.MapNewsEndpoints();
 app.MapSuggestionEndpoints();
+app.MapRadarEndpoints();
 app.MapBacktestEndpoints();
 app.MapJournalEndpoints();
 app.MapAlertEndpoints();

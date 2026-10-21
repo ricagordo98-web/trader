@@ -10,7 +10,8 @@ public enum AlertKind
     TradeStopLoss,
     TradeTakeProfit,
     Calendar,
-    DailySummary
+    DailySummary,
+    Radar
 }
 
 public sealed class Alert

@@ -11,6 +11,8 @@ using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Scoring;
 using Trader.Infrastructure.Backtesting;
+using Trader.Core.Intraday;
+using Trader.Infrastructure.Intraday;
 using Trader.Infrastructure.Journal;
 using Trader.Infrastructure.MarketData;
 using Trader.Infrastructure.News;
@@ -67,6 +69,9 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IInstrumentService, InstrumentService>();
         services.AddSingleton<ISourceStatusRegistry, SourceStatusRegistry>();
         services.AddSingleton<ISymbolProvider, SymbolProvider>();
+        services.AddSingleton(new IntradayOptions());
+        services.AddSingleton<IRadarService, RadarService>();
+        services.AddHostedService<RadarWorker>();
         services.AddHostedService<SuggestionWorker>();
         services.AddHostedService<QuoteWarmupWorker>();
         services.AddHostedService<PriceWatchWorker>();

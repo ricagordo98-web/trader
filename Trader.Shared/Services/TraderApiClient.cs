@@ -3,6 +3,7 @@ using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
 using Trader.Core.Calendar;
 using Trader.Core.Charts;
+using Trader.Core.Intraday;
 using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
@@ -150,7 +151,7 @@ public sealed class TraderApiClient(HttpClient httpClient)
     public async Task<IReadOnlyList<SentimentSummary>> GetSentimentSummaryAsync(int hours = 24, CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<SentimentSummary>>($"api/news/sentiment?hours={hours}", cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default)
+    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null)
     {
         List<string> parameters = [$"limit={limit}"];
 
@@ -164,12 +165,28 @@ public sealed class TraderApiClient(HttpClient httpClient)
             parameters.Add($"open={isOpen.ToString().ToLowerInvariant()}");
         }
 
+        if (horizon is { } selected)
+        {
+            parameters.Add($"horizon={selected}");
+        }
+
         return await httpClient.GetFromJsonAsync<IReadOnlyList<SuggestionDto>>($"api/suggestions?{string.Join('&', parameters)}", cancellationToken) ?? [];
     }
 
-    public async Task<TrackRecordDto> GetTrackRecordAsync(CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<TrackRecordDto>("api/suggestions/track-record", cancellationToken)
+    public async Task<TrackRecordDto> GetTrackRecordAsync(CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null) =>
+        await httpClient.GetFromJsonAsync<TrackRecordDto>(horizon is { } selected ? $"api/suggestions/track-record?horizon={selected}" : "api/suggestions/track-record", cancellationToken)
         ?? new TrackRecordDto(0, 0, 0, 0, 0, 0, null, [], [], [], []);
+
+    public async Task<RadarSnapshot> GetRadarAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<RadarSnapshot>("api/radar", cancellationToken)
+        ?? new RadarSnapshot(DateTimeOffset.MinValue, 0, [], []);
+
+    public async Task<RadarSnapshot> ScanRadarAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync("api/radar/scan", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return await response.Content.ReadFromJsonAsync<RadarSnapshot>(cancellationToken) ?? new RadarSnapshot(DateTimeOffset.MinValue, 0, [], []);
+    }
 
     public async Task RefreshSuggestionsAsync(CancellationToken cancellationToken = default)
     {

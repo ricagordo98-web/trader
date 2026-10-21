@@ -57,6 +57,7 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.Property(s => s.Name).HasMaxLength(128).IsRequired();
             entity.Property(s => s.Direction).HasConversion<string>().HasMaxLength(8);
             entity.Property(s => s.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(s => s.Horizon).HasConversion<string>().HasMaxLength(16).HasDefaultValue(SuggestionHorizon.Swing);
             entity.Property(s => s.CreatedAt).HasConversion(utcTicks);
             entity.Property(s => s.ExpiresAt).HasConversion(utcTicks);
             entity.Property(s => s.ClosedAt).HasConversion(utcTicks);

@@ -54,6 +54,15 @@ See [deploy/REMOTE-ACCESS.md](deploy/REMOTE-ACCESS.md): Windows service, daily d
 
 On first start (and when `InstrumentCatalog.CurrentVersion` is raised) the server adds the catalog instruments that are missing: more US and European stocks, ETFs (including UCITS in EUR), commodities, indices, forex crosses and crypto (Yahoo `-USD` symbols). It runs once per catalog version, so anything you remove from the watchlist stays removed. Add your own symbols in Settings > Watchlist.
 
+## Day trading radar
+
+A background worker scans every instrument with an open market every 90 seconds using 5-minute candles. It computes VWAP, relative volume (today's cumulative volume against the same time of day on previous sessions), gap, the 30-minute opening range and the previous day's high/low, and publishes the result at `GET /api/radar` (Prediction -> Radar tab).
+
+- **Events** (volume spike, gap, opening-range or previous-day breakout, momentum burst) fire once per symbol, kind and day. Breakouts only count when the level was crossed in the last hour, and only with volume above normal when volume data exists. Strong events raise a `Radar` alert (grouped when there are many).
+- **Intraday suggestions** use the same pipeline as swing ones (`Horizon = Intraday`) but expire after 3 hours, are evaluated against 5-minute candles, and have their own track record (toggle Todas / Intraday / Swing on the Prediction page). Signals: VWAP, opening range, relative volume, intraday momentum, previous-day levels, gap, recent news and a "catalyst" signal (news followed by a same-direction price reaction). They require a recent move in the suggested direction, at most 5 are created per cycle and at most 8 stay open.
+- Confidence is capped at 85% until enough closed intraday suggestions exist to calibrate it (see the calibration table in the track record).
+- Tunables live in `IntradayOptions` (`Trader.Core/Intraday/Models.cs`).
+
 ## Accounts
 
 Every API route and the SignalR hub require a signed-in user (ASP.NET Core Identity, bearer tokens).

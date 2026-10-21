@@ -1,5 +1,6 @@
 @page "/prediction"
 @using System.Globalization
+@using Trader.Core.Intraday
 @implements IDisposable
 @inject TraderApiClient Api
 @inject IDialogService DialogService
@@ -10,6 +11,11 @@
     <div class="d-flex align-center flex-wrap gap-3 mb-1">
         <MudText Typo="Typo.h4">Predição</MudText>
         <MudSpacer />
+        <MudToggleGroup T="string" Value="_horizonKey" ValueChanged="OnHorizonChangedAsync" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="@HorizonAll" Text="Todas" />
+            <MudToggleItem Value="@HorizonIntraday" Text="Intraday" />
+            <MudToggleItem Value="@HorizonSwing" Text="Swing" />
+        </MudToggleGroup>
         <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" Disabled="_refreshing" OnClick="RefreshAsync">
             @(_refreshing ? "A calcular…" : "Recalcular agora")
         </MudButton>
@@ -38,7 +44,10 @@
             {
                 <MudPaper Elevation="0" Outlined="true" Class="pa-6">
                     <MudText Typo="Typo.subtitle1" Class="mb-1">Sem sugestões neste momento</MudText>
-                    <MudText Color="Color.Secondary">Só aparecem sugestões quando vários sinais concordam com pelo menos @ThresholdPercent% de certeza e o ganho potencial é, no mínimo, 1,5× o risco. O cálculo repete-se a cada 15 minutos.</MudText>
+                    <MudText Color="Color.Secondary">
+                        Só aparecem sugestões quando vários sinais concordam com pelo menos @ThresholdPercent% de certeza e o ganho potencial é, no mínimo, 1,5× o risco.
+                        As de swing recalculam-se a cada 15 minutos; as intraday a cada 90 segundos, apenas com o mercado aberto e volume acima do normal.
+                    </MudText>
                 </MudPaper>
             }
 
@@ -54,6 +63,10 @@
                                     <div class="d-flex align-center gap-2 flex-wrap">
                                         <MudText Typo="Typo.h6">@suggestion.Symbol</MudText>
                                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(buy ? Color.Success : Color.Error)" Class="ma-0">@(buy ? "COMPRAR" : "VENDER")</MudChip>
+                                        @if (suggestion.Horizon == SuggestionHorizon.Intraday)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0">INTRADAY</MudChip>
+                                        }
                                         @if (_earnings.TryGetValue(suggestion.Symbol, out DateOnly earningsDate))
                                         {
                                             <MudTooltip Text="Os resultados costumam provocar grandes saltos de preço. Pondera esperar.">
@@ -149,6 +162,109 @@
             </MudGrid>
         </MudTabPanel>
 
+        <MudTabPanel Text="@($"Radar ({_radar.Events.Count})")">
+            <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                <MudText Typo="Typo.body2" Class="symbol-name">
+                    @RadarStatus()
+                </MudText>
+                <MudSpacer />
+                <MudButton Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.Radar" Disabled="_scanning" OnClick="ScanRadarAsync">
+                    @(_scanning ? "A analisar…" : "Analisar agora")
+                </MudButton>
+            </div>
+
+            <MudPaper Elevation="0" Outlined="true" Class="mb-4">
+                <MudTable Items="_radar.Events" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarEvent" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                    <ToolBarContent>
+                        <MudText Typo="Typo.subtitle1">Movimentos anormais detetados</MudText>
+                    </ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Quando</MudTh>
+                        <MudTh>Ativo</MudTh>
+                        <MudTh>Tipo</MudTh>
+                        <MudTh>Direção</MudTh>
+                        <MudTh>Força</MudTh>
+                        <MudTh>Detalhe</MudTh>
+                        <MudTh Style="text-align:right">Preço</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@TimeAgo(context.Time)</MudTd>
+                        <MudTd>
+                            <MudText Typo="Typo.body2">@context.Symbol</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
+                        </MudTd>
+                        <MudTd>@KindLabel(context.Kind)</MudTd>
+                        <MudTd>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(context.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">
+                                @(context.Direction == TradeDirection.Buy ? "ALTA" : "BAIXA")
+                            </MudChip>
+                        </MudTd>
+                        <MudTd>@((context.Strength * 100).ToString("0", CultureInfo.InvariantCulture))%</MudTd>
+                        <MudTd>@context.Detail</MudTd>
+                        <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent>
+                        <MudText Class="pa-4" Color="Color.Secondary">Sem movimentos anormais nas últimas 24 h. Aparecem aqui quando o volume dispara, há gaps ou o preço rompe níveis-chave com o mercado aberto.</MudText>
+                    </NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+
+            <MudGrid Spacing="4">
+                <MudItem xs="12" lg="6">
+                    <MudPaper Elevation="0" Outlined="true">
+                        <MudTable Items="@TopByRelativeVolume()" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarRow" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                            <ToolBarContent>
+                                <MudText Typo="Typo.subtitle1">Maior volume relativo</MudText>
+                            </ToolBarContent>
+                            <HeaderContent>
+                                <MudTh>Ativo</MudTh>
+                                <MudTh Style="text-align:right">Preço</MudTh>
+                                <MudTh Style="text-align:right">Var.</MudTh>
+                                <MudTh Style="text-align:right">Volume</MudTh>
+                                <MudTh Style="text-align:right">vs VWAP</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Symbol</MudTd>
+                                <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
+                                <MudTd Style="text-align:right">@Percent(context.DayChangePercent)</MudTd>
+                                <MudTd Style="text-align:right">@(context.RelativeVolume is { } rvol ? $"{rvol.ToString("0.0", CultureInfo.InvariantCulture)}×" : "—")</MudTd>
+                                <MudTd Style="text-align:right">@Percent(context.VwapDistancePercent)</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText Class="pa-4" Color="Color.Secondary">Sem dados de volume agora (mercados fechados ou histórico insuficiente).</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" lg="6">
+                    <MudPaper Elevation="0" Outlined="true">
+                        <MudTable Items="@TopMovers()" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarRow" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                            <ToolBarContent>
+                                <MudText Typo="Typo.subtitle1">Maiores variações do dia</MudText>
+                            </ToolBarContent>
+                            <HeaderContent>
+                                <MudTh>Ativo</MudTh>
+                                <MudTh Style="text-align:right">Preço</MudTh>
+                                <MudTh Style="text-align:right">Var.</MudTh>
+                                <MudTh Style="text-align:right">Gap</MudTh>
+                                <MudTh Style="text-align:right">Volume</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Symbol</MudTd>
+                                <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
+                                <MudTd Style="text-align:right">@Percent(context.DayChangePercent)</MudTd>
+                                <MudTd Style="text-align:right">@Percent(context.GapPercent)</MudTd>
+                                <MudTd Style="text-align:right">@(context.RelativeVolume is { } rvol ? $"{rvol.ToString("0.0", CultureInfo.InvariantCulture)}×" : "—")</MudTd>
+                            </RowTemplate>
+                            <NoRecordsContent>
+                                <MudText Class="pa-4" Color="Color.Secondary">Sem mercados abertos neste momento.</MudText>
+                            </NoRecordsContent>
+                        </MudTable>
+                    </MudPaper>
+                </MudItem>
+            </MudGrid>
+        </MudTabPanel>
+
         <MudTabPanel Text="Track record">
             @if (_loading)
             {
@@ -160,7 +276,7 @@
                 <MudPaper Elevation="0" Outlined="true" Class="pa-6">
                     <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem sugestões fechadas</MudText>
                     <MudText Color="Color.Secondary">
-                        Cada sugestão é avaliada automaticamente contra o preço real e fecha quando toca no take profit, no stop loss ou ao fim de 5 dias.
+                        Cada sugestão é avaliada automaticamente contra o preço real e fecha quando toca no take profit, no stop loss ou ao fim do prazo (5 dias no swing, 3 horas no intraday).
                         Há @(_record?.OpenCount ?? 0) em curso; as estatísticas aparecem aqui à medida que fecharem.
                     </MudText>
                 </MudPaper>
@@ -277,8 +393,15 @@
 
 @code {
     private const double ConfidenceThreshold = 0.6;
+    private const string HorizonAll = "all";
+    private const string HorizonIntraday = "intraday";
+    private const string HorizonSwing = "swing";
+    private static readonly TimeSpan RadarPollInterval = TimeSpan.FromSeconds(30);
 
     private readonly CancellationTokenSource _cts = new();
+    private string _horizonKey = HorizonAll;
+    private RadarSnapshot _radar = new(DateTimeOffset.MinValue, 0, [], []);
+    private bool _scanning;
     private IReadOnlyList<SuggestionDto> _open = [];
     private Dictionary<string, DateOnly> _earnings = [];
     private IReadOnlyList<SuggestionDto> _closed = [];
@@ -290,7 +413,68 @@
 
     private static int ThresholdPercent => (int)(ConfidenceThreshold * 100);
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    private SuggestionHorizon? Horizon => _horizonKey switch
+    {
+        HorizonIntraday => SuggestionHorizon.Intraday,
+        HorizonSwing => SuggestionHorizon.Swing,
+        _ => null
+    };
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _ = PollRadarAsync();
+    }
+
+    private async Task OnHorizonChangedAsync(string? key)
+    {
+        _horizonKey = key ?? HorizonAll;
+        _loading = true;
+        await LoadAsync();
+    }
+
+    private async Task PollRadarAsync()
+    {
+        try
+        {
+            using PeriodicTimer timer = new(RadarPollInterval);
+
+            do
+            {
+                try
+                {
+                    _radar = await Api.GetRadarAsync(_cts.Token);
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (HttpRequestException)
+                {
+                }
+            }
+            while (await timer.WaitForNextTickAsync(_cts.Token));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task ScanRadarAsync()
+    {
+        _scanning = true;
+
+        try
+        {
+            _radar = await Api.ScanRadarAsync(_cts.Token);
+            await LoadAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível analisar o mercado agora.";
+        }
+        finally
+        {
+            _scanning = false;
+        }
+    }
 
     private async Task LoadAsync()
     {
@@ -298,9 +482,9 @@
 
         try
         {
-            _open = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
-            _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token);
-            _record = await Api.GetTrackRecordAsync(_cts.Token);
+            _open = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, Horizon);
+            _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token, Horizon);
+            _record = await Api.GetTrackRecordAsync(_cts.Token, Horizon);
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
             _earnings = (await Api.GetCalendarAsync(7, _cts.Token)).Events
                 .Where(e => e is { Kind: CalendarKind.Earnings, Symbol: not null })
@@ -336,16 +520,40 @@
         }
     }
 
-    private async Task OpenChartAsync(SuggestionDto suggestion)
+    private Task OpenChartAsync(SuggestionDto suggestion) => OpenChartAsync(suggestion.Symbol, suggestion.Name);
+
+    private async Task OpenChartAsync(string symbol, string name)
     {
-        InstrumentQuote quote = _quotes.TryGetValue(suggestion.Symbol, out InstrumentQuote? known)
+        InstrumentQuote quote = _quotes.TryGetValue(symbol, out InstrumentQuote? known)
             ? known
-            : new InstrumentQuote(suggestion.Symbol, suggestion.Name, AssetClass.Stock, "USD", null, null, null, []);
+            : new InstrumentQuote(symbol, name, AssetClass.Stock, "USD", null, null, null, []);
 
         DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote } };
         DialogOptions options = new() { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true };
-        await DialogService.ShowAsync<ChartDialog>(suggestion.Symbol, parameters, options);
+        await DialogService.ShowAsync<ChartDialog>(symbol, parameters, options);
     }
+
+    private IEnumerable<RadarRow> TopByRelativeVolume() =>
+        _radar.Board.Where(r => r.RelativeVolume is not null).OrderByDescending(r => r.RelativeVolume).Take(15);
+
+    private IEnumerable<RadarRow> TopMovers() =>
+        _radar.Board.Where(r => r.DayChangePercent is not null).OrderByDescending(r => Math.Abs(r.DayChangePercent!.Value)).Take(15);
+
+    private string RadarStatus() => _radar.UpdatedAt == DateTimeOffset.MinValue
+        ? "A aguardar a primeira análise (arranca ~1 minuto depois do servidor)."
+        : $"Atualizado {TimeAgo(_radar.UpdatedAt)} · {_radar.Board.Count} de {_radar.ScannedCount} instrumentos com mercado aberto. Atualiza sozinho a cada 30 s; o servidor analisa de 90 em 90 s.";
+
+    private static string Percent(double? value) =>
+        value is { } v ? $"{v:+0.00;-0.00;0.00}%".Replace('.', ',') : "—";
+
+    private static string KindLabel(RadarEventKind kind) => kind switch
+    {
+        RadarEventKind.VolumeSpike => "Pico de volume",
+        RadarEventKind.Gap => "Gap de abertura",
+        RadarEventKind.OpeningRangeBreakout => "Rompimento dos 30 min iniciais",
+        RadarEventKind.PreviousDayBreakout => "Rompimento do dia anterior",
+        _ => "Movimento brusco"
+    };
 
     private IEnumerable<(string Label, string Value, Color Color)> Kpis()
     {

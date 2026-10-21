@@ -3,6 +3,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
+using Trader.Core.Intraday;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
 using Trader.Infrastructure.Persistence;
@@ -14,19 +15,80 @@ public sealed class SuggestionService(
     IMarketDataService marketData,
     IScoringSettings scoringSettings,
     IAlertService alerts,
+    IntradayOptions intradayOptions,
     ILogger<SuggestionService> logger) : ISuggestionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
+    private static readonly TimeSpan IntradayCooldown = TimeSpan.FromHours(1);
+    private static readonly TimeSpan SwingNewsWindow = TimeSpan.FromDays(30);
 
     public async Task<int> RefreshAsync(CancellationToken cancellationToken)
     {
-        await EvaluateOpenAsync(cancellationToken);
+        await EvaluateOpenAsync(SuggestionHorizon.Swing, cancellationToken);
         return await GenerateAsync(await scoringSettings.GetAsync(cancellationToken), cancellationToken);
     }
 
-    public async Task<IReadOnlyList<SuggestionDto>> GetAsync(string? symbol, bool? open, int limit, CancellationToken cancellationToken)
+    public async Task<int> RefreshIntradayAsync(IReadOnlyList<IntradayContext> contexts, CancellationToken cancellationToken)
+    {
+        await EvaluateOpenAsync(SuggestionHorizon.Intraday, cancellationToken);
+
+        IntradayEngine engine = new(intradayOptions);
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset cooldownStart = now - IntradayCooldown;
+
+        HashSet<string> blocked = (await dbContext.Suggestions
+            .Where(s => s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Select(s => s.Symbol)
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        int slots = intradayOptions.MaxOpenSuggestions
+            - await dbContext.Suggestions.CountAsync(x => x.Horizon == SuggestionHorizon.Intraday && x.Status == SuggestionStatus.Open, cancellationToken);
+
+        if (slots <= 0)
+        {
+            return 0;
+        }
+
+        ScoringOptions newsScoring = new() { SentimentHalfLifeHours = intradayOptions.NewsHalfLifeHours };
+        List<(SuggestionDraft Draft, IntradayContext Context)> drafts = [];
+
+        foreach (IntradayContext context in contexts.Where(c => !blocked.Contains(c.Symbol) && Math.Abs(c.RecentMove) >= intradayOptions.MinEntryMove))
+        {
+            SentimentSnapshot sentiment = await BuildSentimentAsync(context.Symbol, now, newsScoring, TimeSpan.FromHours(intradayOptions.NewsWindowHours), cancellationToken);
+            SuggestionDraft? draft = engine.Evaluate(context, sentiment);
+
+            if (draft is not null)
+            {
+                drafts.Add((draft, context));
+            }
+        }
+
+        List<Suggestion> added = drafts
+            .OrderByDescending(d => d.Draft.Confidence)
+            .Take(Math.Min(slots, intradayOptions.MaxNewSuggestionsPerCycle))
+            .Select(d => ToEntity(d.Draft, now, now.AddHours(intradayOptions.ExpiryHours), SuggestionHorizon.Intraday))
+            .ToList();
+
+        dbContext.Suggestions.AddRange(added);
+        await dbContext.SaveChangesAsync(cancellationToken);
+        await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
+
+        if (added.Count > 0)
+        {
+            logger.LogInformation("Intraday cycle created {Count} suggestions", added.Count);
+        }
+
+        return added.Count;
+    }
+
+    public async Task<IReadOnlyList<SuggestionDto>> GetAsync(string? symbol, bool? open, int limit, SuggestionHorizon? horizon, CancellationToken cancellationToken)
     {
         IQueryable<Suggestion> query = dbContext.Suggestions.AsNoTracking();
+
+        if (horizon is not null)
+        {
+            query = query.Where(s => s.Horizon == horizon);
+        }
 
         if (!string.IsNullOrWhiteSpace(symbol))
         {
@@ -44,21 +106,29 @@ public sealed class SuggestionService(
         return rows.Select(ToDto).ToList();
     }
 
-    public async Task<TrackRecordDto> GetTrackRecordAsync(CancellationToken cancellationToken)
+    public async Task<TrackRecordDto> GetTrackRecordAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
     {
-        List<Suggestion> closed = await dbContext.Suggestions
-            .AsNoTracking()
+        IQueryable<Suggestion> all = dbContext.Suggestions.AsNoTracking();
+
+        if (horizon is not null)
+        {
+            all = all.Where(s => s.Horizon == horizon);
+        }
+
+        List<Suggestion> closed = await all
             .Where(s => s.Status != SuggestionStatus.Open)
             .ToListAsync(cancellationToken);
 
-        int openCount = await dbContext.Suggestions.CountAsync(s => s.Status == SuggestionStatus.Open, cancellationToken);
+        int openCount = await all.CountAsync(s => s.Status == SuggestionStatus.Open, cancellationToken);
 
         return TrackRecordCalculator.Calculate(closed.Select(ToDto).ToList(), openCount);
     }
 
-    private async Task EvaluateOpenAsync(CancellationToken cancellationToken)
+    private async Task EvaluateOpenAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
     {
-        List<Suggestion> open = await dbContext.Suggestions.Where(s => s.Status == SuggestionStatus.Open).ToListAsync(cancellationToken);
+        List<Suggestion> open = await dbContext.Suggestions
+            .Where(s => s.Status == SuggestionStatus.Open && s.Horizon == horizon)
+            .ToListAsync(cancellationToken);
         DateTimeOffset now = DateTimeOffset.UtcNow;
         List<Alert> raised = [];
 
@@ -66,7 +136,9 @@ public sealed class SuggestionService(
         {
             try
             {
-                IReadOnlyList<Candle> candles = await marketData.GetCandlesAsync(suggestion.Symbol, "60m", "1mo", cancellationToken);
+                IReadOnlyList<Candle> candles = horizon == SuggestionHorizon.Intraday
+                    ? await marketData.GetCandlesAsync(suggestion.Symbol, "5m", "5d", cancellationToken)
+                    : await marketData.GetCandlesAsync(suggestion.Symbol, "60m", "1mo", cancellationToken);
                 OutcomeResult? outcome = OutcomeResolver.Resolve(suggestion, candles, now);
 
                 if (outcome is null)
@@ -102,7 +174,7 @@ public sealed class SuggestionService(
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         HashSet<string> openSymbols = (await dbContext.Suggestions
-            .Where(s => s.Status == SuggestionStatus.Open)
+            .Where(s => s.Status == SuggestionStatus.Open && s.Horizon == SuggestionHorizon.Swing)
             .Select(s => s.Symbol)
             .ToListAsync(cancellationToken)).ToHashSet();
 
@@ -122,7 +194,7 @@ public sealed class SuggestionService(
                     continue;
                 }
 
-                SentimentSnapshot sentiment = await BuildSentimentAsync(instrument.Symbol, now, scoring, cancellationToken);
+                SentimentSnapshot sentiment = await BuildSentimentAsync(instrument.Symbol, now, scoring, SwingNewsWindow, cancellationToken);
                 SuggestionDraft? draft = engine.Evaluate(market, sentiment);
 
                 if (draft is null)
@@ -130,7 +202,7 @@ public sealed class SuggestionService(
                     continue;
                 }
 
-                Suggestion entity = ToEntity(draft, now, scoring);
+                Suggestion entity = ToEntity(draft, now, now.AddDays(scoring.ExpiryDays), SuggestionHorizon.Swing);
                 dbContext.Suggestions.Add(entity);
                 added.Add(entity);
                 created++;
@@ -147,9 +219,9 @@ public sealed class SuggestionService(
         return created;
     }
 
-    private async Task<SentimentSnapshot> BuildSentimentAsync(string symbol, DateTimeOffset now, ScoringOptions scoring, CancellationToken cancellationToken)
+    private async Task<SentimentSnapshot> BuildSentimentAsync(string symbol, DateTimeOffset now, ScoringOptions scoring, TimeSpan window, CancellationToken cancellationToken)
     {
-        DateTimeOffset since = now.AddDays(-30);
+        DateTimeOffset since = now - window;
 
         var rows = await (
             from articleSymbol in dbContext.Set<ArticleSymbol>().AsNoTracking()
@@ -164,7 +236,7 @@ public sealed class SuggestionService(
             scoring);
     }
 
-    private static Suggestion ToEntity(SuggestionDraft draft, DateTimeOffset now, ScoringOptions scoring) => new()
+    private static Suggestion ToEntity(SuggestionDraft draft, DateTimeOffset now, DateTimeOffset expiresAt, SuggestionHorizon horizon) => new()
     {
         Symbol = draft.Symbol,
         Name = draft.Name,
@@ -178,8 +250,9 @@ public sealed class SuggestionService(
         Explanation = draft.Explanation,
         EvidenceJson = JsonSerializer.Serialize(new SuggestionEvidence(draft.Signals, draft.Articles), JsonOptions),
         CreatedAt = now,
-        ExpiresAt = now.AddDays(scoring.ExpiryDays),
-        Status = SuggestionStatus.Open
+        ExpiresAt = expiresAt,
+        Status = SuggestionStatus.Open,
+        Horizon = horizon
     };
 
     private static SuggestionDto ToDto(Suggestion s)
@@ -205,6 +278,7 @@ public sealed class SuggestionService(
             s.ExitPrice,
             s.RMultiple,
             evidence.Signals,
-            evidence.Articles);
+            evidence.Articles,
+            s.Horizon);
     }
 }

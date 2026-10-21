@@ -6,6 +6,12 @@ public enum TradeDirection
     Sell
 }
 
+public enum SuggestionHorizon
+{
+    Swing,
+    Intraday
+}
+
 public enum SuggestionStatus
 {
     Open,
@@ -31,6 +37,7 @@ public sealed class Suggestion
     public DateTimeOffset CreatedAt { get; set; }
     public DateTimeOffset ExpiresAt { get; set; }
     public SuggestionStatus Status { get; set; }
+    public SuggestionHorizon Horizon { get; set; }
     public DateTimeOffset? ClosedAt { get; set; }
     public double? ExitPrice { get; set; }
     public double? RMultiple { get; set; }
