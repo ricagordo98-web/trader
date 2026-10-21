@@ -2,6 +2,7 @@ using Trader.Infrastructure.Alerts;
 using Trader.Infrastructure.Backup;
 using Trader.Infrastructure.Calendar;
 using Trader.Infrastructure.Charts;
+using Trader.Infrastructure.Currency;
 using Trader.Infrastructure.Summary;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
@@ -43,6 +44,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ILiveTradeFeed>(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddHostedService(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddScoped<IChartDrawingService, ChartDrawingService>();
+        services.AddScoped<IDisplayCurrency, DisplayCurrencyService>();
 
         services.Configure<SourcesOptions>(configuration.GetSection(SourcesOptions.SectionName));
         services.AddSingleton<ITickerExtractor, TickerExtractor>();

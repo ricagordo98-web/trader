@@ -119,12 +119,15 @@ public sealed class LiveCandlePublisher(
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         IMarketDataService marketData = scope.ServiceProvider.GetRequiredService<IMarketDataService>();
+        DisplayConversion conversion = await scope.ServiceProvider.GetRequiredService<IDisplayCurrency>().GetConversionAsync(cancellationToken);
 
         foreach (LiveSubscription subscription in active)
         {
             try
             {
-                IReadOnlyList<Candle> candles = await marketData.GetLiveCandlesAsync(subscription.Symbol, subscription.Interval, subscription.Range, cancellationToken);
+                IReadOnlyList<Candle> candles = conversion.Apply(
+                    subscription.Symbol,
+                    await marketData.GetLiveCandlesAsync(subscription.Symbol, subscription.Interval, subscription.Range, cancellationToken));
                 _lastSent.TryGetValue(subscription.Group, out IReadOnlyList<Candle>? previous);
 
                 if (candles.Count == 0 || !HasChanged(previous, candles))

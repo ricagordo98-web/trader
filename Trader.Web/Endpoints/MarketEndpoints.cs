@@ -10,14 +10,25 @@ public static class MarketEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api").RequireAuthorization();
 
-        group.MapGet("/instruments", async (AssetClass? assetClass, IMarketDataService service, CancellationToken cancellationToken) =>
-            Results.Ok(await service.GetQuotesAsync(assetClass, cancellationToken)));
+        group.MapGet("/instruments", async (AssetClass? assetClass, bool? native, IMarketDataService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyList<InstrumentQuote> quotes = await service.GetQuotesAsync(assetClass, cancellationToken);
+
+            if (native == true)
+            {
+                return Results.Ok(quotes);
+            }
+
+            DisplayConversion conversion = await display.GetConversionAsync(cancellationToken);
+            return Results.Ok(quotes.Select(conversion.Apply).ToList());
+        });
 
         group.MapGet("/instruments/{symbol}/candles", async (
             string symbol,
             string? interval,
             string? range,
             IMarketDataService service,
+            IDisplayCurrency display,
             CancellationToken cancellationToken) =>
         {
             string resolvedInterval = interval ?? "1d";
@@ -32,7 +43,8 @@ public static class MarketEndpoints
 
             try
             {
-                return Results.Ok(await service.GetCandlesAsync(symbol, resolvedInterval, resolvedRange, cancellationToken));
+                IReadOnlyList<Candle> candles = await service.GetCandlesAsync(symbol, resolvedInterval, resolvedRange, cancellationToken);
+                return Results.Ok((await display.GetConversionAsync(cancellationToken)).Apply(symbol, candles));
             }
             catch (HttpRequestException)
             {
@@ -47,6 +59,7 @@ public static class MarketEndpoints
             string interval,
             string range,
             IMarketDataService service,
+            IDisplayCurrency display,
             CancellationToken cancellationToken) =>
         {
             if (!ChartParameters.IsValid(interval, range))
@@ -56,7 +69,8 @@ public static class MarketEndpoints
 
             try
             {
-                return Results.Ok(await service.GetLiveCandlesAsync(symbol, interval, range, cancellationToken));
+                IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync(symbol, interval, range, cancellationToken);
+                return Results.Ok((await display.GetConversionAsync(cancellationToken)).Apply(symbol, candles));
             }
             catch (HttpRequestException)
             {
@@ -64,10 +78,13 @@ public static class MarketEndpoints
             }
         });
 
-        group.MapGet("/instruments/{symbol}/drawings", async (string symbol, IChartDrawingService service, CancellationToken cancellationToken) =>
-            Results.Content(await service.GetAsync(symbol, cancellationToken), "application/json"));
+        group.MapGet("/instruments/{symbol}/drawings", async (string symbol, IChartDrawingService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
+        {
+            string json = await service.GetAsync(symbol, cancellationToken);
+            return Results.Content((await display.GetConversionAsync(cancellationToken)).ToDisplayDrawings(symbol, json), "application/json");
+        });
 
-        group.MapPut("/instruments/{symbol}/drawings", async (string symbol, HttpRequest request, IChartDrawingService service, CancellationToken cancellationToken) =>
+        group.MapPut("/instruments/{symbol}/drawings", async (string symbol, HttpRequest request, IChartDrawingService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
         {
             using StreamReader reader = new(request.Body);
             string json = await reader.ReadToEndAsync(cancellationToken);
@@ -81,7 +98,7 @@ public static class MarketEndpoints
                 return Results.Problem(title: "Invalid drawings payload", statusCode: StatusCodes.Status400BadRequest);
             }
 
-            await service.SaveAsync(symbol, json, cancellationToken);
+            await service.SaveAsync(symbol, (await display.GetConversionAsync(cancellationToken)).ToStoredDrawings(symbol, json), cancellationToken);
             return Results.NoContent();
         });
 

@@ -23,6 +23,22 @@
                     <MudRadio Value="ThemeMode.System" Color="Color.Primary">Seguir o sistema</MudRadio>
                 </MudRadioGroup>
             </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Moeda dos preços</MudText>
+                <MudRadioGroup T="string" Value="_displayCurrency" ValueChanged="SetDisplayCurrencyAsync">
+                    <MudRadio Value="@string.Empty" Color="Color.Primary">Moeda original de cada ativo</MudRadio>
+                    <MudRadio Value="@("EUR")" Color="Color.Primary">Euro (EUR)</MudRadio>
+                    <MudRadio Value="@("USD")" Color="Color.Primary">Dólar (USD)</MudRadio>
+                </MudRadioGroup>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-2">
+                    Converte cotações, gráficos, sugestões e radar usando a taxa de câmbio atual (a mesma para todo o histórico do gráfico).
+                    Forex e índices não são convertidos. O diário, a calculadora e os alertas de preço continuam na moeda original do ativo.
+                </MudText>
+                @if (_displayCurrencyError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_displayCurrencyError</MudAlert>
+                }
+            </MudPaper>
             <MudPaper Elevation="0" Outlined="true" Class="pa-4">
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Cor de destaque</MudText>
                 <div class="d-flex flex-wrap gap-3">
@@ -223,7 +239,7 @@
                         </MudSelect>
                     </MudItem>
                     <MudItem xs="6" sm="2">
-                        <MudNumericField T="double" @bind-Value="_alertPrice" Label="Preço" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
+                        <MudNumericField T="double" @bind-Value="_alertPrice" Label="Preço (moeda original do ativo)" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" />
                     </MudItem>
                     <MudItem xs="12" sm="3">
                         <MudTextField T="string" @bind-Value="_alertNote" Label="Nota (opcional)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="200" />
@@ -364,6 +380,8 @@
     private string? _scoringError;
     private bool _busy;
     private int _tab;
+    private string _displayCurrency = string.Empty;
+    private string? _displayCurrencyError;
 
     protected override async Task OnInitializedAsync()
     {
@@ -380,11 +398,23 @@
             _ntfyServer = ntfy.Server;
             _backups = await Api.GetBackupsAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
+            _displayCurrency = await Api.GetDisplayCurrencyAsync(_cts.Token);
             _alertSymbol = _watchlist.FirstOrDefault()?.Symbol;
         }
         catch (HttpRequestException)
         {
             Snackbar.Add("Não foi possível carregar as configurações do servidor.", Severity.Error);
+        }
+    }
+
+    private async Task SetDisplayCurrencyAsync(string? currency)
+    {
+        _displayCurrencyError = await Api.SetDisplayCurrencyAsync(currency ?? string.Empty, _cts.Token);
+
+        if (_displayCurrencyError is null)
+        {
+            _displayCurrency = currency ?? string.Empty;
+            Snackbar.Add("Moeda atualizada. As páginas já abertas só mudam ao recarregar.", Severity.Success);
         }
     }
 

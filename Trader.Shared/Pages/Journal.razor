@@ -170,8 +170,8 @@
         {
             _account = await Api.GetAccountAsync(_cts.Token);
             _watchlist = await Api.GetWatchlistAsync(_cts.Token);
-            _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
-            _openSuggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
+            _quotes = (await Api.GetInstrumentsAsync(_cts.Token, native: true)).ToDictionary(q => q.Symbol);
+            _openSuggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, native: true);
             await ReloadTradesAsync();
 
             if (Entry is { } entry && StopLoss is { } stop)

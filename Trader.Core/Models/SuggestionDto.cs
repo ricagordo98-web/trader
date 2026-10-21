@@ -25,7 +25,8 @@ public sealed record SuggestionDto(
     double? RMultiple,
     IReadOnlyList<SignalResult> Signals,
     IReadOnlyList<EvidenceArticle> Articles,
-    SuggestionHorizon Horizon = SuggestionHorizon.Swing);
+    SuggestionHorizon Horizon = SuggestionHorizon.Swing,
+    double DisplayFactor = 1);
 
 public sealed record CurvePoint(DateTimeOffset Time, double CumulativeR);
 

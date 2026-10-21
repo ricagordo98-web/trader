@@ -93,8 +93,17 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public Uri NewsHubUrl => new(httpClient.BaseAddress!, "hubs/news");
 
-    public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default) =>
-        await httpClient.GetFromJsonAsync<IReadOnlyList<InstrumentQuote>>("api/instruments", cancellationToken) ?? [];
+    public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default, bool native = false) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<InstrumentQuote>>(native ? "api/instruments?native=true" : "api/instruments", cancellationToken) ?? [];
+
+    public async Task<string> GetDisplayCurrencyAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<DisplayCurrencySettings>("api/settings/display-currency", cancellationToken))?.Currency ?? string.Empty;
+
+    public async Task<string?> SetDisplayCurrencyAsync(string currency, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/settings/display-currency", new DisplayCurrencySettings(currency), cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
 
     public async Task<IReadOnlyList<Candle>> GetCandlesAsync(string symbol, string interval, string range, CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<Candle>>(
@@ -151,7 +160,7 @@ public sealed class TraderApiClient(HttpClient httpClient)
     public async Task<IReadOnlyList<SentimentSummary>> GetSentimentSummaryAsync(int hours = 24, CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<SentimentSummary>>($"api/news/sentiment?hours={hours}", cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null)
+    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null, bool native = false)
     {
         List<string> parameters = [$"limit={limit}"];
 
@@ -168,6 +177,11 @@ public sealed class TraderApiClient(HttpClient httpClient)
         if (horizon is { } selected)
         {
             parameters.Add($"horizon={selected}");
+        }
+
+        if (native)
+        {
+            parameters.Add("native=true");
         }
 
         return await httpClient.GetFromJsonAsync<IReadOnlyList<SuggestionDto>>($"api/suggestions?{string.Join('&', parameters)}", cancellationToken) ?? [];

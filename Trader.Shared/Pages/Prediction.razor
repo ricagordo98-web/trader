@@ -570,7 +570,7 @@
     private static string JournalLink(SuggestionDto s) =>
         string.Create(
             CultureInfo.InvariantCulture,
-            $"/journal?symbol={Uri.EscapeDataString(s.Symbol)}&entry={s.Entry:R}&sl={s.StopLoss:R}&tp={s.TakeProfit:R}&suggestion={s.Id}");
+            $"/journal?symbol={Uri.EscapeDataString(s.Symbol)}&entry={s.Entry / s.DisplayFactor:R}&sl={s.StopLoss / s.DisplayFactor:R}&tp={s.TakeProfit / s.DisplayFactor:R}&suggestion={s.Id}");
 
     private static string Price(double value) =>
         value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", CultureInfo.GetCultureInfo("pt-PT"));

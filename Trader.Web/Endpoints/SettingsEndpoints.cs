@@ -26,6 +26,15 @@ public static class SettingsEndpoints
         group.MapDelete("/watchlist/{symbol}", async (string symbol, IInstrumentService service, CancellationToken cancellationToken) =>
             await service.RemoveAsync(symbol, cancellationToken) ? Results.NoContent() : Results.NotFound());
 
+        group.MapGet("/settings/display-currency", async (IDisplayCurrency display, CancellationToken cancellationToken) =>
+            Results.Ok(new DisplayCurrencySettings(await display.GetAsync(cancellationToken))));
+
+        group.MapPut("/settings/display-currency", async (DisplayCurrencySettings request, IDisplayCurrency display, CancellationToken cancellationToken) =>
+        {
+            string? error = await display.SetAsync(request.Currency, cancellationToken);
+            return error is null ? Results.NoContent() : Results.Problem(title: error, statusCode: StatusCodes.Status400BadRequest);
+        });
+
         group.MapGet("/sources", (ISourceStatusRegistry registry) => Results.Ok(registry.GetAll()));
 
         group.MapGet("/settings/scoring", async (IScoringSettings settings, CancellationToken cancellationToken) =>

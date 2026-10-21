@@ -1,4 +1,5 @@
 using Trader.Core.Abstractions;
+using Trader.Core.Models;
 
 namespace Trader.Web.Endpoints;
 
@@ -8,12 +9,13 @@ public static class RadarEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/radar").RequireAuthorization();
 
-        group.MapGet("/", (IRadarService service) => Results.Ok(service.GetSnapshot()));
+        group.MapGet("/", async (IRadarService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
+            Results.Ok((await display.GetConversionAsync(cancellationToken)).Apply(service.GetSnapshot())));
 
-        group.MapPost("/scan", async (IRadarService service, CancellationToken cancellationToken) =>
+        group.MapPost("/scan", async (IRadarService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
         {
             await service.ScanAsync(cancellationToken);
-            return Results.Ok(service.GetSnapshot());
+            return Results.Ok((await display.GetConversionAsync(cancellationToken)).Apply(service.GetSnapshot()));
         });
 
         return app;
