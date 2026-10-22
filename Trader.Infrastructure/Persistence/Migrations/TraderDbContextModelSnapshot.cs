@@ -750,6 +750,42 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         });
                 });
 
+            modelBuilder.Entity("Trader.Core.Models.MoveExplanationRecord", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("From")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Json")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("NarrativeStatus")
+                        .IsRequired()
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Symbol")
+                        .IsRequired()
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<long>("To")
+                        .HasColumnType("INTEGER");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("Symbol", "From", "To");
+
+                    b.ToTable("MoveExplanations");
+                });
+
             modelBuilder.Entity("Trader.Core.Models.Suggestion", b =>
                 {
                     b.Property<long>("Id")

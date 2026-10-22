@@ -186,6 +186,7 @@
                         <MudTh>Força</MudTh>
                         <MudTh>Detalhe</MudTh>
                         <MudTh Style="text-align:right">Preço</MudTh>
+                        <MudTh></MudTh>
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd>@TimeAgo(context.Time)</MudTd>
@@ -200,8 +201,19 @@
                             </MudChip>
                         </MudTd>
                         <MudTd>@((context.Strength * 100).ToString("0", CultureInfo.InvariantCulture))%</MudTd>
-                        <MudTd>@context.Detail</MudTd>
+                        <MudTd>
+                            @context.Detail
+                            @if (context.Why is { Length: > 0 } why)
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Info" Class="d-block">@why</MudText>
+                            }
+                        </MudTd>
                         <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudTooltip Text="Porque se mexeu?">
+                                <MudIconButton Icon="@Icons.Material.Filled.QuestionAnswer" Size="Size.Small" aria-label="@($"Porque se mexeu {context.Symbol}")" OnClick="@(() => WhyDialogLauncher.ShowAsync(DialogService, context.Symbol, context.Name))" />
+                            </MudTooltip>
+                        </MudTd>
                     </RowTemplate>
                     <NoRecordsContent>
                         <MudText Class="pa-4" Color="Color.Secondary">Sem movimentos anormais nas últimas 24 h. Aparecem aqui quando o volume dispara, há gaps ou o preço rompe níveis-chave com o mercado aberto.</MudText>

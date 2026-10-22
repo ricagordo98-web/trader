@@ -54,7 +54,7 @@ public static class AlertFactory
                 Kind = AlertKind.Radar,
                 Symbol = e.Symbol,
                 Title = $"Radar: {e.Symbol} {(e.Direction == TradeDirection.Buy ? "↑" : "↓")} {e.Detail}",
-                Message = string.Create(CultureInfo.InvariantCulture, $"{e.Name} · preço {e.Price:0.#####}"),
+                Message = string.Create(CultureInfo.InvariantCulture, $"{e.Name} · preço {e.Price:0.#####}{(e.Why is { Length: > 0 } why ? " · " + why : string.Empty)}"),
                 CreatedAt = now
             }).ToList();
         }

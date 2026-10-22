@@ -19,7 +19,8 @@ public sealed record RadarEvent(
     double Strength,
     string Detail,
     double Price,
-    DateTimeOffset Time);
+    DateTimeOffset Time,
+    string? Why = null);
 
 public sealed record RadarRow(
     string Symbol,

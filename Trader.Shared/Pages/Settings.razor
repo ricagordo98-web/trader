@@ -1,4 +1,5 @@
 @page "/settings"
+@using Trader.Core.Abstractions
 @using System.Globalization
 @implements IDisposable
 @inject TraderApiClient Api
@@ -24,20 +25,18 @@
                 </MudRadioGroup>
             </MudPaper>
             <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                <MudText Typo="Typo.subtitle1" Class="mb-2">Moeda dos preços</MudText>
-                <MudRadioGroup T="string" Value="_displayCurrency" ValueChanged="SetDisplayCurrencyAsync">
-                    <MudRadio Value="@string.Empty" Color="Color.Primary">Moeda original de cada ativo</MudRadio>
-                    <MudRadio Value="@("EUR")" Color="Color.Primary">Euro (EUR)</MudRadio>
-                    <MudRadio Value="@("USD")" Color="Color.Primary">Dólar (USD)</MudRadio>
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Fonte dos preços</MudText>
+                <MudText Typo="Typo.body2" Class="mb-2">
+                    Cotações e histórico: Yahoo Finance. Ao vivo: trades dos EUA e forex (OANDA) via Finnhub, e cripto via Binance. Futuros, índices e ações europeias só têm a cotação do Yahoo, com atraso possível.
+                </MudText>
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Preço ao vivo da cripto</MudText>
+                <MudRadioGroup T="string" Value="_cryptoBasis" ValueChanged="SetCryptoBasisAsync">
+                    <MudRadio Value="@CryptoBasis.Usd" Color="Color.Primary">Alinhado ao USD do Yahoo (recomendado)</MudRadio>
+                    <MudRadio Value="@CryptoBasis.Exchange" Color="Color.Primary">Preço da Binance em USDT (sem ajuste)</MudRadio>
                 </MudRadioGroup>
                 <MudText Typo="Typo.caption" Class="symbol-name mt-2">
-                    Converte cotações, gráficos, sugestões e radar usando a taxa de câmbio atual (a mesma para todo o histórico do gráfico).
-                    Forex e índices não são convertidos. O diário, a calculadora e os alertas de preço continuam na moeda original do ativo.
+                    O Bitcoin não tem um preço único: cada bolsa tem o seu, e o USDT costuma valer cerca de 0,1% acima do dólar. O ajuste mantém o gráfico ao segundo mas no mesmo nível do preço em USD. Compara sempre com o preço da tua corretora, que é o que conta para a execução.
                 </MudText>
-                @if (_displayCurrencyError is not null)
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_displayCurrencyError</MudAlert>
-                }
             </MudPaper>
             <MudPaper Elevation="0" Outlined="true" Class="pa-4">
                 <MudText Typo="Typo.subtitle1" Class="mb-3">Cor de destaque</MudText>
@@ -48,6 +47,55 @@
                                 style="background:@(Theme.IsDark ? accent.Dark : accent.Light)" @onclick="@(() => Theme.SetAccentAsync(Store, accent))"></button>
                     }
                 </div>
+            </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Perfil">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">A tua corretora</MudText>
+                <MudSelect T="string" Label="Corretora" Variant="Variant.Outlined" Margin="Margin.Dense" Value="_profile.Broker" ValueChanged="SetBrokerAsync">
+                    @foreach (BrokerOption option in BrokerCatalog.Options)
+                    {
+                        <MudSelectItem Value="@option.Key">@option.Label</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-2">
+                    Usada nas notas de fonte dos preços e como plataforma por omissão no diário. A Trading 212 só disponibiliza API para contas Invest e ISA, não para CFD, por isso a ligação automática à conta não está disponível.
+                </MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Moeda dos preços</MudText>
+                <MudRadioGroup T="string" Value="_profile.DisplayCurrency ?? string.Empty" ValueChanged="SetProfileCurrencyAsync">
+                    <MudRadio Value="@string.Empty" Color="Color.Primary">Moeda original de cada ativo</MudRadio>
+                    <MudRadio Value="@("EUR")" Color="Color.Primary">Euro (EUR)</MudRadio>
+                    <MudRadio Value="@("USD")" Color="Color.Primary">Dólar (USD)</MudRadio>
+                </MudRadioGroup>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-2">
+                    Converte cotações, gráficos, sugestões e radar com a taxa de câmbio atual (a mesma para todo o histórico do gráfico). Forex e índices não são convertidos. O diário, a calculadora e os alertas de preço continuam na moeda original do ativo.
+                </MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Classes de ativos que queres ver</MudText>
+                <div class="d-flex flex-wrap gap-4">
+                    @foreach ((AssetClass assetClass, string label) in ClassOptions)
+                    {
+                        <MudCheckBox T="bool" Label="@label" Color="Color.Primary" Value="@IsClassEnabled(assetClass)" ValueChanged="@((bool on) => ToggleClassAsync(assetClass, on))" />
+                    }
+                </div>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-1">
+                    Filtra as cotações, sugestões e radar que vês. Os alertas enviados pelo servidor (incluindo o ntfy) continuam a cobrir tudo.
+                </MudText>
+            </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Texto do "Porquê?"</MudText>
+                <MudSwitch T="bool" Label="Usar o modelo local (Ollama) para escrever a explicação" Color="Color.Primary" Value="_profile.NarrativeEnabled" ValueChanged="SetNarrativeAsync" />
+                <MudText Typo="Typo.caption" Class="symbol-name">
+                    Desligado, a explicação usa só o resumo automático (mais rápido e sem carga na GPU). O texto do modelo é sempre verificado contra as fontes antes de aparecer.
+                </MudText>
+                @if (_profileError is not null)
+                {
+                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_profileError</MudAlert>
+                }
             </MudPaper>
         </MudTabPanel>
 
@@ -380,8 +428,19 @@
     private string? _scoringError;
     private bool _busy;
     private int _tab;
-    private string _displayCurrency = string.Empty;
-    private string? _displayCurrencyError;
+    private string _cryptoBasis = CryptoBasis.Usd;
+    private UserPreferences _profile = UserPreferences.Default;
+    private string? _profileError;
+
+    private static readonly (AssetClass, string)[] ClassOptions =
+    [
+        (AssetClass.Stock, "Ações"),
+        (AssetClass.Etf, "ETFs"),
+        (AssetClass.Commodity, "Mercadorias"),
+        (AssetClass.Forex, "Forex"),
+        (AssetClass.Crypto, "Cripto"),
+        (AssetClass.Index, "Índices")
+    ];
 
     protected override async Task OnInitializedAsync()
     {
@@ -398,7 +457,8 @@
             _ntfyServer = ntfy.Server;
             _backups = await Api.GetBackupsAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
-            _displayCurrency = await Api.GetDisplayCurrencyAsync(_cts.Token);
+            _profile = await Api.GetProfileAsync(_cts.Token);
+            _cryptoBasis = await Api.GetCryptoBasisAsync(_cts.Token);
             _alertSymbol = _watchlist.FirstOrDefault()?.Symbol;
         }
         catch (HttpRequestException)
@@ -407,14 +467,61 @@
         }
     }
 
-    private async Task SetDisplayCurrencyAsync(string? currency)
+    private async Task SetCryptoBasisAsync(string? basis)
     {
-        _displayCurrencyError = await Api.SetDisplayCurrencyAsync(currency ?? string.Empty, _cts.Token);
+        string? error = await Api.SetCryptoBasisAsync(basis ?? CryptoBasis.Usd, _cts.Token);
 
-        if (_displayCurrencyError is null)
+        if (error is null)
         {
-            _displayCurrency = currency ?? string.Empty;
-            Snackbar.Add("Moeda atualizada. As páginas já abertas só mudam ao recarregar.", Severity.Success);
+            _cryptoBasis = basis ?? CryptoBasis.Usd;
+            Snackbar.Add("Fonte do preço da cripto atualizada.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Error);
+        }
+    }
+
+    private bool IsClassEnabled(AssetClass assetClass) => _profile.Allows(assetClass);
+
+    private Task SetBrokerAsync(string? broker) => SaveProfileAsync(_profile with { Broker = broker ?? BrokerCatalog.Other });
+
+    private Task SetProfileCurrencyAsync(string? currency) => SaveProfileAsync(_profile with { DisplayCurrency = currency ?? string.Empty });
+
+    private Task SetNarrativeAsync(bool enabled) => SaveProfileAsync(_profile with { NarrativeEnabled = enabled });
+
+    private Task ToggleClassAsync(AssetClass assetClass, bool enabled)
+    {
+        List<AssetClass> current = _profile.EnabledClasses.Count == 0 ? ClassOptions.Select(o => o.Item1).ToList() : _profile.EnabledClasses.ToList();
+
+        if (enabled)
+        {
+            current.Add(assetClass);
+        }
+        else
+        {
+            current.Remove(assetClass);
+        }
+
+        List<AssetClass> distinct = current.Distinct().ToList();
+
+        if (distinct.Count == 0)
+        {
+            Snackbar.Add("Tem de ficar pelo menos uma classe de ativos.", Severity.Warning);
+            return Task.CompletedTask;
+        }
+
+        return SaveProfileAsync(_profile with { EnabledClasses = distinct.Count == ClassOptions.Length ? [] : distinct });
+    }
+
+    private async Task SaveProfileAsync(UserPreferences preferences)
+    {
+        _profileError = await Api.SaveProfileAsync(preferences, _cts.Token);
+
+        if (_profileError is null)
+        {
+            _profile = preferences;
+            Snackbar.Add("Perfil guardado. As páginas já abertas só mudam ao recarregar.", Severity.Success);
         }
     }
 

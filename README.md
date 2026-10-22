@@ -63,6 +63,30 @@ A background worker scans every instrument with an open market every 90 seconds 
 - Confidence is capped at 85% until enough closed intraday suggestions exist to calibrate it (see the calibration table in the track record).
 - Tunables live in `IntradayOptions` (`Trader.Core/Intraday/Models.cs`).
 
+## Why did it move? (move explanations)
+
+The "Porque se mexeu?" button (Trading table, chart toolbar, Radar rows) explains a price move over a window (last session, 24 h, 5 days, 30 days or the visible chart range). It is an attribution aid, not proof of causality.
+
+1. **Quantify:** change, typical move for the period (z-score), biggest single candle, volume against normal and opening gap.
+2. **Market, sector or company:** compares with a benchmark (S&P 500, DAX, PSI-20, Bitcoin...) using a beta from the last year, and with the most correlated watchlist assets. The move is classified as small, market-wide, sector, company-specific or mixed.
+3. **Evidence:** stored articles, Finnhub company news, Marketaux, Google News (no key), earnings results with EPS surprise (Finnhub) and SEC EDGAR filings (8-K item codes, Form 4). EDGAR needs `Sources:Edgar:ContactEmail`. Each source has a 10 s timeout and a failure only adds a note.
+4. **Ranking:** timing against the biggest candle, whether the asset is named, source reliability, category weight, sentiment direction and headline wording (opinion headlines are penalised). Near-duplicate headlines are merged. Confidence is capped for market-wide moves, small moves and uncategorised news.
+5. **Text:** an automatic summary is always produced. If `Summary:OllamaModel` is set (for example `gemma2:9b`), a local model writes a short Portuguese explanation from the facts only; a verifier (`NarrationGuard`) rejects any text with numbers, tickers, names or links that are not in the facts, citations of missing evidence, investment advice, or conclusions that contradict the classification (market move, sector move, news with the opposite sentiment). A rejected text falls back to the automatic summary and is counted (`GET /api/explain/stats`, also shown in the dialog).
+
+Explanations are cached in the `MoveExplanations` table (10 min for recent windows, 24 h for past ones). The radar adds the probable cause to its alerts for the strongest events, and the daily summary has a "Porque se mexeram" section for the top movers.
+
+Measured on 22 synthetic scenarios (`Trader.Tests/OllamaEvaluation.cs`, run with `TRADER_OLLAMA_MODEL=<model>`; it loads the GPU, so run it on its own): gemma2:9b had 21/22 texts accepted and 21/21 correct, qwen2.5:7b 20/22 and 19/20. No accepted text contained invented numbers or names; the remaining risk is a weak or wrong attribution, which is why the evidence list and confidence are always shown.
+
+## Price sources and profile
+
+Every price comes from Yahoo Finance (quotes refreshed about every 2 minutes, history and candles). The live chart adds Finnhub trades for US listings, OANDA for forex and Binance for crypto; futures, indices and European shares only have Yahoo (possible delay). The source is shown on the chart chip, in the tooltip of each price and in a note on the Trading page (`PriceSources`).
+
+Crypto has no single price: each exchange differs a little and USDT trades about 0.1% above the dollar. By default the live Binance trades are rescaled to the Yahoo USD level (a smoothed ratio, clamped to +-1%) so the live candle matches the quote table. Settings -> Aparencia -> "Fonte dos precos" switches to the raw Binance USDT price (`GET/PUT /api/settings/price-source`, global to the server).
+
+Settings -> Perfil is stored per user (`GET/PUT /api/settings/profile`): broker (Trading 212 CFD/Invest, XTB, other), price currency (original, EUR or USD; the live stream groups subscribers by currency), the asset classes shown in quotes, suggestions and radar, and whether the local model writes the "Porque se mexeu?" text. Server-side alerts (ntfy) still cover every asset.
+
+Trading 212 only offers a public API for Invest and Stocks ISA accounts, not CFD, so there is no automatic account link for CFD users.
+
 ## Accounts
 
 Every API route and the SignalR hub require a signed-in user (ASP.NET Core Identity, bearer tokens).

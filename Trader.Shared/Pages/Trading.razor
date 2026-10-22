@@ -12,6 +12,9 @@
                       Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="trading-search" />
         <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" aria-label="Atualizar cotações" OnClick="LoadAsync" />
     </div>
+    <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
+        Fonte das cotações: @PriceSources.Yahoo (atualizadas a cada ~2 minutos, com atraso possível). O gráfico ao vivo usa Finnhub nos EUA e no forex e a Binance na cripto. Passa o rato sobre um preço para ver a fonte; o preço da tua corretora pode diferir ligeiramente.
+    </MudText>
 
     @if (_error is not null)
     {
@@ -29,13 +32,14 @@
                             <MudTh Style="text-align:right">Preço</MudTh>
                             <MudTh Style="text-align:right">Variação</MudTh>
                             <MudTh Style="text-align:right" Class="d-none d-sm-table-cell">1 mês</MudTh>
+                            <MudTh></MudTh>
                         </HeaderContent>
                         <RowTemplate>
                             <MudTd>
                                 <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
                                 <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
                             </MudTd>
-                            <MudTd Style="text-align:right;white-space:nowrap">
+                            <MudTd Style="text-align:right;white-space:nowrap" title="@($"Fonte: {PriceSources.Yahoo}. {PriceSources.Describe(context.Symbol, context.AssetClass, CryptoBasis.Usd).Note}")">
                                 @(context.Price is null ? "—" : $"{context.Price.Value.ToString("F" + PriceFormat.Decimals(context.AssetClass, context.Symbol, context.Price), _culture)} {context.Currency}")
                             </MudTd>
                             <MudTd Style="text-align:right">
@@ -51,6 +55,11 @@
                                 }
                             </MudTd>
                             <MudTd Style="text-align:right" Class="d-none d-sm-table-cell"><Sparkline Values="context.Sparkline" /></MudTd>
+                            <MudTd Style="text-align:right">
+                                <MudTooltip Text="Porque se mexeu?">
+                                    <MudIconButton Icon="@Icons.Material.Filled.QuestionAnswer" Size="Size.Small" aria-label="@($"Porque se mexeu {context.Symbol}")" OnClick="@(() => OpenWhyAsync(context))" />
+                                </MudTooltip>
+                            </MudTd>
                         </RowTemplate>
                         <NoRecordsContent>
                             @if (_loading)
@@ -130,5 +139,7 @@
         DialogOptions options = new() { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true };
         await DialogService.ShowAsync<ChartDialog>(quote.Symbol, parameters, options);
     }
+
+    private Task OpenWhyAsync(InstrumentQuote quote) => WhyDialogLauncher.ShowAsync(DialogService, quote.Symbol, quote.Name);
 
 }

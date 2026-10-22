@@ -208,3 +208,80 @@ public class DisplayCurrencyServiceTests : IAsyncLifetime
         (await service.GetConversionAsync(CancellationToken.None)).Should().Be(DisplayConversion.None);
     }
 }
+
+public class UserPreferencesTests : IAsyncLifetime
+{
+    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private TraderDbContext _dbContext = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _connection.OpenAsync();
+        _dbContext = new TraderDbContext(new DbContextOptionsBuilder<TraderDbContext>().UseSqlite(_connection).Options);
+        await _dbContext.Database.EnsureCreatedAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _dbContext.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task Get_NewUser_ReturnsDefaultsThatShowEverythingAndFollowTheAppCurrency()
+    {
+        UserPreferences preferences = await new Trader.Infrastructure.Persistence.UserPreferencesService(_dbContext).GetAsync("u1", CancellationToken.None);
+
+        preferences.Should().Be(UserPreferences.Default);
+        preferences.DisplayCurrency.Should().BeNull();
+        Enum.GetValues<AssetClass>().Should().OnlyContain(c => preferences.Allows(c));
+    }
+
+    [Fact]
+    public async Task Save_ThenGet_RoundTripsPerUserWithoutAffectingOthers()
+    {
+        Trader.Infrastructure.Persistence.UserPreferencesService service = new(_dbContext);
+        UserPreferences mine = new("trading212-cfd", "eur", [AssetClass.Stock, AssetClass.Crypto, AssetClass.Stock], false);
+
+        (await service.SaveAsync("u1", mine, CancellationToken.None)).Should().BeEmpty();
+
+        UserPreferences loaded = await service.GetAsync("u1", CancellationToken.None);
+        loaded.Broker.Should().Be("trading212-cfd");
+        loaded.DisplayCurrency.Should().Be("EUR");
+        loaded.EnabledClasses.Should().Equal(AssetClass.Stock, AssetClass.Crypto);
+        loaded.NarrativeEnabled.Should().BeFalse();
+        loaded.Allows(AssetClass.Forex).Should().BeFalse();
+        (await service.GetAsync("u2", CancellationToken.None)).Should().Be(UserPreferences.Default);
+    }
+
+    [Theory]
+    [InlineData("nope", null)]
+    [InlineData("xtb", "JPY")]
+    public async Task Save_InvalidValues_AreRejectedAndNotStored(string broker, string? currency)
+    {
+        Trader.Infrastructure.Persistence.UserPreferencesService service = new(_dbContext);
+
+        (await service.SaveAsync("u1", new UserPreferences(broker, currency, [], true), CancellationToken.None)).Should().NotBeEmpty();
+        (await service.GetAsync("u1", CancellationToken.None)).Should().Be(UserPreferences.Default);
+    }
+
+    [Fact]
+    public void BrokerCatalog_LabelOrNull_OnlyReturnsForRealBrokers()
+    {
+        BrokerCatalog.LabelOrNull("trading212-cfd").Should().Be("Trading 212 (CFD)");
+        BrokerCatalog.LabelOrNull(BrokerCatalog.Other).Should().BeNull();
+    }
+
+    [Fact]
+    public void LiveSubscriptions_RemoveMatching_DropsTheConnectionFromEveryCurrencyGroup()
+    {
+        Trader.Web.Hubs.LiveSubscriptions subscriptions = new();
+        subscriptions.Add("c1", new Trader.Web.Hubs.LiveSubscription("AAPL", "1m", "1d", "EUR"));
+        subscriptions.Add("c1", new Trader.Web.Hubs.LiveSubscription("AAPL", "1m", "1d", "USD"));
+
+        IReadOnlyList<Trader.Web.Hubs.LiveSubscription> removed = subscriptions.RemoveMatching("c1", "AAPL", "1m", "1d");
+
+        removed.Should().HaveCount(2);
+        subscriptions.Active().Should().BeEmpty();
+    }
+}

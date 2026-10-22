@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Trader.Core.Abstractions;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
@@ -32,6 +33,24 @@ public static class SettingsEndpoints
         group.MapPut("/settings/display-currency", async (DisplayCurrencySettings request, IDisplayCurrency display, CancellationToken cancellationToken) =>
         {
             string? error = await display.SetAsync(request.Currency, cancellationToken);
+            return error is null ? Results.NoContent() : Results.Problem(title: error, statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapGet("/settings/profile", async (ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
+            Results.Ok(await prefs.GetAsync(UserDisplay.UserId(user), cancellationToken)));
+
+        group.MapPut("/settings/profile", async (UserPreferences request, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyList<string> errors = await prefs.SaveAsync(UserDisplay.UserId(user), request, cancellationToken);
+            return errors.Count == 0 ? Results.NoContent() : Results.Problem(title: string.Join(" ", errors), statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapGet("/settings/price-source", async (IPriceSettings prices, CancellationToken cancellationToken) =>
+            Results.Ok(new PriceSourceSettings(await prices.GetCryptoBasisAsync(cancellationToken))));
+
+        group.MapPut("/settings/price-source", async (PriceSourceSettings request, IPriceSettings prices, CancellationToken cancellationToken) =>
+        {
+            string? error = await prices.SetCryptoBasisAsync(request.CryptoBasis, cancellationToken);
             return error is null ? Results.NoContent() : Results.Problem(title: error, statusCode: StatusCodes.Status400BadRequest);
         });
 

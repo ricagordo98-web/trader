@@ -1,3 +1,4 @@
+using System.Security.Claims;
 using Trader.Core.Abstractions;
 using Trader.Core.Models;
 
@@ -9,7 +10,7 @@ public static class SuggestionEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/suggestions").RequireAuthorization();
 
-        group.MapGet("/", async (string? symbol, bool? open, int? limit, SuggestionHorizon? horizon, bool? native, ISuggestionService service, IDisplayCurrency display, CancellationToken cancellationToken) =>
+        group.MapGet("/", async (string? symbol, bool? open, int? limit, SuggestionHorizon? horizon, bool? native, ISuggestionService service, IInstrumentService instruments, IDisplayCurrency display, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
         {
             IReadOnlyList<SuggestionDto> suggestions = await service.GetAsync(symbol, open, limit ?? 100, horizon, cancellationToken);
 
@@ -18,7 +19,14 @@ public static class SuggestionEndpoints
                 return Results.Ok(suggestions);
             }
 
-            DisplayConversion conversion = await display.GetConversionAsync(cancellationToken);
+            HashSet<string>? allowed = await UserDisplay.AllowedSymbolsAsync(await prefs.GetAsync(UserDisplay.UserId(user), cancellationToken), instruments, cancellationToken);
+
+            if (allowed is not null)
+            {
+                suggestions = suggestions.Where(s => allowed.Contains(s.Symbol)).ToList();
+            }
+
+            DisplayConversion conversion = await UserDisplay.ConversionAsync(user, prefs, display, cancellationToken);
             return Results.Ok(suggestions.Select(conversion.Apply).ToList());
         });
 

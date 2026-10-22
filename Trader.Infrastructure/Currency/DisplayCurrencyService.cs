@@ -52,22 +52,25 @@ public sealed class DisplayCurrencyService(
         }
 
         await dbContext.SaveChangesAsync(cancellationToken);
-        cache.Remove(ConversionCacheKey);
         return null;
     }
 
-    public async Task<DisplayConversion> GetConversionAsync(CancellationToken cancellationToken)
+    public async Task<DisplayConversion> GetConversionAsync(CancellationToken cancellationToken) =>
+        await GetConversionAsync(await GetAsync(cancellationToken), cancellationToken);
+
+    public async Task<DisplayConversion> GetConversionAsync(string currency, CancellationToken cancellationToken)
     {
-        if (cache.TryGetValue(ConversionCacheKey, out DisplayConversion? cached) && cached is not null)
+        string target = currency.Trim().ToUpperInvariant();
+        string cacheKey = $"{ConversionCacheKey}:{target}";
+
+        if (cache.TryGetValue(cacheKey, out DisplayConversion? cached) && cached is not null)
         {
             return cached;
         }
 
-        string target = await GetAsync(cancellationToken);
-
-        if (target.Length == 0)
+        if (target.Length == 0 || !Supported.Contains(target))
         {
-            cache.Set(ConversionCacheKey, DisplayConversion.None, ConversionCacheDuration);
+            cache.Set(cacheKey, DisplayConversion.None, ConversionCacheDuration);
             return DisplayConversion.None;
         }
 
@@ -101,7 +104,7 @@ public sealed class DisplayCurrencyService(
         }
 
         DisplayConversion conversion = new(target, factors);
-        cache.Set(ConversionCacheKey, conversion, complete ? ConversionCacheDuration : FailedConversionCacheDuration);
+        cache.Set(cacheKey, conversion, complete ? ConversionCacheDuration : FailedConversionCacheDuration);
         return conversion;
     }
 

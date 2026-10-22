@@ -26,7 +26,7 @@ public sealed class EdgarConnector(HttpClient httpClient, IOptions<SourcesOption
         try
         {
             using HttpRequestMessage request = new(HttpMethod.Get, FeedUrl);
-            request.Headers.UserAgent.ParseAdd($"Trader personal research tool {_options.ContactEmail}");
+            request.Headers.TryAddWithoutValidation("User-Agent", $"Trader personal research tool {_options.ContactEmail}");
 
             using HttpResponseMessage response = await httpClient.SendAsync(request, cancellationToken);
             response.EnsureSuccessStatusCode();

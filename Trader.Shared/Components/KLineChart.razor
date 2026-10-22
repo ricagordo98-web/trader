@@ -94,6 +94,20 @@
         }
     }
 
+    public async Task<(DateTimeOffset From, DateTimeOffset To)?> GetVisibleRangeAsync()
+    {
+        long[] range = _module is null ? [] : await _module.InvokeAsync<long[]>("getVisibleRange", _id);
+        return range.Length == 2 ? (DateTimeOffset.FromUnixTimeMilliseconds(range[0]), DateTimeOffset.FromUnixTimeMilliseconds(range[1])) : null;
+    }
+
+    public async Task SetMarkersAsync(IReadOnlyList<ChartMarker> markers)
+    {
+        if (_module is not null)
+        {
+            await _module.InvokeVoidAsync("setMarkers", _id, markers);
+        }
+    }
+
     public async Task SetCompareAsync(string label, IReadOnlyList<Candle> candles)
     {
         if (_module is not null)

@@ -432,6 +432,52 @@ export function setLevels(id, levels) {
     }
 }
 
+export function getVisibleRange(id) {
+    const state = charts.get(id);
+    const range = state.chart.getVisibleRange();
+    const data = state.data;
+
+    if (!range || data.length === 0) {
+        return [];
+    }
+
+    const first = data[Math.max(0, Math.min(data.length - 1, Math.floor(range.from)))];
+    const last = data[Math.max(0, Math.min(data.length - 1, Math.ceil(range.to) - 1))];
+    return [first.timestamp, last.timestamp];
+}
+
+export function setMarkers(id, markers) {
+    const state = charts.get(id);
+
+    for (const markerId of state.markerIds ?? []) {
+        state.chart.removeOverlay({ id: markerId });
+    }
+    state.markerIds = [];
+
+    for (const marker of markers) {
+        let candle = state.data[0];
+        for (const bar of state.data) {
+            if (bar.timestamp <= marker.timestamp) {
+                candle = bar;
+            } else {
+                break;
+            }
+        }
+
+        const overlayId = state.chart.createOverlay({
+            name: 'simpleAnnotation',
+            points: [{ timestamp: candle.timestamp, value: candle.high }],
+            extendData: marker.label,
+            lock: true,
+            styles: { line: { color: marker.color }, text: { color: marker.color, borderColor: marker.color } }
+        });
+
+        if (overlayId) {
+            state.markerIds.push(overlayId);
+        }
+    }
+}
+
 export function setCompare(id, label, candles) {
     const state = charts.get(id);
     clearCompare(id);

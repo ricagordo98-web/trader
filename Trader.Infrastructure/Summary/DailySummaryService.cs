@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Trader.Core.Abstractions;
 using Trader.Core.Calendar;
+using Trader.Core.Explain;
 using Trader.Core.Models;
 using Trader.Core.Summary;
 using Trader.Infrastructure.Persistence;
@@ -64,9 +65,12 @@ public sealed class DailySummaryService(
     INewsService news,
     ICalendarService calendar,
     ISummaryNarrator narrator,
+    IMoveExplainer explainer,
     ILogger<DailySummaryService> logger) : IDailySummaryService
 {
     private const string SettingKey = "summary.last";
+    private const int MoversToExplain = 3;
+    private static readonly TimeSpan ExplainTimeout = TimeSpan.FromSeconds(60);
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
@@ -84,7 +88,9 @@ public sealed class DailySummaryService(
 
         List<HeadlineItem> headlines = await LoadHeadlinesAsync(since, cancellationToken);
 
-        SummaryInput input = new(quotes, sentiment, created.Select(ToDto).ToList(), closed.Select(ToDto).ToList(), headlines, feed.Events, DateOnly.FromDateTime(DateTime.Now), now);
+        IReadOnlyList<MoverReason> reasons = await ExplainTopMoversAsync(quotes, cancellationToken);
+
+        SummaryInput input = new(quotes, sentiment, created.Select(ToDto).ToList(), closed.Select(ToDto).ToList(), headlines, feed.Events, DateOnly.FromDateTime(DateTime.Now), now, reasons);
         DailySummary summary = SummaryBuilder.Build(input);
 
         if (narrator.IsEnabled && await narrator.NarrateAsync(summary, cancellationToken) is { } narrative)
@@ -102,6 +108,37 @@ public sealed class DailySummaryService(
         AppSetting? setting = await dbContext.AppSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Key == SettingKey, cancellationToken);
 
         return setting is null ? null : JsonSerializer.Deserialize<DailySummary>(setting.Value, JsonOptions);
+    }
+
+    private async Task<IReadOnlyList<MoverReason>> ExplainTopMoversAsync(IReadOnlyList<InstrumentQuote> quotes, CancellationToken cancellationToken)
+    {
+        List<MoverReason> reasons = [];
+
+        foreach (InstrumentQuote quote in quotes
+            .Where(q => q.ChangePercent is not null && q.AssetClass is not (AssetClass.Forex or AssetClass.Index))
+            .OrderByDescending(q => Math.Abs(q.ChangePercent!.Value))
+            .Take(MoversToExplain))
+        {
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ExplainTimeout);
+
+            try
+            {
+                MoveExplanation? explanation = await explainer.ExplainAsync(new MoveRequest(quote.Symbol, null, null), timeout.Token);
+                string? text = explanation is null ? null : explanation.Narrative is { } narrative ? ExplanationText.WithoutCitations(narrative) : ExplanationText.OneLiner(explanation);
+
+                if (text is not null)
+                {
+                    reasons.Add(new MoverReason(quote.Symbol, quote.ChangePercent!.Value, text));
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogDebug("Could not explain {Symbol} for the summary: {Message}", quote.Symbol, ex.Message);
+            }
+        }
+
+        return reasons;
     }
 
     private async Task<List<HeadlineItem>> LoadHeadlinesAsync(DateTimeOffset since, CancellationToken cancellationToken)

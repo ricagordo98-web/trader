@@ -1,0 +1,305 @@
+@using System.Globalization
+@using System.Text.RegularExpressions
+@using Trader.Core.Abstractions
+@using Trader.Core.Explain
+@implements IDisposable
+@inject TraderApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-3">
+            <MudIcon Icon="@Icons.Material.Filled.QuestionAnswer" />
+            <MudText Typo="Typo.h6">Porque se mexeu: @Symbol</MudText>
+            <MudText Typo="Typo.body2" Class="symbol-name">@Name</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="d-flex flex-wrap gap-2 mb-3">
+            @foreach (Preset preset in Presets)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="@(preset.Key == _preset ? Variant.Filled : Variant.Outlined)" Color="@(preset.Key == _preset ? Color.Primary : Color.Default)"
+                         OnClick="@(() => SelectPresetAsync(preset.Key))">@preset.Label</MudChip>
+            }
+            @if (From is not null && To is not null)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="@(_preset == ChartKey ? Variant.Filled : Variant.Outlined)" Color="@(_preset == ChartKey ? Color.Primary : Color.Default)"
+                         OnClick="@(() => SelectPresetAsync(ChartKey))">Intervalo do gráfico</MudChip>
+            }
+        </div>
+
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-3" />
+            <MudText Typo="Typo.body2" Class="symbol-name">A analisar o movimento, o mercado e as notícias…</MudText>
+        }
+        else if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning">@_error</MudAlert>
+        }
+        else if (_explanation is { } explanation)
+        {
+            MoveAnalysis analysis = explanation.Analysis;
+
+            <div class="d-flex flex-wrap align-center gap-2 mb-3">
+                <MudChip T="string" Variant="Variant.Filled" Color="@(analysis.ChangePercent >= 0 ? Color.Success : Color.Error)" Class="ma-0">@ExplanationText.Percent(analysis.ChangePercent)</MudChip>
+                <MudChip T="string" Variant="Variant.Outlined" Class="ma-0">@ScopeLabel(analysis.Scope)</MudChip>
+                <MudChip T="string" Variant="Variant.Text" Size="Size.Small" Class="ma-0">típico ±@analysis.TypicalMovePercent.ToString("0.0#", Pt)% · z @analysis.ZScore.ToString("+0.0;-0.0", Pt)</MudChip>
+                @if (analysis.VolumeRatio is { } volume)
+                {
+                    <MudChip T="string" Variant="Variant.Text" Size="Size.Small" Class="ma-0">volume @volume.ToString("0.0", Pt)×</MudChip>
+                }
+                @if (analysis.GapPercent is { } gap)
+                {
+                    <MudChip T="string" Variant="Variant.Text" Size="Size.Small" Class="ma-0">gap @ExplanationText.Percent(gap)</MudChip>
+                }
+                @if (analysis.Benchmark is { } benchmark)
+                {
+                    <MudChip T="string" Variant="Variant.Text" Size="Size.Small" Class="ma-0">@benchmark.Name @ExplanationText.Percent(benchmark.ChangePercent)</MudChip>
+                }
+            </div>
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-3">
+                <div class="d-flex align-center gap-2 mb-1">
+                    @if (explanation.Narrative is not null)
+                    {
+                        <MudTooltip Text="Texto escrito por um modelo local e verificado: todos os números, nomes e fontes foram confirmados contra os dados; se algo não bate, o texto é descartado.">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0" Icon="@Icons.Material.Filled.AutoAwesome">IA local · verificado</MudChip>
+                        </MudTooltip>
+                    }
+                    else
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">Resumo automático</MudChip>
+                    }
+                </div>
+                <MudText Typo="Typo.body1">
+                    @foreach ((string text, string? id) in Segments(explanation.Narrative ?? explanation.Summary))
+                    {
+                        @if (id is null)
+                        {
+                            <span>@text</span>
+                        }
+                        else
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0 mx-1">@id</MudChip>
+                        }
+                    }
+                </MudText>
+                @if (explanation.Narrative is not null)
+                {
+                    <MudText Typo="Typo.caption" Class="symbol-name mt-2">@explanation.Summary</MudText>
+                }
+            </MudPaper>
+
+            @if (analysis.Peers.Count > 0)
+            {
+                <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
+                    Ativos correlacionados: @string.Join(" · ", analysis.Peers.Select(p => $"{p.Symbol} {ExplanationText.Percent(p.ChangePercent)}"))
+                </MudText>
+            }
+
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Causas prováveis (@explanation.Causes.Count)</MudText>
+
+            @if (explanation.Causes.Count == 0)
+            {
+                <MudText Color="Color.Secondary" Class="mb-3">Não encontrei notícias nem eventos relevantes nas fontes consultadas para este período.</MudText>
+            }
+
+            @foreach (MoveCause cause in explanation.Causes)
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-2">
+                    <div class="d-flex align-center flex-wrap gap-2">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">@cause.Id</MudChip>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@ConfidenceColor(cause.Confidence)" Class="ma-0">@CauseClassifier.Label(cause.Category) · @cause.Confidence</MudChip>
+                        <MudText Typo="Typo.caption" Class="symbol-name">@TimingLabel(cause)</MudText>
+                    </div>
+                    <div class="mt-1">
+                        @if (SafeUrl(cause.Url) is { } url)
+                        {
+                            <a href="@url" target="_blank" rel="noopener noreferrer" class="news-title">@cause.Title</a>
+                        }
+                        else
+                        {
+                            <span class="news-title">@cause.Title</span>
+                        }
+                    </div>
+                    @if (cause.Detail.Length > 0)
+                    {
+                        <MudText Typo="Typo.body2" Class="symbol-name">@cause.Detail</MudText>
+                    }
+                    <MudText Typo="Typo.caption" Class="symbol-name">
+                        @cause.Source · @cause.Time.ToLocalTime().ToString("dd/MM HH:mm", Pt)@(cause.Duplicates > 0 ? $" · +{cause.Duplicates} fontes semelhantes" : string.Empty)
+                    </MudText>
+                </MudPaper>
+            }
+
+            @foreach (string note in explanation.Notes)
+            {
+                <MudText Typo="Typo.caption" Color="Color.Warning" Class="d-block">@note</MudText>
+            }
+
+            @if (_stats is { Accepted: > 0 } or { Rejected: > 0 })
+            {
+                <MudText Typo="Typo.caption" Class="symbol-name d-block mt-3">
+                    Texto do modelo local: @_stats!.Accepted verificados e @_stats.Rejected descartados por conterem factos fora das fontes (@(((double)_stats.Rejected / Math.Max(1, _stats.Accepted + _stats.Rejected) * 100).ToString("0", Pt))% de descarte).
+                </MudText>
+            }
+
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mt-3">
+                Atribuição provável, não provada: a ordem das causas baseia-se na proximidade temporal, na relevância e na fonte. Ferramenta de apoio, não é aconselhamento financeiro.
+            </MudText>
+        }
+    </DialogContent>
+    <DialogActions>
+        @if (OnMarkers.HasDelegate && _explanation is { Causes.Count: > 0 })
+        {
+            <MudButton StartIcon="@Icons.Material.Filled.PushPin" OnClick="MarkAsync">Marcar no gráfico</MudButton>
+        }
+        <MudButton StartIcon="@Icons.Material.Filled.Refresh" Disabled="_loading" OnClick="@(() => LoadAsync(true))">Atualizar</MudButton>
+        <MudButton OnClick="Close">Fechar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private sealed record Preset(string Key, string Label);
+
+    private const string ChartKey = "chart";
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    private static readonly Preset[] Presets =
+    [
+        new("today", "Última sessão"),
+        new("24h", "24 h"),
+        new("5d", "5 dias"),
+        new("30d", "30 dias")
+    ];
+
+    private readonly CancellationTokenSource _cts = new();
+    private MoveExplanation? _explanation;
+    private string? _error;
+    private bool _loading = true;
+    private string _preset = "today";
+    private ExplainStats? _stats;
+
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
+    [Parameter] public string Name { get; set; } = string.Empty;
+    [Parameter] public DateTimeOffset? From { get; set; }
+    [Parameter] public DateTimeOffset? To { get; set; }
+    [Parameter] public EventCallback<IReadOnlyList<MoveCause>> OnMarkers { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        if (From is not null && To is not null)
+        {
+            _preset = ChartKey;
+        }
+
+        await LoadAsync(false);
+    }
+
+    private Task SelectPresetAsync(string key)
+    {
+        _preset = key;
+        return LoadAsync(false);
+    }
+
+    private async Task LoadAsync(bool refresh)
+    {
+        _loading = true;
+        _error = null;
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        (DateTimeOffset? from, DateTimeOffset? to) = _preset switch
+        {
+            "24h" => (now.AddHours(-24), now),
+            "5d" => (now.AddDays(-5), now),
+            "30d" => (now.AddDays(-30), now),
+            ChartKey => (From, To),
+            _ => ((DateTimeOffset?)null, (DateTimeOffset?)null)
+        };
+
+        try
+        {
+            (_explanation, _error) = await Api.ExplainAsync(Symbol, from, to, refresh, _cts.Token);
+            _stats = await Api.GetExplainStatsAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível contactar o servidor.";
+        }
+        catch (OperationCanceledException)
+        {
+            return;
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task MarkAsync()
+    {
+        if (_explanation is not null)
+        {
+            await OnMarkers.InvokeAsync(_explanation.Causes);
+            Dialog.Close();
+        }
+    }
+
+    private void Close() => Dialog.Close();
+
+    private static IEnumerable<(string Text, string? Id)> Segments(string text)
+    {
+        int last = 0;
+
+        foreach (Match match in Regex.Matches(text, @"\[(E\d+)\]"))
+        {
+            if (match.Index > last)
+            {
+                yield return (text[last..match.Index], null);
+            }
+
+            yield return (string.Empty, match.Groups[1].Value);
+            last = match.Index + match.Length;
+        }
+
+        if (last < text.Length)
+        {
+            yield return (text[last..], null);
+        }
+    }
+
+    private static string ScopeLabel(MoveScope scope) => scope switch
+    {
+        MoveScope.Small => "Movimento normal",
+        MoveScope.MarketWide => "Acompanha o mercado",
+        MoveScope.Sector => "Movimento de setor",
+        MoveScope.CompanySpecific => "Específico do ativo",
+        _ => "Misto (mercado + ativo)"
+    };
+
+    private static Color ConfidenceColor(string confidence) => confidence switch
+    {
+        "Alta" => Color.Success,
+        "Média" => Color.Warning,
+        _ => Color.Default
+    };
+
+    private static string TimingLabel(MoveCause cause)
+    {
+        int minutes = Math.Abs(cause.LeadMinutes);
+        string span = minutes >= 120 ? $"{minutes / 60} h" : $"{minutes} min";
+
+        return cause.LeadMinutes >= 0 ? $"{span} antes do maior movimento" : $"{span} depois do maior movimento";
+    }
+
+    private static string? SafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" ? uri.ToString() : null;
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

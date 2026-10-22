@@ -63,6 +63,15 @@ public sealed record DisplayConversion(string Currency, IReadOnlyDictionary<stri
         Board = snapshot.Board.Select(r => r with { Price = r.Price * FactorFor(r.Symbol) }).ToList()
     };
 
+    public Explain.MoveExplanation Apply(Explain.MoveExplanation explanation)
+    {
+        double factor = FactorFor(explanation.Analysis.Symbol);
+
+        return factor == 1
+            ? explanation
+            : explanation with { Analysis = explanation.Analysis with { StartPrice = explanation.Analysis.StartPrice * factor, EndPrice = explanation.Analysis.EndPrice * factor } };
+    }
+
     public string ToDisplayDrawings(string symbol, string json) => ScaleDrawings(json, FactorFor(symbol));
 
     public string ToStoredDrawings(string symbol, string json) => ScaleDrawings(json, 1 / FactorFor(symbol));

@@ -13,6 +13,8 @@ public sealed record DailySummary(
     IReadOnlyList<SummarySection> Sections,
     string Source);
 
+public sealed record MoverReason(string Symbol, double ChangePercent, string Text);
+
 public sealed record HeadlineItem(string Title, string Source, double? Sentiment, IReadOnlyList<string> Symbols);
 
 public sealed record SummaryInput(
@@ -23,7 +25,8 @@ public sealed record SummaryInput(
     IReadOnlyList<HeadlineItem> Headlines,
     IReadOnlyList<CalendarEvent> Events,
     DateOnly Today,
-    DateTimeOffset Now);
+    DateTimeOffset Now,
+    IReadOnlyList<MoverReason>? Reasons = null);
 
 public static class SummaryBuilder
 {
@@ -38,6 +41,7 @@ public static class SummaryBuilder
         List<SummarySection> sections = [];
 
         AddSection(sections, "Mercado", MarketLines(input.Quotes));
+        AddSection(sections, "Porque se mexeram", (input.Reasons ?? []).Select(r => $"{r.Symbol} {r.ChangePercent.ToString("+0.00;-0.00;0.00", Pt)}%: {r.Text}").ToList());
         AddSection(sections, "Sentimento (24 h)", SentimentLines(input.Sentiment));
         AddSection(sections, "Sugestões", SuggestionLines(input.NewSuggestions, input.ClosedSuggestions));
         AddSection(sections, "Hoje e amanhã", EventLines(input.Events, input.Today));

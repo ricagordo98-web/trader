@@ -12,11 +12,17 @@ public sealed class MarketDataService(
     IMarketDataProvider provider,
     IMemoryCache cache,
     ILiveTradeFeed tradeFeed,
+    IPriceSettings priceSettings,
     ILogger<MarketDataService> logger) : IMarketDataService
 {
     private static readonly TimeSpan QuoteCacheDuration = TimeSpan.FromSeconds(120);
     private static readonly TimeSpan CandleCacheDuration = TimeSpan.FromSeconds(30);
     private static readonly TimeSpan LiveCacheDuration = TimeSpan.FromSeconds(2);
+    private static readonly TimeSpan BasisCacheDuration = TimeSpan.FromMinutes(30);
+    private const double MaxBasisGapSeconds = 45;
+    private const double MinBasis = 0.99;
+    private const double MaxBasis = 1.01;
+    private const double BasisSmoothing = 0.2;
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetQuotesAsync(AssetClass? assetClass, CancellationToken cancellationToken)
     {
@@ -84,11 +90,41 @@ public sealed class MarketDataService(
 
         if (IsCrypto(symbol))
         {
+            trades = await AlignToUsdAsync(symbol, series, trades, cancellationToken);
             series = series with { DayVolume = null };
             trades = trades.Select(t => t with { Volume = t.Volume * t.Price }).ToList();
         }
 
         return LiveCandleBuilder.Build(interval, series, trades);
+    }
+
+    private async Task<IReadOnlyList<LiveTrade>> AlignToUsdAsync(string symbol, ChartSeries series, IReadOnlyList<LiveTrade> trades, CancellationToken cancellationToken)
+    {
+        if (trades.Count == 0 || await priceSettings.GetCryptoBasisAsync(cancellationToken) != CryptoBasis.Usd)
+        {
+            return trades;
+        }
+
+        string key = $"basis:{symbol}";
+        bool known = cache.TryGetValue(key, out double basis);
+
+        if (series.LastPrice is { } reference && series.LastPriceTime is { } at)
+        {
+            LiveTrade? near = trades
+                .Where(t => t.Price > 0 && Math.Abs((t.Time - at).TotalSeconds) <= MaxBasisGapSeconds)
+                .OrderBy(t => Math.Abs((t.Time - at).TotalSeconds))
+                .FirstOrDefault();
+
+            if (near is not null)
+            {
+                double observed = Math.Clamp(reference / near.Price, MinBasis, MaxBasis);
+                basis = known ? basis * (1 - BasisSmoothing) + observed * BasisSmoothing : observed;
+                known = true;
+                cache.Set(key, basis, BasisCacheDuration);
+            }
+        }
+
+        return !known || basis == 1 ? trades : trades.Select(t => t with { Price = t.Price * basis }).ToList();
     }
 
     private static bool IsCrypto(string symbol) => symbol.EndsWith("-USD", StringComparison.OrdinalIgnoreCase);

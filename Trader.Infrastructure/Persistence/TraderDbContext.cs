@@ -14,6 +14,7 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
     public DbSet<Article> Articles => Set<Article>();
     public DbSet<Suggestion> Suggestions => Set<Suggestion>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
+    public DbSet<MoveExplanationRecord> MoveExplanations => Set<MoveExplanationRecord>();
     public DbSet<JournalTrade> JournalTrades => Set<JournalTrade>();
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<PriceAlert> PriceAlerts => Set<PriceAlert>();
@@ -47,6 +48,16 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.HasKey(s => new { s.ArticleId, s.Symbol });
             entity.HasIndex(s => s.Symbol);
             entity.Property(s => s.Symbol).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<MoveExplanationRecord>(entity =>
+        {
+            entity.HasIndex(r => new { r.Symbol, r.From, r.To });
+            entity.Property(r => r.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(r => r.NarrativeStatus).HasMaxLength(16).IsRequired();
+            entity.Property(r => r.From).HasConversion(utcTicks);
+            entity.Property(r => r.To).HasConversion(utcTicks);
+            entity.Property(r => r.CreatedAt).HasConversion(utcTicks);
         });
 
         modelBuilder.Entity<Suggestion>(entity =>

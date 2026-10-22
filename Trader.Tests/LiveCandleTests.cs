@@ -1,3 +1,4 @@
+using Microsoft.Data.Sqlite;
 using FluentAssertions;
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
@@ -113,6 +114,7 @@ public class LiveCandleServiceTests
         provider,
         new MemoryCache(new MemoryCacheOptions()),
         Substitute.For<ILiveTradeFeed>(),
+        Substitute.For<IPriceSettings>(),
         NullLogger<MarketDataService>.Instance);
 
     [Fact]
@@ -238,11 +240,142 @@ public class CryptoLiveVolumeTests
             provider,
             new MemoryCache(new MemoryCacheOptions()),
             feed,
+            Basis(CryptoBasis.Exchange),
             NullLogger<MarketDataService>.Instance);
 
         IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync("BTC-USD", "1m", "1d", CancellationToken.None);
 
         candles[^1].Volume.Should().BeApproximately(0.5 * 80100, 1e-6);
         candles[^1].Time.Should().Be(Start.AddMinutes(1));
+    }
+
+    private static IPriceSettings Basis(string basis)
+    {
+        IPriceSettings settings = Substitute.For<IPriceSettings>();
+        settings.GetCryptoBasisAsync(Arg.Any<CancellationToken>()).Returns(basis);
+        return settings;
+    }
+
+    private static MarketDataService Service(string basis, double yahooPrice, double tradePrice)
+    {
+        IMarketDataProvider provider = Substitute.For<IMarketDataProvider>();
+        provider.GetChartAsync("BTC-USD", "1m", "1d", Arg.Any<CancellationToken>()).Returns(new ChartSeries(
+            yahooPrice,
+            [new Candle(Start, yahooPrice, yahooPrice, yahooPrice, yahooPrice, 1_000_000)],
+            Start.AddMinutes(1).AddSeconds(5)));
+
+        ILiveTradeFeed feed = Substitute.For<ILiveTradeFeed>();
+        feed.Track("BTC-USD").Returns(true);
+        feed.GetTrades("BTC-USD", Arg.Any<DateTimeOffset>()).Returns([new LiveTrade(Start.AddMinutes(1).AddSeconds(6), tradePrice, 0.5)]);
+
+        return new MarketDataService(
+            new TraderDbContext(new DbContextOptionsBuilder<TraderDbContext>().UseSqlite("Data Source=:memory:").Options),
+            provider,
+            new MemoryCache(new MemoryCacheOptions()),
+            feed,
+            Basis(basis),
+            NullLogger<MarketDataService>.Instance);
+    }
+
+    [Fact]
+    public async Task GetLiveCandlesAsync_CryptoAlignedToUsd_ScalesTradePricesToTheYahooLevel()
+    {
+        MarketDataService service = Service(CryptoBasis.Usd, 81770, 81872);
+
+        IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync("BTC-USD", "1m", "1d", CancellationToken.None);
+
+        candles[^1].Close.Should().BeApproximately(81770, 0.01);
+    }
+
+    [Fact]
+    public async Task GetLiveCandlesAsync_CryptoOnExchangeBasis_KeepsTheBinancePrice()
+    {
+        MarketDataService service = Service(CryptoBasis.Exchange, 81770, 81872);
+
+        IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync("BTC-USD", "1m", "1d", CancellationToken.None);
+
+        candles[^1].Close.Should().Be(81872);
+    }
+
+    [Fact]
+    public async Task GetLiveCandlesAsync_CryptoWithAbsurdBasis_IsClampedToOnePercent()
+    {
+        MarketDataService service = Service(CryptoBasis.Usd, 70000, 81872);
+
+        IReadOnlyList<Candle> candles = await service.GetLiveCandlesAsync("BTC-USD", "1m", "1d", CancellationToken.None);
+
+        candles[^1].Close.Should().BeApproximately(81872 * 0.99, 0.01);
+    }
+}
+
+public class PriceSourcesTests
+{
+    [Fact]
+    public void Describe_CryptoAligned_MentionsTheAdjustmentAndTheBroker()
+    {
+        PriceSourceInfo info = PriceSources.Describe("BTC-USD", AssetClass.Crypto, CryptoBasis.Usd);
+
+        info.Live.Should().Contain("ajustada ao USD");
+        info.Note.Should().Contain("corretora");
+    }
+
+    [Fact]
+    public void Describe_CryptoExchange_MentionsUsdt() =>
+        PriceSources.Describe("BTC-USD", AssetClass.Crypto, CryptoBasis.Exchange).Live.Should().Contain("USDT");
+
+    [Theory]
+    [InlineData("AAPL", AssetClass.Stock, "Finnhub")]
+    [InlineData("EURUSD=X", AssetClass.Forex, "OANDA")]
+    public void Describe_LiveCapableAssets_NameTheLiveSource(string symbol, AssetClass assetClass, string expected) =>
+        PriceSources.Describe(symbol, assetClass, CryptoBasis.Usd).Live.Should().Contain(expected);
+
+    [Theory]
+    [InlineData("SAP.DE", AssetClass.Stock)]
+    [InlineData("GC=F", AssetClass.Commodity)]
+    [InlineData("^GSPC", AssetClass.Index)]
+    public void Describe_YahooOnlyAssets_HaveNoLiveSourceAndWarnAboutDelay(string symbol, AssetClass assetClass)
+    {
+        PriceSourceInfo info = PriceSources.Describe(symbol, assetClass, CryptoBasis.Usd);
+
+        info.Live.Should().BeNull();
+        info.Note.Should().Contain("atraso");
+    }
+}
+
+public class PriceSettingsServiceTests : IAsyncLifetime
+{
+    private readonly SqliteConnection _connection = new("DataSource=:memory:");
+    private TraderDbContext _dbContext = null!;
+
+    public async Task InitializeAsync()
+    {
+        await _connection.OpenAsync();
+        _dbContext = new TraderDbContext(new DbContextOptionsBuilder<TraderDbContext>().UseSqlite(_connection).Options);
+        await _dbContext.Database.EnsureCreatedAsync();
+    }
+
+    public async Task DisposeAsync()
+    {
+        await _dbContext.DisposeAsync();
+        await _connection.DisposeAsync();
+    }
+
+    [Fact]
+    public async Task CryptoBasis_DefaultsToUsdAndPersistsChanges()
+    {
+        PriceSettingsService service = new(_dbContext, new MemoryCache(new MemoryCacheOptions()));
+
+        (await service.GetCryptoBasisAsync(CancellationToken.None)).Should().Be(CryptoBasis.Usd);
+        (await service.SetCryptoBasisAsync("EXCHANGE", CancellationToken.None)).Should().BeNull();
+        (await service.GetCryptoBasisAsync(CancellationToken.None)).Should().Be(CryptoBasis.Exchange);
+    }
+
+    [Fact]
+    public async Task SetCryptoBasis_InvalidValue_IsRejected()
+    {
+        PriceSettingsService service = new(_dbContext, new MemoryCache(new MemoryCacheOptions()));
+
+        (await service.SetCryptoBasisAsync("xyz", CancellationToken.None)).Should().NotBeNull();
+        (await service.GetCryptoBasisAsync(CancellationToken.None)).Should().Be(CryptoBasis.Usd);
     }
 }

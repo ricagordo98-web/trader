@@ -5,9 +5,9 @@ using Trader.Core.Models;
 
 namespace Trader.Web.Hubs;
 
-public sealed record LiveSubscription(string Symbol, string Interval, string Range)
+public sealed record LiveSubscription(string Symbol, string Interval, string Range, string Currency = "")
 {
-    public string Group => $"live:{Symbol}:{Interval}:{Range}";
+    public string Group => $"live:{Currency}:{Symbol}:{Interval}:{Range}";
 }
 
 public sealed class LiveSubscriptions
@@ -35,6 +35,29 @@ public sealed class LiveSubscriptions
         {
             entry.Connections.Remove(connectionId);
         }
+    }
+
+    public IReadOnlyList<LiveSubscription> RemoveMatching(string connectionId, string symbol, string interval, string range)
+    {
+        List<LiveSubscription> removed = [];
+
+        foreach ((LiveSubscription subscription, HashSet<string> connections) in _groups.Values)
+        {
+            if (subscription.Symbol != symbol || subscription.Interval != interval || subscription.Range != range)
+            {
+                continue;
+            }
+
+            lock (connections)
+            {
+                if (connections.Remove(connectionId))
+                {
+                    removed.Add(subscription);
+                }
+            }
+        }
+
+        return removed;
     }
 
     public IReadOnlyList<string> RemoveConnection(string connectionId)
@@ -119,12 +142,19 @@ public sealed class LiveCandlePublisher(
 
         await using AsyncServiceScope scope = scopeFactory.CreateAsyncScope();
         IMarketDataService marketData = scope.ServiceProvider.GetRequiredService<IMarketDataService>();
-        DisplayConversion conversion = await scope.ServiceProvider.GetRequiredService<IDisplayCurrency>().GetConversionAsync(cancellationToken);
+        IDisplayCurrency display = scope.ServiceProvider.GetRequiredService<IDisplayCurrency>();
+        Dictionary<string, DisplayConversion> conversions = [];
 
         foreach (LiveSubscription subscription in active)
         {
             try
             {
+                if (!conversions.TryGetValue(subscription.Currency, out DisplayConversion? conversion))
+                {
+                    conversion = await display.GetConversionAsync(subscription.Currency, cancellationToken);
+                    conversions[subscription.Currency] = conversion;
+                }
+
                 IReadOnlyList<Candle> candles = conversion.Apply(
                     subscription.Symbol,
                     await marketData.GetLiveCandlesAsync(subscription.Symbol, subscription.Interval, subscription.Range, cancellationToken));

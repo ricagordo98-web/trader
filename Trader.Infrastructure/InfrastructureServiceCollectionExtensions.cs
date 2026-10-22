@@ -3,6 +3,7 @@ using Trader.Infrastructure.Backup;
 using Trader.Infrastructure.Calendar;
 using Trader.Infrastructure.Charts;
 using Trader.Infrastructure.Currency;
+using Trader.Infrastructure.Explain;
 using Trader.Infrastructure.Summary;
 using System.Net;
 using Microsoft.EntityFrameworkCore;
@@ -45,6 +46,8 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddHostedService(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddScoped<IChartDrawingService, ChartDrawingService>();
         services.AddScoped<IDisplayCurrency, DisplayCurrencyService>();
+        services.AddScoped<IPriceSettings, PriceSettingsService>();
+        services.AddScoped<IUserPreferences, UserPreferencesService>();
 
         services.Configure<SourcesOptions>(configuration.GetSection(SourcesOptions.SectionName));
         services.AddSingleton<ITickerExtractor, TickerExtractor>();
@@ -72,6 +75,14 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ISourceStatusRegistry, SourceStatusRegistry>();
         services.AddSingleton<ISymbolProvider, SymbolProvider>();
         services.AddSingleton(new IntradayOptions());
+        AddEvidence<FinnhubNewsEvidence>(services);
+        AddEvidence<MarketauxEvidence>(services);
+        AddEvidence<GoogleNewsEvidence>(services);
+        AddEvidence<EarningsEvidence>(services);
+        AddEvidence<EdgarEvidence>(services);
+        services.AddScoped<IEvidenceSource, StoredArticleEvidence>();
+        services.AddHttpClient<IMoveNarrator, OllamaMoveNarrator>(client => client.Timeout = TimeSpan.FromMinutes(3));
+        services.AddScoped<IMoveExplainer, MoveExplainer>();
         services.AddSingleton<IRadarService, RadarService>();
         services.AddHostedService<RadarWorker>();
         services.AddHostedService<SuggestionWorker>();
@@ -90,6 +101,19 @@ public static class InfrastructureServiceCollectionExtensions
 
         services.AddHostedService<IngestionWorker>();
         return services;
+    }
+
+    private static void AddEvidence<TSource>(IServiceCollection services)
+        where TSource : class, IEvidenceSource
+    {
+        services.AddHttpClient<TSource>(client =>
+            {
+                client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+                client.DefaultRequestHeaders.Accept.ParseAdd("*/*");
+                client.Timeout = TimeSpan.FromSeconds(15);
+            })
+            .ConfigurePrimaryHttpMessageHandler(() => new SocketsHttpHandler { AutomaticDecompression = DecompressionMethods.All });
+        services.AddTransient<IEvidenceSource>(sp => sp.GetRequiredService<TSource>());
     }
 
     private static void AddConnector<TConnector>(IServiceCollection services, int timeoutSeconds)

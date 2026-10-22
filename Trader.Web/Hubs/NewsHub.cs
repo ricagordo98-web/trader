@@ -4,7 +4,7 @@ using Trader.Core.Models;
 
 namespace Trader.Web.Hubs;
 
-public sealed class NewsHub(LiveSubscriptions subscriptions) : Hub
+public sealed class NewsHub(LiveSubscriptions subscriptions, IUserPreferences preferences, IDisplayCurrency display) : Hub
 {
     public const string ArticlesAddedMethod = "ArticlesAdded";
 
@@ -14,16 +14,25 @@ public sealed class NewsHub(LiveSubscriptions subscriptions) : Hub
 
     public async Task SubscribeLive(string symbol, string interval, string range)
     {
-        LiveSubscription subscription = Validate(symbol, interval, range);
+        LiveSubscription subscription = Validate(symbol, interval, range) with { Currency = await CurrencyAsync() };
         await Groups.AddToGroupAsync(Context.ConnectionId, subscription.Group);
         subscriptions.Add(Context.ConnectionId, subscription);
     }
 
     public async Task UnsubscribeLive(string symbol, string interval, string range)
     {
-        LiveSubscription subscription = Validate(symbol, interval, range);
-        await Groups.RemoveFromGroupAsync(Context.ConnectionId, subscription.Group);
-        subscriptions.Remove(Context.ConnectionId, subscription);
+        Validate(symbol, interval, range);
+
+        foreach (LiveSubscription subscription in subscriptions.RemoveMatching(Context.ConnectionId, symbol, interval, range))
+        {
+            await Groups.RemoveFromGroupAsync(Context.ConnectionId, subscription.Group);
+        }
+    }
+
+    private async Task<string> CurrencyAsync()
+    {
+        UserPreferences user = await preferences.GetAsync(Context.UserIdentifier ?? string.Empty, CancellationToken.None);
+        return user.DisplayCurrency ?? await display.GetAsync(CancellationToken.None);
     }
 
     public override Task OnDisconnectedAsync(Exception? exception)

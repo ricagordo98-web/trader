@@ -1,4 +1,5 @@
 @using Microsoft.AspNetCore.SignalR.Client
+@using Trader.Core.Abstractions
 @implements IAsyncDisposable
 @inject TraderApiClient Api
 @inject AuthSession Session
@@ -39,6 +40,7 @@
                         <MudMenuItem OnClick="@(() => SelectCompareAsync(option))">@(option.Symbol == _compareSymbol ? "✓ " : "    ")@option.Symbol · @option.Name</MudMenuItem>
                     }
                 </MudMenu>
+                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.QuestionAnswer" OnClick="OpenWhyAsync">Porquê?</MudButton>
                 <MudMenu Label="Modelos" StartIcon="@Icons.Material.Filled.Dashboard" Size="Size.Small" Variant="Variant.Text" Dense="true">
                     <MudMenuItem OnClick="SaveTemplateAsync">Guardar indicadores atuais…</MudMenuItem>
                     @if (_templates.Count > 0)
@@ -61,9 +63,11 @@
                 }
                 @if (_ready)
                 {
-                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(_liveProblem is null ? Color.Success : Color.Warning)" Class="ma-0">
-                        @(_liveProblem ?? "Em direto")
-                    </MudChip>
+                    <MudTooltip Text="@SourceTooltip">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(_liveProblem is null ? Color.Success : Color.Warning)" Class="ma-0">
+                            @(_liveProblem ?? LiveLabel)
+                        </MudChip>
+                    </MudTooltip>
                 }
                 <MudSpacer />
                 <MudTooltip Text="Apagar selecionado (Del)">
@@ -173,8 +177,16 @@
     private HubConnection? _hub;
     private bool _streaming;
     private bool _ready;
+    private string _cryptoBasis = CryptoBasis.Usd;
+    private string _broker = BrokerCatalog.Other;
 
     [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
+
+    private PriceSourceInfo Source => PriceSources.Describe(Quote.Symbol, Quote.AssetClass, _cryptoBasis);
+
+    private string LiveLabel => Source.Live is { } live ? $"Em direto · {live}" : "Yahoo · pode ter atraso";
+
+    private string SourceTooltip => $"Histórico: {Source.History}. {Source.Note}{(BrokerCatalog.LabelOrNull(_broker) is { } broker ? $" Compara com o preço da tua conta na {broker}." : string.Empty)}";
 
     private bool HasVolume => Quote.AssetClass is not (AssetClass.Forex or AssetClass.Index);
 
@@ -192,6 +204,8 @@
         try
         {
             _drawingsJson = await Api.GetDrawingsAsync(Quote.Symbol, _cts.Token);
+            _cryptoBasis = await Api.GetCryptoBasisAsync(_cts.Token);
+            _broker = (await Api.GetProfileAsync(_cts.Token)).Broker;
             _candles = await Api.GetCandlesAsync(Quote.Symbol, _timeframe.Interval, _timeframe.Range, _cts.Token);
             _levels = await LoadLevelsAsync();
             _compareOptions = (await Api.GetInstrumentsAsync(_cts.Token)).Where(q => q.Symbol != Quote.Symbol).ToList();
@@ -220,6 +234,31 @@
                 new ChartLevel("Stop loss", open[0].StopLoss, "#EF4444"),
                 new ChartLevel("Take profit", open[0].TakeProfit, "#22C55E")
             ];
+    }
+
+    private async Task OpenWhyAsync()
+    {
+        (DateTimeOffset From, DateTimeOffset To)? visible = _chart is null ? null : await _chart.GetVisibleRangeAsync();
+        DialogParameters<WhyDialog> parameters = new()
+        {
+            { x => x.Symbol, Quote.Symbol },
+            { x => x.Name, Quote.Name },
+            { x => x.From, visible?.From },
+            { x => x.To, visible?.To },
+            { x => x.OnMarkers, EventCallback.Factory.Create<IReadOnlyList<MoveCause>>(this, MarkCausesAsync) }
+        };
+
+        await DialogService.ShowAsync<WhyDialog>(string.Empty, parameters, new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true, CloseOnEscapeKey = true });
+    }
+
+    private async Task MarkCausesAsync(IReadOnlyList<MoveCause> causes)
+    {
+        if (_chart is not null)
+        {
+            await _chart.SetMarkersAsync(causes
+                .Select(c => new ChartMarker(c.Time.ToUnixTimeMilliseconds(), $"{c.Id} {CauseClassifier.Label(c.Category)}", c.Confidence == "Alta" ? "#22C55E" : c.Confidence == "Média" ? "#F59E0B" : "#9CA3AF"))
+                .ToList());
+        }
     }
 
     private async Task SelectTimeframeAsync(Timeframe timeframe)

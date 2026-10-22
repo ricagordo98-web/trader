@@ -3,6 +3,8 @@ using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
 using Trader.Core.Calendar;
 using Trader.Core.Charts;
+using Trader.Core.Abstractions;
+using Trader.Core.Explain;
 using Trader.Core.Intraday;
 using Trader.Core.Journal;
 using Trader.Core.Maintenance;
@@ -95,6 +97,24 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default, bool native = false) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<InstrumentQuote>>(native ? "api/instruments?native=true" : "api/instruments", cancellationToken) ?? [];
+
+    public async Task<UserPreferences> GetProfileAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<UserPreferences>("api/settings/profile", cancellationToken) ?? UserPreferences.Default;
+
+    public async Task<string?> SaveProfileAsync(UserPreferences preferences, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/settings/profile", preferences, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<string> GetCryptoBasisAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<PriceSourceSettings>("api/settings/price-source", cancellationToken))?.CryptoBasis ?? CryptoBasis.Usd;
+
+    public async Task<string?> SetCryptoBasisAsync(string basis, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/settings/price-source", new PriceSourceSettings(basis), cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
 
     public async Task<string> GetDisplayCurrencyAsync(CancellationToken cancellationToken = default) =>
         (await httpClient.GetFromJsonAsync<DisplayCurrencySettings>("api/settings/display-currency", cancellationToken))?.Currency ?? string.Empty;
@@ -190,6 +210,31 @@ public sealed class TraderApiClient(HttpClient httpClient)
     public async Task<TrackRecordDto> GetTrackRecordAsync(CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null) =>
         await httpClient.GetFromJsonAsync<TrackRecordDto>(horizon is { } selected ? $"api/suggestions/track-record?horizon={selected}" : "api/suggestions/track-record", cancellationToken)
         ?? new TrackRecordDto(0, 0, 0, 0, 0, 0, null, [], [], [], []);
+
+    public async Task<(MoveExplanation? Explanation, string? Error)> ExplainAsync(string symbol, DateTimeOffset? from, DateTimeOffset? to, bool refresh, CancellationToken cancellationToken = default)
+    {
+        List<string> parameters = [];
+
+        if (from is not null && to is not null)
+        {
+            parameters.Add($"from={Uri.EscapeDataString(from.Value.UtcDateTime.ToString("o"))}");
+            parameters.Add($"to={Uri.EscapeDataString(to.Value.UtcDateTime.ToString("o"))}");
+        }
+
+        if (refresh)
+        {
+            parameters.Add("refresh=true");
+        }
+
+        using HttpResponseMessage response = await httpClient.GetAsync($"api/explain/{Uri.EscapeDataString(symbol)}?{string.Join('&', parameters)}", cancellationToken);
+
+        return response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<MoveExplanation>(cancellationToken), null)
+            : (null, await ApiError.ReadAsync(response));
+    }
+
+    public async Task<ExplainStats?> GetExplainStatsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<ExplainStats>("api/explain/stats", cancellationToken);
 
     public async Task<RadarSnapshot> GetRadarAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<RadarSnapshot>("api/radar", cancellationToken)

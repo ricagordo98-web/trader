@@ -4,6 +4,7 @@ using Microsoft.Extensions.DependencyInjection;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
+using Trader.Core.Explain;
 using Trader.Core.Intraday;
 using Trader.Core.Models;
 using Trader.Infrastructure.Persistence;
@@ -15,6 +16,8 @@ public sealed class RadarService(IServiceScopeFactory scopeFactory, IntradayOpti
     private const int MaxParallelFetches = 4;
     private const int MaxRetainedEvents = 300;
     private const double AlertStrength = 0.5;
+    private const int MaxExplainedPerScan = 3;
+    private static readonly TimeSpan ExplainTimeout = TimeSpan.FromSeconds(12);
     private static readonly TimeSpan EventRetention = TimeSpan.FromHours(24);
     private static readonly TimeSpan ClosedMarketRecheck = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan ClosedMarketAge = TimeSpan.FromHours(2);
@@ -56,14 +59,63 @@ public sealed class RadarService(IServiceScopeFactory scopeFactory, IntradayOpti
 
             Publish(now, instruments.Count, contexts, fresh);
 
+            List<RadarEvent> explained = await ExplainAsync(scope.ServiceProvider.GetRequiredService<IMoveExplainer>(), fresh, cancellationToken);
+
+            if (!ReferenceEquals(explained, fresh))
+            {
+                Attach(explained);
+                Publish(now, instruments.Count, contexts, []);
+            }
+
             IAlertService alerts = scope.ServiceProvider.GetRequiredService<IAlertService>();
-            await alerts.RaiseAsync(AlertFactory.ForRadarEvents(fresh.Where(e => e.Strength >= AlertStrength).ToList(), now), cancellationToken);
+            await alerts.RaiseAsync(AlertFactory.ForRadarEvents(explained.Where(e => e.Strength >= AlertStrength).ToList(), now), cancellationToken);
 
             await scope.ServiceProvider.GetRequiredService<ISuggestionService>().RefreshIntradayAsync(contexts, cancellationToken);
         }
         finally
         {
             _scanLock.Release();
+        }
+    }
+
+    private async Task<List<RadarEvent>> ExplainAsync(IMoveExplainer explainer, List<RadarEvent> fresh, CancellationToken cancellationToken)
+    {
+        Dictionary<string, string> reasons = [];
+
+        foreach (RadarEvent radarEvent in fresh
+            .Where(e => e.Strength >= AlertStrength && e.Kind is RadarEventKind.Gap or RadarEventKind.VolumeSpike or RadarEventKind.MomentumBurst)
+            .OrderByDescending(e => e.Strength)
+            .DistinctBy(e => e.Symbol)
+            .Take(MaxExplainedPerScan))
+        {
+            using CancellationTokenSource timeout = CancellationTokenSource.CreateLinkedTokenSource(cancellationToken);
+            timeout.CancelAfter(ExplainTimeout);
+
+            try
+            {
+                MoveExplanation? explanation = await explainer.ExplainAsync(new MoveRequest(radarEvent.Symbol, null, null, false, false), timeout.Token);
+
+                if (explanation is not null && ExplanationText.OneLiner(explanation) is { } why)
+                {
+                    reasons[radarEvent.Symbol] = why;
+                }
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException or OperationCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogDebug("Radar could not explain {Symbol}: {Message}", radarEvent.Symbol, ex.Message);
+            }
+        }
+
+        return reasons.Count == 0
+            ? fresh
+            : fresh.Select(e => reasons.TryGetValue(e.Symbol, out string? why) ? e with { Why = why } : e).ToList();
+    }
+
+    private void Attach(List<RadarEvent> explained)
+    {
+        lock (_gate)
+        {
+            _events = _events.Select(e => explained.FirstOrDefault(x => x.Symbol == e.Symbol && x.Kind == e.Kind && x.Direction == e.Direction && x.Time == e.Time) ?? e).ToList();
         }
     }
 
