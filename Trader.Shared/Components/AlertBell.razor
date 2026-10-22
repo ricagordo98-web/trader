@@ -17,7 +17,7 @@
             {
                 @foreach (AlertDto alert in _items)
                 {
-                    <MudMenuItem OnClick="@(() => Navigation.NavigateTo("/prediction"))">
+                    <MudMenuItem OnClick="@(() => Open(alert))">
                         <div class="d-flex align-center" style="gap:12px">
                             <MudIcon Icon="@IconFor(alert.Kind)" Color="@ColorFor(alert.Kind)" Size="Size.Small" />
                             <div>
@@ -87,11 +87,21 @@
 
         foreach (AlertDto alert in raised.Take(3))
         {
-            Snackbar.Add($"{alert.Title} — {alert.Message}", SeverityFor(alert.Kind));
+            AlertDto target = alert;
+            Snackbar.Add($"{alert.Title} — {alert.Message}", SeverityFor(alert.Kind), config =>
+            {
+                config.OnClick = _ =>
+                {
+                    Open(target);
+                    return Task.CompletedTask;
+                };
+            });
         }
 
         StateHasChanged();
     });
+
+    private void Open(AlertDto alert) => Navigation.NavigateTo(AlertLinks.For(alert), forceLoad: false);
 
     private async Task OnOpenChangedAsync(bool open)
     {

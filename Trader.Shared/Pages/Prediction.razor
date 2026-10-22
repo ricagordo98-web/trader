@@ -4,6 +4,7 @@
 @implements IDisposable
 @inject TraderApiClient Api
 @inject IDialogService DialogService
+@inject IJSRuntime JS
 
 <PageTitle>Predição · Trader</PageTitle>
 
@@ -29,7 +30,18 @@
         <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
     }
 
-    <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4">
+    @if (_focus is { } focus)
+    {
+        <MudAlert Severity="@(focus.Status == SuggestionStatus.Open ? Severity.Info : focus.Status == SuggestionStatus.HitTakeProfit ? Severity.Success : focus.Status == SuggestionStatus.HitStopLoss ? Severity.Error : Severity.Normal)" Class="mb-4" ShowCloseIcon="true" CloseIconClicked="@(() => _focus = null)">
+            Sugestão do alerta: @(focus.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER") @focus.Symbol · @StatusLabel(focus.Status)@(focus.RMultiple is { } r ? $" ({r.ToString("+0.00;-0.00", CultureInfo.InvariantCulture)} R)" : string.Empty)
+            @if (focus.Status != SuggestionStatus.Open)
+            {
+                <MudButton Size="Size.Small" Variant="Variant.Text" Class="ml-2" OnClick="@(() => OpenChartAsync(focus))">Ver gráfico</MudButton>
+            }
+        </MudAlert>
+    }
+
+    <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
         <MudTabPanel Text="@($"Sugestões ({_open.Count})")">
             @if (_loading)
             {
@@ -56,7 +68,7 @@
                 {
                     bool buy = suggestion.Direction == TradeDirection.Buy;
                     <MudItem xs="12" lg="6" xl="4" @key="suggestion.Id">
-                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100 suggestion-card">
+                        <MudPaper Elevation="0" Outlined="true" Class="@($"pa-4 h-100 suggestion-card{(suggestion.Id == Suggestion ? " focus-card" : string.Empty)}")" id="@($"suggestion-{suggestion.Id}")">
                             <div class="d-flex align-center gap-3">
                                 <ConfidenceGauge Value="suggestion.Confidence" />
                                 <div class="flex-grow-1">
@@ -422,6 +434,13 @@
     private string? _error;
     private bool _loading = true;
     private bool _refreshing;
+    private int _tab;
+    private SuggestionDto? _focus;
+    private bool _focusScrolled;
+
+    [SupplyParameterFromQuery] public long? Suggestion { get; set; }
+
+    [SupplyParameterFromQuery] public string? Tab { get; set; }
 
     private static int ThresholdPercent => (int)(ConfidenceThreshold * 100);
 
@@ -432,9 +451,43 @@
         _ => null
     };
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_focus is { Status: SuggestionStatus.Open } focus && !_loading && !_focusScrolled && _tab == 0)
+        {
+            _focusScrolled = true;
+            await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/nav.js");
+            await module.InvokeVoidAsync("scrollToSelector", $"#suggestion-{focus.Id}");
+        }
+    }
+
+    private async Task ApplyDeepLinkAsync()
+    {
+        if (string.Equals(Tab, "radar", StringComparison.OrdinalIgnoreCase))
+        {
+            _tab = 1;
+        }
+
+        if (Suggestion is not { } id)
+        {
+            return;
+        }
+
+        _focus = _open.Concat(_closed).FirstOrDefault(s => s.Id == id);
+
+        if (_focus is null)
+        {
+            IReadOnlyList<SuggestionDto> all = await Api.GetSuggestionsAsync(null, null, 500, _cts.Token);
+            _focus = all.FirstOrDefault(s => s.Id == id);
+        }
+
+        _tab = _focus is null ? 0 : _focus.Status == SuggestionStatus.Open ? 0 : 2;
+    }
+
     protected override async Task OnInitializedAsync()
     {
         await LoadAsync();
+        await ApplyDeepLinkAsync();
         _ = PollRadarAsync();
     }
 

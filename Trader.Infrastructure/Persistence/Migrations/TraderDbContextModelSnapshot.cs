@@ -177,6 +177,9 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(128)
                         .HasColumnType("TEXT");
 
+                    b.Property<long>("TradeId")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("UserId")
                         .HasMaxLength(450)
                         .HasColumnType("TEXT");

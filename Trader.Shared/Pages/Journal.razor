@@ -54,7 +54,7 @@
                 else
                 {
                     <MudPaper Elevation="0" Outlined="true">
-                        <MudTable Items="VisibleTrades" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Md">
+                        <MudTable Items="VisibleTrades" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Md" RowClassFunc="TradeRowClass">
                             <HeaderContent>
                                 <MudTh>Ativo</MudTh>
                                 <MudTh>Entrada</MudTh>
@@ -162,6 +162,22 @@
 
     [SupplyParameterFromQuery] public long? Suggestion { get; set; }
 
+    [SupplyParameterFromQuery] public long? Trade { get; set; }
+
+    private bool _focusScrolled;
+
+    private string TradeRowClass(JournalTradeDto trade, int index) => trade.Id == Trade ? "focus-row" : string.Empty;
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (Trade is not null && !_loading && !_focusScrolled && VisibleTrades.Any(t => t.Id == Trade))
+        {
+            _focusScrolled = true;
+            await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/nav.js");
+            await module.InvokeVoidAsync("scrollToSelector", ".focus-row");
+        }
+    }
+
     private IReadOnlyList<JournalTradeDto> VisibleTrades => _filter is null ? _trades : _trades.Where(t => t.Status == _filter).ToList();
 
     protected override async Task OnInitializedAsync()
@@ -173,6 +189,12 @@
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token, native: true)).ToDictionary(q => q.Symbol);
             _openSuggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, native: true);
             await ReloadTradesAsync();
+
+            if (Trade is not null)
+            {
+                _tab = 1;
+                _filter = null;
+            }
 
             if (Entry is { } entry && StopLoss is { } stop)
             {

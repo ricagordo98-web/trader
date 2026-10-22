@@ -209,5 +209,5 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
     private static string SeenKey(string userId) => $"alerts.seen:{userId}";
 
     private static AlertDto ToDto(Alert alert, bool unread) =>
-        new(alert.Id, alert.Kind, alert.Symbol, alert.Title, alert.Message, alert.SuggestionId, alert.CreatedAt, unread);
+        new(alert.Id, alert.Kind, alert.Symbol, alert.Title, alert.Message, alert.SuggestionId, alert.CreatedAt, unread, alert.TradeId);
 }

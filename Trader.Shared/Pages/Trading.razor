@@ -101,7 +101,17 @@
     private string? _error;
     private bool _loading;
 
-    protected override Task OnInitializedAsync() => LoadAsync();
+    [SupplyParameterFromQuery] public string? Symbol { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+
+        if (!string.IsNullOrWhiteSpace(Symbol) && _quotes.FirstOrDefault(q => q.Symbol.Equals(Symbol, StringComparison.OrdinalIgnoreCase)) is { } quote)
+        {
+            await OpenChartAsync(quote);
+        }
+    }
 
     private async Task LoadAsync()
     {

@@ -155,3 +155,8 @@ a.news-title:hover { color: var(--mud-palette-primary); }
 .heat-symbol { font-weight: 700; font-size: 1.05rem; }
 .heat-change { font-variant-numeric: tabular-nums; font-size: 1.15rem; font-weight: 600; }
 .heat-name { font-size: .72rem; opacity: .75; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%; }
+
+.focus-row, .focus-card { animation: focus-pulse 2.4s ease 2; }
+.focus-card { border-color: var(--mud-palette-primary) !important; }
+.focus-row td { background: color-mix(in srgb, var(--mud-palette-primary) 14%, transparent); }
+@keyframes focus-pulse { 0%, 100% { box-shadow: none; } 50% { box-shadow: 0 0 0 3px color-mix(in srgb, var(--mud-palette-primary) 45%, transparent); } }

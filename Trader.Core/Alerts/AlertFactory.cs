@@ -82,6 +82,7 @@ public static class AlertFactory
         Title = $"{(level == TradeLevel.StopLoss ? "Stop loss" : "Take profit")} atingido na tua trade: {trade.Symbol}",
         Message = string.Create(CultureInfo.InvariantCulture, $"Preço {price:0.#####} · entrada {trade.EntryPrice:0.#####} · nível {(level == TradeLevel.StopLoss ? trade.StopLoss : trade.TakeProfit):0.#####}"),
         SuggestionId = trade.SuggestionId ?? 0,
+        TradeId = trade.Id,
         CreatedAt = now
     };
 

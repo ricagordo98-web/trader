@@ -30,10 +30,12 @@ public sealed class Alert
 
     public long SuggestionId { get; set; }
 
+    public long TradeId { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 
-public sealed record AlertDto(long Id, AlertKind Kind, string Symbol, string Title, string Message, long SuggestionId, DateTimeOffset CreatedAt, bool Unread);
+public sealed record AlertDto(long Id, AlertKind Kind, string Symbol, string Title, string Message, long SuggestionId, DateTimeOffset CreatedAt, bool Unread, long TradeId = 0);
 
 public sealed record AlertFeed(IReadOnlyList<AlertDto> Items, int UnreadCount);
 
