@@ -165,6 +165,29 @@
     [SupplyParameterFromQuery] public long? Trade { get; set; }
 
     private bool _focusScrolled;
+    private long? _handledTrade;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_loading || Trade == _handledTrade)
+        {
+            return;
+        }
+
+        _handledTrade = Trade;
+        _focusScrolled = false;
+
+        if (Trade is { } id)
+        {
+            if (_trades.All(t => t.Id != id))
+            {
+                await ReloadTradesAsync();
+            }
+
+            _tab = 1;
+            _filter = null;
+        }
+    }
 
     private string TradeRowClass(JournalTradeDto trade, int index) => trade.Id == Trade ? "focus-row" : string.Empty;
 
@@ -195,6 +218,8 @@
                 _tab = 1;
                 _filter = null;
             }
+
+            _handledTrade = Trade;
 
             if (Entry is { } entry && StopLoss is { } stop)
             {

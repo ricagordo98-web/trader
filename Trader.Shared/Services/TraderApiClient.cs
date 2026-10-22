@@ -10,6 +10,7 @@ using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
+using Trader.Core.Simulator;
 using Trader.Core.Summary;
 
 namespace Trader.Shared.Services;
@@ -97,6 +98,34 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default, bool native = false) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<InstrumentQuote>>(native ? "api/instruments?native=true" : "api/instruments", cancellationToken) ?? [];
+
+    public async Task<PaperOverview> GetPaperAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<PaperOverview>("api/simulator", cancellationToken)
+        ?? new PaperOverview(PaperAccount.Default, new PaperSummary(PaperAccount.Default.Capital, PaperAccount.Default.Capital, 0, 0, 0, 0, 0, 0, 0), [], []);
+
+    public async Task<string?> OpenPaperTradeAsync(OpenPaperTradeRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/simulator/trades", request, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<bool> ClosePaperTradeAsync(long id, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync($"api/simulator/trades/{id}/close", null, cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<string?> SavePaperAccountAsync(PaperAccount account, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/simulator/account", account, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task ResetPaperAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync("api/simulator", cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
 
     public async Task<UserPreferences> GetProfileAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<UserPreferences>("api/settings/profile", cancellationToken) ?? UserPreferences.Default;
@@ -296,6 +325,24 @@ public sealed class TraderApiClient(HttpClient httpClient)
     {
         using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/auth/register", new { email, password }, cancellationToken);
         return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<IntradayBacktestResult?> GetLastIntradayBacktestAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.GetAsync("api/backtest/intraday/last", cancellationToken);
+
+        return response.StatusCode == System.Net.HttpStatusCode.NoContent || !response.IsSuccessStatusCode
+            ? null
+            : await response.Content.ReadFromJsonAsync<IntradayBacktestResult>(cancellationToken);
+    }
+
+    public async Task<(IntradayBacktestResult? Result, string? Error)> RunIntradayBacktestAsync(IntradayBacktestRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsJsonAsync("api/backtest/intraday", request, cancellationToken);
+
+        return response.IsSuccessStatusCode
+            ? (await response.Content.ReadFromJsonAsync<IntradayBacktestResult>(cancellationToken), null)
+            : (null, await ApiError.ReadAsync(response));
     }
 
     public async Task<BacktestResult?> GetLastBacktestAsync(CancellationToken cancellationToken = default)

@@ -107,6 +107,17 @@
     {
         await LoadAsync();
 
+        await OpenRequestedChartAsync();
+    }
+
+    private string? _handledSymbol;
+
+    protected override Task OnParametersSetAsync() => Symbol != _handledSymbol && _quotes.Count > 0 ? OpenRequestedChartAsync() : Task.CompletedTask;
+
+    private async Task OpenRequestedChartAsync()
+    {
+        _handledSymbol = Symbol;
+
         if (!string.IsNullOrWhiteSpace(Symbol) && _quotes.FirstOrDefault(q => q.Symbol.Equals(Symbol, StringComparison.OrdinalIgnoreCase)) is { } quote)
         {
             await OpenChartAsync(quote);

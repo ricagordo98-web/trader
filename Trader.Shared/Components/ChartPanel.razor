@@ -6,6 +6,7 @@
 
 <MudPaper Elevation="0" Outlined="true" Class="chart-panel">
     <div class="chart-panel-header">
+        <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Class="chart-panel-grip" />
         <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChanged" Dense="true" Variant="Variant.Text" Margin="Margin.Dense" Class="chart-panel-symbol" aria-label="Ativo">
             @foreach (InstrumentQuote instrument in Instruments)
             {
@@ -20,6 +21,12 @@
         }
         <MudSpacer />
         <span class="chart-panel-live @(_streaming ? "on" : string.Empty)" title="@(_streaming ? "Em direto" : "Sem dados em direto")"></span>
+        <MudTooltip Text="@(Maximized ? "Restaurar" : "Ver só este gráfico")">
+            <MudIconButton Icon="@(Maximized ? Icons.Material.Filled.FullscreenExit : Icons.Material.Filled.Fullscreen)" Size="Size.Small" aria-label="@(Maximized ? "Restaurar gráfico" : "Maximizar gráfico")" OnClick="OnToggleMaximize" />
+        </MudTooltip>
+        <MudTooltip Text="Remover gráfico">
+            <MudIconButton Icon="@Icons.Material.Filled.Close" Size="Size.Small" aria-label="Remover gráfico" OnClick="OnClose" />
+        </MudTooltip>
     </div>
     <div class="chart-panel-body">
         @if (_error is not null)
@@ -68,6 +75,12 @@
     [Parameter] public EventCallback<string> SymbolChanged { get; set; }
 
     [Parameter] public EventCallback<int> TimeframeChanged { get; set; }
+
+    [Parameter] public bool Maximized { get; set; }
+
+    [Parameter] public EventCallback OnToggleMaximize { get; set; }
+
+    [Parameter] public EventCallback OnClose { get; set; }
 
     private Timeframe Current => Timeframes[Math.Clamp(TimeframeIndex, 0, Timeframes.Length - 1)];
 

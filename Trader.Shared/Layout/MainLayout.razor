@@ -3,6 +3,7 @@
 @inject ThemeState Theme
 @inject AuthSession Session
 @inject IClientStore Store
+@inject IDialogService DialogService
 
 <MudThemeProvider @ref="_themeProvider" @bind-IsDarkMode="IsDark" Theme="_theme" />
 <MudPopoverProvider />
@@ -68,10 +69,18 @@ else
         Session.Changed += OnStateChanged;
     }
 
+    private bool _tourChecked;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (!firstRender)
         {
+            if (_ready && Session.IsAuthenticated && !_tourChecked)
+            {
+                _tourChecked = true;
+                await ShowTourIfFirstRunAsync();
+            }
+
             return;
         }
 
@@ -85,6 +94,20 @@ else
 
         _ready = true;
         StateHasChanged();
+    }
+
+    private async Task ShowTourIfFirstRunAsync()
+    {
+        try
+        {
+            if (await Store.GetAsync(TourDialog.StoreKey) is null)
+            {
+                await DialogService.ShowAsync<TourDialog>(string.Empty, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+            }
+        }
+        catch (InvalidOperationException)
+        {
+        }
     }
 
     private async Task ToggleThemeAsync() =>

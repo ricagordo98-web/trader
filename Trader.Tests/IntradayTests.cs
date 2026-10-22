@@ -284,7 +284,7 @@ public class IntradaySuggestionServiceTests : IAsyncLifetime
     }
 
     private SuggestionService CreateService() =>
-        new(_dbContext, _marketData, Substitute.For<IScoringSettings>(), _alerts, IntradayFixtures.Options, NullLogger<SuggestionService>.Instance);
+        new(_dbContext, _marketData, Substitute.For<IScoringSettings>(), _alerts, IntradayFixtures.Options, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()), NullLogger<SuggestionService>.Instance);
 
     private static IntradayContext RallyContext() =>
         IntradayFixtures.Context(IntradayFixtures.Rally(out DateTimeOffset now), now);

@@ -269,6 +269,13 @@ export function create(id, container, dotnet, dark, showVolume) {
     };
     document.addEventListener('keydown', state.onKeyDown);
 
+    let frame = 0;
+    state.observer = new ResizeObserver(() => {
+        cancelAnimationFrame(frame);
+        frame = requestAnimationFrame(() => chart.resize());
+    });
+    state.observer.observe(container);
+
     charts.set(id, state);
     if (showVolume) {
         chart.createIndicator('VOL', false, { id: 'vol_pane', height: 90 });
@@ -404,6 +411,7 @@ export function dispose(id) {
     }
 
     document.removeEventListener('keydown', state.onKeyDown);
+    state.observer?.disconnect();
     window.klinecharts.dispose(state.container);
     charts.delete(id);
 }

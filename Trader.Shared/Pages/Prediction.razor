@@ -70,7 +70,15 @@
                     <MudItem xs="12" lg="6" xl="4" @key="suggestion.Id">
                         <MudPaper Elevation="0" Outlined="true" Class="@($"pa-4 h-100 suggestion-card{(suggestion.Id == Suggestion ? " focus-card" : string.Empty)}")" id="@($"suggestion-{suggestion.Id}")">
                             <div class="d-flex align-center gap-3">
-                                <ConfidenceGauge Value="suggestion.Confidence" />
+                                <div class="text-center">
+                                    <ConfidenceGauge Value="suggestion.Confidence" />
+                                    @if (suggestion.CalibratedConfidence is { } calibrated)
+                                    {
+                                        <MudTooltip Text="@($"Acerto histórico de sugestões com esta certeza do modelo ({suggestion.CalibrationSamples} sugestões fechadas). Calculado a partir do track record.")">
+                                            <MudText Typo="Typo.caption" Class="symbol-name">histórico ~@((calibrated * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                        </MudTooltip>
+                                    }
+                                </div>
                                 <div class="flex-grow-1">
                                     <div class="d-flex align-center gap-2 flex-wrap">
                                         <MudText Typo="Typo.h6">@suggestion.Symbol</MudText>
@@ -126,7 +134,7 @@
                                     {
                                         <div class="mb-3">
                                             <div class="d-flex align-center">
-                                                <MudText Typo="Typo.body2">@signal.Label</MudText>
+                                                <MudText Typo="Typo.body2"><GlossaryTerm Key="@Glossary.KeyForSignal(signal.Name)">@signal.Label</GlossaryTerm></MudText>
                                                 <MudSpacer />
                                                 <MudText Typo="Typo.caption" Color="@SignalColor(signal.Value, suggestion.Direction)">
                                                     @(signal.Value >= 0 ? "+" : string.Empty)@signal.Value.ToString("0.00", CultureInfo.InvariantCulture)
@@ -165,6 +173,7 @@
                             </MudExpansionPanels>
 
                             <div class="d-flex justify-end mt-3">
+                                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.School" OnClick="@(() => HowToReadAsync(suggestion))">Como ler</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Calculate" Href="@JournalLink(suggestion)">Calcular posição</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.CandlestickChart" OnClick="@(() => OpenChartAsync(suggestion))">Ver gráfico</MudButton>
                             </div>
@@ -410,7 +419,19 @@
             }
         </MudTabPanel>
         <MudTabPanel Text="Backtest">
-            <BacktestPanel />
+            <MudToggleGroup T="string" @bind-Value="_backtestKind" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary" Class="mb-4">
+                <MudToggleItem Value="@("swing")" Text="Swing (diário)" />
+                <MudToggleItem Value="@("intraday")" Text="Intraday (5 min)" />
+            </MudToggleGroup>
+
+            @if (_backtestKind == "intraday")
+            {
+                <IntradayBacktestPanel />
+            }
+            else
+            {
+                <BacktestPanel />
+            }
         </MudTabPanel>
     </MudTabs>
 </MudContainer>
@@ -435,6 +456,7 @@
     private bool _loading = true;
     private bool _refreshing;
     private int _tab;
+    private string _backtestKind = "swing";
     private SuggestionDto? _focus;
     private bool _focusScrolled;
 
@@ -461,8 +483,25 @@
         }
     }
 
+    private long? _handledSuggestion;
+    private string? _handledTab;
+    private bool _deepLinkReady;
+
+    protected override async Task OnParametersSetAsync()
+    {
+        if (_deepLinkReady && (Suggestion != _handledSuggestion || Tab != _handledTab))
+        {
+            _focusScrolled = false;
+            await ApplyDeepLinkAsync();
+        }
+    }
+
     private async Task ApplyDeepLinkAsync()
     {
+        _handledSuggestion = Suggestion;
+        _handledTab = Tab;
+        _deepLinkReady = true;
+
         if (string.Equals(Tab, "radar", StringComparison.OrdinalIgnoreCase))
         {
             _tab = 1;
@@ -477,8 +516,8 @@
 
         if (_focus is null)
         {
-            IReadOnlyList<SuggestionDto> all = await Api.GetSuggestionsAsync(null, null, 500, _cts.Token);
-            _focus = all.FirstOrDefault(s => s.Id == id);
+            await LoadAsync();
+            _focus = _open.Concat(_closed).FirstOrDefault(s => s.Id == id);
         }
 
         _tab = _focus is null ? 0 : _focus.Status == SuggestionStatus.Open ? 0 : 2;
@@ -584,6 +623,9 @@
             _refreshing = false;
         }
     }
+
+    private Task HowToReadAsync(SuggestionDto suggestion) =>
+        DialogService.ShowAsync<HowToReadDialog>(string.Empty, new DialogParameters<HowToReadDialog> { { x => x.Suggestion, suggestion } }, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true, CloseButton = true });
 
     private Task OpenChartAsync(SuggestionDto suggestion) => OpenChartAsync(suggestion.Symbol, suggestion.Name);
 

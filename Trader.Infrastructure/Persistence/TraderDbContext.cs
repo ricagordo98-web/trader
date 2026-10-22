@@ -4,6 +4,7 @@ using Microsoft.EntityFrameworkCore;
 using Microsoft.EntityFrameworkCore.Storage.ValueConversion;
 using Trader.Core.Journal;
 using Trader.Core.Models;
+using Trader.Core.Simulator;
 
 namespace Trader.Infrastructure.Persistence;
 
@@ -15,6 +16,7 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
     public DbSet<Suggestion> Suggestions => Set<Suggestion>();
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<MoveExplanationRecord> MoveExplanations => Set<MoveExplanationRecord>();
+    public DbSet<PaperTrade> PaperTrades => Set<PaperTrade>();
     public DbSet<JournalTrade> JournalTrades => Set<JournalTrade>();
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<PriceAlert> PriceAlerts => Set<PriceAlert>();
@@ -48,6 +50,18 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.HasKey(s => new { s.ArticleId, s.Symbol });
             entity.HasIndex(s => s.Symbol);
             entity.Property(s => s.Symbol).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<PaperTrade>(entity =>
+        {
+            entity.HasIndex(t => new { t.UserId, t.Status });
+            entity.Property(t => t.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(t => t.Symbol).HasMaxLength(32).IsRequired();
+            entity.Property(t => t.Name).HasMaxLength(128).IsRequired();
+            entity.Property(t => t.Direction).HasConversion<string>().HasMaxLength(8);
+            entity.Property(t => t.Status).HasConversion<string>().HasMaxLength(16);
+            entity.Property(t => t.OpenedAt).HasConversion(utcTicks);
+            entity.Property(t => t.ClosedAt).HasConversion(utcTicks);
         });
 
         modelBuilder.Entity<MoveExplanationRecord>(entity =>

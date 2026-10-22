@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Microsoft.EntityFrameworkCore;
+using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
@@ -16,10 +17,12 @@ public sealed class SuggestionService(
     IScoringSettings scoringSettings,
     IAlertService alerts,
     IntradayOptions intradayOptions,
+    IMemoryCache cache,
     ILogger<SuggestionService> logger) : ISuggestionService
 {
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan IntradayCooldown = TimeSpan.FromHours(1);
+    private static readonly TimeSpan CalibrationCacheDuration = TimeSpan.FromMinutes(30);
     private static readonly TimeSpan SwingNewsWindow = TimeSpan.FromDays(30);
 
     public async Task<int> RefreshAsync(CancellationToken cancellationToken)
@@ -103,7 +106,18 @@ public sealed class SuggestionService(
         };
 
         List<Suggestion> rows = await query.Take(Math.Clamp(limit, 1, 500)).ToListAsync(cancellationToken);
-        return rows.Select(ToDto).ToList();
+        Dictionary<SuggestionHorizon, ConfidenceCalibration?> calibrations = [];
+
+        foreach (SuggestionHorizon rowHorizon in rows.Select(r => r.Horizon).Distinct())
+        {
+            calibrations[rowHorizon] = await GetCalibrationAsync(rowHorizon, cancellationToken);
+        }
+
+        return rows
+            .Select(r => ToDto(r) is var dto && calibrations[r.Horizon] is { } calibration
+                ? dto with { CalibratedConfidence = calibration.Apply(r.Confidence), CalibrationSamples = calibration.Samples }
+                : ToDto(r))
+            .ToList();
     }
 
     public async Task<TrackRecordDto> GetTrackRecordAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
@@ -122,6 +136,26 @@ public sealed class SuggestionService(
         int openCount = await all.CountAsync(s => s.Status == SuggestionStatus.Open, cancellationToken);
 
         return TrackRecordCalculator.Calculate(closed.Select(ToDto).ToList(), openCount);
+    }
+
+    private async Task<ConfidenceCalibration?> GetCalibrationAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        string key = $"calibration:{horizon}";
+
+        if (cache.TryGetValue(key, out ConfidenceCalibration? cached))
+        {
+            return cached;
+        }
+
+        var closed = await dbContext.Suggestions
+            .AsNoTracking()
+            .Where(s => s.Horizon == horizon && s.Status != SuggestionStatus.Open && s.RMultiple != null)
+            .Select(s => new { s.Confidence, R = s.RMultiple!.Value })
+            .ToListAsync(cancellationToken);
+
+        ConfidenceCalibration? calibration = ConfidenceCalibrator.Fit(closed.Select(c => (c.Confidence, c.R > 0)).ToList());
+        cache.Set(key, calibration, CalibrationCacheDuration);
+        return calibration;
     }
 
     private async Task EvaluateOpenAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)

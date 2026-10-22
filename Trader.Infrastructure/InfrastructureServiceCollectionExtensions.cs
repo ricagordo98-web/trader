@@ -16,6 +16,7 @@ using Trader.Infrastructure.Backtesting;
 using Trader.Core.Intraday;
 using Trader.Infrastructure.Intraday;
 using Trader.Infrastructure.Journal;
+using Trader.Infrastructure.Simulator;
 using Trader.Infrastructure.MarketData;
 using Trader.Infrastructure.News;
 using Trader.Infrastructure.News.Sources;
@@ -48,6 +49,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDisplayCurrency, DisplayCurrencyService>();
         services.AddScoped<IPriceSettings, PriceSettingsService>();
         services.AddScoped<IUserPreferences, UserPreferencesService>();
+        services.AddScoped<IPaperTradingService, PaperTradingService>();
 
         services.Configure<SourcesOptions>(configuration.GetSection(SourcesOptions.SectionName));
         services.AddSingleton<ITickerExtractor, TickerExtractor>();
@@ -58,6 +60,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<IScoringSettings, ScoringSettings>();
         services.AddScoped<IBacktestService, BacktestService>();
+        services.AddScoped<IIntradayBacktestService, IntradayBacktestService>();
         services.AddScoped<IJournalService, JournalService>();
         services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
         services.AddScoped<IBackupService, BackupService>();

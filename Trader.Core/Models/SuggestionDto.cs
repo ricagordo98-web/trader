@@ -26,7 +26,9 @@ public sealed record SuggestionDto(
     IReadOnlyList<SignalResult> Signals,
     IReadOnlyList<EvidenceArticle> Articles,
     SuggestionHorizon Horizon = SuggestionHorizon.Swing,
-    double DisplayFactor = 1);
+    double DisplayFactor = 1,
+    double? CalibratedConfidence = null,
+    int CalibrationSamples = 0);
 
 public sealed record CurvePoint(DateTimeOffset Time, double CumulativeR);
 
