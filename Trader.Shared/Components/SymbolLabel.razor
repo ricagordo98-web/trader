@@ -1,0 +1,33 @@
+@inject SymbolDirectory Directory
+@inject IDialogService DialogService
+
+<MudTooltip Text="@Directory.Describe(Symbol, Name)" Arrow="true" Delay="200">
+    <a class="symbol-link" role="button" tabindex="0" @onclick="OpenAsync" @onclick:stopPropagation="true" @onkeydown="OnKeyAsync">@(Text ?? Symbol)</a>
+</MudTooltip>
+@if (ShowName && (Name ?? Directory.Find(Symbol)?.Name) is { Length: > 0 } fullName && fullName != Symbol)
+{
+    <span class="symbol-name ml-1">· @fullName</span>
+}
+
+@code {
+    [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
+
+    [Parameter] public string? Name { get; set; }
+
+    [Parameter] public string? Text { get; set; }
+
+    [Parameter] public bool ShowName { get; set; }
+
+    protected override async Task OnInitializedAsync()
+    {
+        await Directory.EnsureLoadedAsync();
+    }
+
+    private Task OnKeyAsync(KeyboardEventArgs args) => args.Key is "Enter" or " " ? OpenAsync() : Task.CompletedTask;
+
+    private Task OpenAsync() =>
+        DialogService.ShowAsync<AssetDialog>(
+            string.Empty,
+            new DialogParameters<AssetDialog> { { x => x.Symbol, Symbol }, { x => x.Name, Name ?? Directory.Find(Symbol)?.Name ?? Symbol } },
+            new DialogOptions { MaxWidth = MaxWidth.Medium, FullWidth = true, CloseButton = true, CloseOnEscapeKey = true });
+}

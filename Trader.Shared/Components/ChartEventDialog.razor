@@ -1,0 +1,41 @@
+@using Trader.Core.Charts
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@KindColor" Class="ma-0 tag-chip">@KindLabel</MudChip>
+            <MudText Typo="Typo.caption" Class="symbol-name">@Event.Time.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudText Typo="Typo.subtitle1" Class="mb-2">@Event.Detail</MudText>
+        @if (Event.Label != Event.Detail && Event.Label.Length > 0)
+        {
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">@Event.Label</MudText>
+        }
+        @if (!string.IsNullOrWhiteSpace(Event.Url))
+        {
+            <MudButton Href="@Event.Url" Target="_blank" Variant="Variant.Outlined" Size="Size.Small" StartIcon="@Icons.Material.Filled.OpenInNew">Abrir notícia</MudButton>
+        }
+    </DialogContent>
+</MudDialog>
+
+@code {
+    [Parameter] public ChartEventDto Event { get; set; } = default!;
+
+    private string KindLabel => Event.Kind switch
+    {
+        "news" => "Notícia",
+        "earnings" => "Resultados",
+        "trade" => "Trade",
+        _ => "Evento"
+    };
+
+    private Color KindColor => Event.Kind switch
+    {
+        "news" => Color.Info,
+        "earnings" => Color.Warning,
+        "trade" => Color.Success,
+        _ => Color.Default
+    };
+}

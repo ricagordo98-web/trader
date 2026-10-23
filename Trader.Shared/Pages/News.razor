@@ -126,7 +126,7 @@
                 {
                     <div class="sentiment-row" @onclick="@(() => SetSymbolAsync(item.Symbol))">
                         <div class="d-flex align-center">
-                            <MudText Typo="Typo.subtitle2">@item.Symbol</MudText>
+                            <MudText Typo="Typo.subtitle2"><SymbolLabel Symbol="@item.Symbol" /></MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name ml-2">@item.ArticleCount</MudText>
                             <MudSpacer />
                             <MudText Typo="Typo.body2" Color="@SentimentColor(item.AverageSentiment)">

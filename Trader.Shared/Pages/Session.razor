@@ -75,7 +75,7 @@
                     <div class="d-flex align-center gap-2 py-1">
                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(halt.IsActive ? Color.Warning : Color.Default)" Class="ma-0">@(halt.IsActive ? "Suspenso" : "Retomado")</MudChip>
                         <div class="flex-grow-1">
-                            <MudText Typo="Typo.body2">@halt.Symbol</MudText>
+                            <MudText Typo="Typo.body2"><SymbolLabel Symbol="@halt.Symbol" /></MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name">@halt.Reason · @halt.HaltedAt.ToLocalTime().ToString("HH:mm", Pt)</MudText>
                         </div>
                     </div>
@@ -98,7 +98,7 @@
 
                     <div class="d-flex align-center gap-2 py-1">
                         <div class="flex-grow-1">
-                            <MudText Typo="Typo.body2">@trade.Symbol · @(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudText>
+                            <MudText Typo="Typo.body2"><SymbolLabel Symbol="@trade.Symbol" /> · @(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name">entrada @trade.EntryPrice.ToString("0.#####", Pt) · agora @(price?.ToString("0.#####", Pt) ?? "—")</MudText>
                         </div>
                         @if (r is { } value)
@@ -122,7 +122,7 @@
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd>
-                            @context.Symbol
+                            <SymbolLabel Symbol="@context.Symbol" Name="@context.Name" />
                             @if (_profiles.GetValueOrDefault(context.Symbol) is { LowShareCount: true } profile)
                             {
                                 <MudTooltip Text="@($"Poucas ações emitidas ({profile.ShareOutstandingMillions.ToString("0.#", Pt)} M): costuma ser mais volátil.")">
@@ -155,7 +155,7 @@
                 {
                     <div class="py-1">
                         <div class="d-flex align-center gap-2">
-                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(radarEvent.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">@radarEvent.Symbol</MudChip>
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(radarEvent.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0"><SymbolLabel Symbol="@radarEvent.Symbol" Name="@radarEvent.Name" /></MudChip>
                             <MudText Typo="Typo.body2" Class="flex-grow-1">@radarEvent.Detail</MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name">@radarEvent.Time.ToLocalTime().ToString("HH:mm", Pt)</MudText>
                         </div>
@@ -180,7 +180,7 @@
                     <MudLink Href="@($"/prediction?suggestion={suggestion.Id}")" Underline="Underline.None" Class="d-block py-1">
                         <div class="d-flex align-center gap-2">
                             <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(suggestion.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">@(suggestion.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER")</MudChip>
-                            <MudText Typo="Typo.body2">@suggestion.Symbol</MudText>
+                            <MudText Typo="Typo.body2"><SymbolLabel Symbol="@suggestion.Symbol" Name="@suggestion.Name" /></MudText>
                             @if (suggestion.Horizon == SuggestionHorizon.Intraday)
                             {
                                 <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0">INTRADAY</MudChip>
@@ -250,7 +250,7 @@
             _halts = await Api.GetHaltsAsync(_cts.Token);
             RadarSnapshot radar = await Api.GetRadarAsync(_cts.Token);
             _movers = radar.Board.Where(r => r.DayChangePercent is not null).OrderByDescending(r => Math.Abs(r.DayChangePercent!.Value)).Take(10).ToList();
-            _events = radar.Events.Where(e => DateTimeOffset.UtcNow - e.Time < TimeSpan.FromHours(4)).Take(12).ToList();
+            _events = radar.Events.Where(e => DateTimeOffset.UtcNow - e.Time < TimeSpan.FromHours(4)).OrderByDescending(e => e.Time).Take(12).ToList();
             _suggestions = (await Api.GetSuggestionsAsync(null, true, 30, _cts.Token)).OrderByDescending(s => s.Confidence).Take(8).ToList();
             _trades = (await Api.GetTradesAsync(TradeStatus.Open, _cts.Token)).ToList();
             _riskWarning = (await Api.GetDailyRiskAsync(_cts.Token))?.Message;

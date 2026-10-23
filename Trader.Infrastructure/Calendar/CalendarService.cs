@@ -117,8 +117,9 @@ public sealed partial class CalendarService(
             }
         }
 
-        using SemaphoreSlim gate = new(4);
+        using SemaphoreSlim gate = new(2);
         bool failed = false;
+        bool rateLimited = false;
 
         IEnumerable<Task<IReadOnlyList<CalendarEvent>>> tasks = missing
             .Take(MaxUncachedEarningsPerCall)
@@ -128,6 +129,11 @@ public sealed partial class CalendarService(
 
                 try
                 {
+                    if (rateLimited)
+                    {
+                        return [];
+                    }
+
                     string json = await httpClient.GetStringAsync(
                         $"https://finnhub.io/api/v1/calendar/earnings?from={from:yyyy-MM-dd}&to={to:yyyy-MM-dd}&symbol={Uri.EscapeDataString(symbol)}&token={Uri.EscapeDataString(apiKey)}",
                         cancellationToken);
@@ -138,7 +144,20 @@ public sealed partial class CalendarService(
                 }
                 catch (Exception ex) when (ex is HttpRequestException or JsonException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
                 {
-                    logger.LogWarning("Earnings calendar for {Symbol} failed: {Message}", symbol, ex.Message);
+                    if (ex is HttpRequestException { StatusCode: System.Net.HttpStatusCode.TooManyRequests })
+                    {
+                        if (!rateLimited)
+                        {
+                            logger.LogWarning("Finnhub rate limit reached while loading earnings (first symbol {Symbol}); the rest will load on the next refresh.", symbol);
+                        }
+
+                        rateLimited = true;
+                    }
+                    else
+                    {
+                        logger.LogWarning("Earnings calendar for {Symbol} failed: {Message}", symbol, ex.Message);
+                    }
+
                     failed = true;
                     return [];
                 }

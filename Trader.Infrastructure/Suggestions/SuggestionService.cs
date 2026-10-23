@@ -316,7 +316,7 @@ public sealed class SuggestionService(
         Horizon = horizon
     };
 
-    private static SuggestionDto ToDto(Suggestion s)
+    internal static SuggestionDto ToDto(Suggestion s)
     {
         SuggestionEvidence evidence = JsonSerializer.Deserialize<SuggestionEvidence>(s.EvidenceJson, JsonOptions)
             ?? new SuggestionEvidence([], []);

@@ -71,7 +71,7 @@
                             <RowTemplate>
                                 <MudTd>
                                     <div class="d-flex align-center gap-2">
-                                        <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
+                                        <MudText Typo="Typo.subtitle2"><SymbolLabel Symbol="@context.Symbol" Name="@context.Name" /></MudText>
                                         <MudChip T="string" Size="Size.Small" Class="ma-0" Variant="Variant.Filled" Color="@(context.Direction == TradeDirection.Buy ? Color.Success : Color.Error)">@(context.Direction == TradeDirection.Buy ? "COMPRA" : "VENDA")</MudChip>
                                         @if (context.SuggestionId is not null)
                                         {
@@ -115,6 +115,7 @@
                                     {
                                         <MudTooltip Text="Fechar trade"><MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small" aria-label="@($"Fechar {context.Symbol}")" OnClick="@(() => CloseTradeDialogAsync(context))" /></MudTooltip>
                                     }
+                                    <MudTooltip Text="Ver gráfico com entrada, stop e alvo"><MudIconButton Icon="@Icons.Material.Filled.CandlestickChart" Size="Size.Small" aria-label="@($"Gráfico {context.Symbol}")" OnClick="@(() => OpenChartAsync(context))" /></MudTooltip>
                                     <MudTooltip Text="Setup, emoção, etiquetas, notas e imagem"><MudIconButton Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" aria-label="@($"Detalhes {context.Symbol}")" OnClick="@(() => EditDetailsAsync(context))" /></MudTooltip>
                                     <MudTooltip Text="Apagar"><MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" aria-label="@($"Apagar {context.Symbol}")" OnClick="@(() => DeleteTradeAsync(context))" /></MudTooltip>
                                 </MudTd>
@@ -261,6 +262,38 @@
         _stats = await Api.GetJournalStatsAsync(_cts.Token);
         _insights = await Api.GetJournalInsightsAsync(_cts.Token);
         _risk = await Api.GetDailyRiskAsync(_cts.Token);
+    }
+
+    private async Task OpenChartAsync(JournalTradeDto trade)
+    {
+        InstrumentQuote? quote = (await Api.GetInstrumentsAsync(_cts.Token)).FirstOrDefault(q => q.Symbol == trade.Symbol);
+
+        if (quote is null)
+        {
+            Snackbar.Add("Este ativo já não está na watchlist.", Severity.Warning);
+            return;
+        }
+
+        double factor = quote.DisplayFactor;
+        List<ChartLevel> levels = [new ChartLevel("Entrada", trade.EntryPrice * factor, "#4C8DFF")];
+
+        if (trade.StopLoss is { } stop)
+        {
+            levels.Add(new ChartLevel("Stop", stop * factor, "#EF4444"));
+        }
+
+        if (trade.TakeProfit is { } target)
+        {
+            levels.Add(new ChartLevel("Alvo", target * factor, "#22C55E"));
+        }
+
+        if (trade.ExitPrice is { } exit)
+        {
+            levels.Add(new ChartLevel("Saída", exit * factor, "#F59E0B"));
+        }
+
+        DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote }, { x => x.ExtraLevels, levels } };
+        await DialogService.ShowAsync<ChartDialog>(trade.Symbol, parameters, new DialogOptions { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true });
     }
 
     private async Task EditDetailsAsync(JournalTradeDto trade)

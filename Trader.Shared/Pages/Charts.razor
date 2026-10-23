@@ -141,7 +141,7 @@
         {
         }
 
-        _sync = await Store.GetAsync(SyncKey) == "1";
+        _sync = await SafeGetAsync(SyncKey) == "1";
         SavedWorkspace? saved = await LoadSavedAsync();
         HashSet<string> known = _instruments.Select(i => i.Symbol).ToHashSet();
 
@@ -290,7 +290,7 @@
         {
             await Store.SetAsync(SyncKey, _sync ? "1" : "0");
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
         }
     }
@@ -402,6 +402,18 @@
         await SaveAsync();
     }
 
+    private async Task<string?> SafeGetAsync(string key)
+    {
+        try
+        {
+            return await Store.GetAsync(key);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            return null;
+        }
+    }
+
     private async Task<SavedWorkspace?> LoadSavedAsync()
     {
         try
@@ -409,7 +421,7 @@
             string? json = await Store.GetAsync(StoreKey);
             return json is null ? null : JsonSerializer.Deserialize<SavedWorkspace>(json);
         }
-        catch (Exception ex) when (ex is JsonException or InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
             return null;
         }
@@ -421,7 +433,7 @@
         {
             await Store.SetAsync(StoreKey, JsonSerializer.Serialize(new SavedWorkspace(_panels, _auto)));
         }
-        catch (InvalidOperationException)
+        catch (Exception ex) when (ex is not OperationCanceledException)
         {
         }
     }

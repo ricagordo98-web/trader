@@ -70,6 +70,7 @@ public sealed class StoredArticleEvidence(TraderDbContext dbContext) : IEvidence
             from link in dbContext.Set<ArticleSymbol>().AsNoTracking()
             join article in dbContext.Articles.AsNoTracking() on link.ArticleId equals article.Id
             where link.Symbol == query.Symbol && article.PublishedAt >= start && article.PublishedAt <= end
+            orderby article.PublishedAt descending
             select article)
             .Take(EvidenceHelpers.MaxItemsPerSource * 3)
             .ToListAsync(cancellationToken);

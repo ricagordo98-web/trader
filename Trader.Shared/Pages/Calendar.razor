@@ -47,15 +47,23 @@
     {
         @foreach (IGrouping<DateOnly, CalendarEvent> day in Visible.GroupBy(e => e.Date))
         {
-            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2" Style="text-transform:capitalize">@CalendarAlerts.DayLabel(day.Key, _today)</MudText>
+            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2 cap-first">@CalendarAlerts.DayLabel(day.Key, _today)</MudText>
             <MudPaper Elevation="0" Outlined="true">
                 @foreach (CalendarEvent item in day)
                 {
                     <div class="d-flex align-center gap-3 pa-3 calendar-row">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(item.Kind == CalendarKind.Earnings ? Color.Info : Color.Warning)" Class="ma-0">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(item.Kind == CalendarKind.Earnings ? Color.Info : Color.Warning)" Class="ma-0 tag-chip">
                             @(item.Kind == CalendarKind.Earnings ? "Resultados" : "Macro")
                         </MudChip>
-                        <MudText Typo="Typo.body1">@item.Title</MudText>
+                        @if (item.Symbol is { Length: > 0 } symbol && item.Title.Contains(symbol, StringComparison.Ordinal))
+                        {
+                            int at = item.Title.IndexOf(symbol, StringComparison.Ordinal);
+                            <MudText Typo="Typo.body1">@item.Title[..at]<SymbolLabel Symbol="@symbol" ShowName="true" />@item.Title[(at + symbol.Length)..]</MudText>
+                        }
+                        else
+                        {
+                            <MudText Typo="Typo.body1">@item.Title</MudText>
+                        }
                         <MudSpacer />
                         <MudText Typo="Typo.caption" Class="symbol-name">@item.Detail</MudText>
                     </div>

@@ -184,7 +184,7 @@
                     else
                     {
                         <KLineChart @ref="_chart" Symbol="@Quote.Symbol" PricePrecision="@PricePrecision" Interval="@_timeframe.Interval" Candles="_candles"
-                                    Dark="Theme.IsDark" ShowVolume="@HasVolume" Levels="_allLevels" DrawingsJson="@_drawingsJson" DrawingsChanged="SaveDrawingsAsync" PlanChanged="OnPlanChangedAsync" AlertLineChanged="OnAlertLineChangedAsync" />
+                                    Dark="Theme.IsDark" ShowVolume="@HasVolume" Levels="_allLevels" DrawingsJson="@_drawingsJson" DrawingsChanged="SaveDrawingsAsync" PlanChanged="OnPlanChangedAsync" MarkerClicked="OnMarkerClickedAsync" AlertLineChanged="OnAlertLineChangedAsync" />
                     }
                 </div>
             </div>
@@ -272,6 +272,8 @@
     private string _broker = BrokerCatalog.Other;
 
     [Parameter, EditorRequired] public InstrumentQuote Quote { get; set; } = default!;
+
+    [Parameter] public IReadOnlyList<ChartLevel>? ExtraLevels { get; set; }
 
     private PriceSourceInfo Source => PriceSources.Describe(Quote.Symbol, Quote.AssetClass, _cryptoBasis);
 

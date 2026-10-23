@@ -82,7 +82,7 @@
                     </HeaderContent>
                     <RowTemplate>
                         <MudTd>
-                            <MudText Typo="Typo.body2">@context.Symbol</MudText>
+                            <MudText Typo="Typo.body2"><SymbolLabel Symbol="@context.Symbol" /></MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name">@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda") · @context.Quantity.ToString("0.####", Pt) un</MudText>
                         </MudTd>
                         <MudTd>@Price(context.EntryPrice)</MudTd>
@@ -108,7 +108,7 @@
                         <MudTh>Fechada</MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd>@context.Symbol · @(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
+                        <MudTd><SymbolLabel Symbol="@context.Symbol" /> · @(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
                         <MudTd>@StatusLabel(context.Status)</MudTd>
                         <MudTd>@(context.ExitPrice is { } exit ? Price(exit) : "—")</MudTd>
                         <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@PnlColor(context.Pnl)">@Money(context.Pnl)</MudText></MudTd>
@@ -231,7 +231,7 @@
 
     private static string Money(double value) => value.ToString("+#,0.00;-#,0.00;0.00", Pt);
 
-    private static string Price(double value) => value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", Pt);
+    private static string Price(double value) => PriceFormat.Adaptive(value, Pt);
 
     private static string R(double value) => value.ToString("+0.00;-0.00;0.00", Pt);
 

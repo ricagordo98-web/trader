@@ -51,6 +51,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IDisplayCurrency, DisplayCurrencyService>();
         services.AddScoped<IPriceSettings, PriceSettingsService>();
         services.AddScoped<IUserPreferences, UserPreferencesService>();
+        services.AddScoped<IModelReliabilityService, ModelReliabilityService>();
         services.AddScoped<IPaperTradingService, PaperTradingService>();
         services.AddScoped<IAlertRuleService, AlertRuleService>();
 

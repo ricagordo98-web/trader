@@ -714,6 +714,7 @@ export function setMarkers(id, markers) {
             points: [{ timestamp: candle.timestamp, value: candle.high }],
             extendData: marker.label,
             lock: true,
+            onClick: marker.key ? () => { state.dotnet.invokeMethodAsync('OnMarkerClicked', marker.key); return true; } : undefined,
             styles: { line: { color: marker.color }, text: { color: marker.color, borderColor: marker.color } }
         });
 

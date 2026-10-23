@@ -25,6 +25,8 @@
     [Parameter] public string DrawingsJson { get; set; } = "[]";
     [Parameter] public EventCallback<string> DrawingsChanged { get; set; }
     [Parameter] public EventCallback<(string Which, double Price)> PlanChanged { get; set; }
+
+    [Parameter] public EventCallback<string> MarkerClicked { get; set; }
     [Parameter] public EventCallback<double> AlertLineChanged { get; set; }
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
@@ -173,6 +175,9 @@
             await _module.InvokeVoidAsync("clearAlertLine", _id);
         }
     }
+
+    [JSInvokable]
+    public Task OnMarkerClicked(string key) => MarkerClicked.InvokeAsync(key);
 
     [JSInvokable]
     public Task OnPlanChanged(string which, double price) => PlanChanged.InvokeAsync((which, price));

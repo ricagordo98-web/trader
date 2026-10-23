@@ -84,6 +84,7 @@ public partial class ChartDialog
         _allLevels =
         [
             .. _levels,
+            .. ExtraLevels ?? [],
             .. _autoLevels.Where(l => _levelGroups.Contains(l.Group)).Select(l => new ChartLevel(l.Label, l.Price, LevelColor(l.Group)))
         ];
 
@@ -205,6 +206,19 @@ public partial class ChartDialog
         await RefreshEventMarkersAsync();
     }
 
+    private Dictionary<string, ChartEventDto> _markerEvents = [];
+
+    private async Task OnMarkerClickedAsync(string key)
+    {
+        if (_markerEvents.TryGetValue(key, out ChartEventDto? chartEvent))
+        {
+            await DialogService.ShowAsync<ChartEventDialog>(
+                string.Empty,
+                new DialogParameters<ChartEventDialog> { { x => x.Event, chartEvent } },
+                new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseButton = true, CloseOnEscapeKey = true });
+        }
+    }
+
     private async Task RefreshEventMarkersAsync()
     {
         if (_chart is null || _candles.Count == 0)
@@ -222,9 +236,11 @@ public partial class ChartDialog
         {
             IReadOnlyList<ChartEventDto> events = await Api.GetChartEventsAsync(Quote.Symbol, _candles[0].Time, _candles[^1].Time, _cts.Token);
 
-            await _chart.SetMarkersAsync(events
-                .Where(e => _eventKinds.Contains(e.Kind))
-                .Select(e => new ChartMarker(e.Time.ToUnixTimeMilliseconds(), e.Label, EventColor(e.Kind)))
+            List<ChartEventDto> shown = events.Where(e => _eventKinds.Contains(e.Kind)).ToList();
+            _markerEvents = shown.Select((e, index) => (Key: index.ToString(System.Globalization.CultureInfo.InvariantCulture), Event: e)).ToDictionary(x => x.Key, x => x.Event);
+
+            await _chart.SetMarkersAsync(_markerEvents
+                .Select(x => new ChartMarker(x.Value.Time.ToUnixTimeMilliseconds(), x.Value.Label, EventColor(x.Value.Kind), x.Key))
                 .ToList());
         }
         catch (HttpRequestException)

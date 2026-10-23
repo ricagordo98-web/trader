@@ -3,7 +3,7 @@
 @if (Entry is { } entry)
 {
     <MudTooltip Text="@entry.Short" Arrow="true" Delay="250">
-        <a href="@($"/help#{entry.Key}")" class="glossary-term" aria-label="@($"Ajuda: {entry.Term}")">@(ChildContent is null ? entry.Term : ChildContent)</a>
+        <a href="@($"/help#{entry.Key}")" class="glossary-term" aria-label="@($"Ajuda: {entry.Term}")">@if (ChildContent is null) { @entry.Term } else { @ChildContent }</a>
     </MudTooltip>
 }
 else if (ChildContent is not null)

@@ -13,6 +13,7 @@ public static class ServiceCollectionExtensions
         services.AddMudServices();
         services.AddScoped<ThemeState>();
         services.AddScoped<TraderApiClient>();
+        services.AddScoped<SymbolDirectory>();
         services.TryAddScoped<IServerEndpointSettings, FixedServerEndpointSettings>();
         return services;
     }

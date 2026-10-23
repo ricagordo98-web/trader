@@ -81,7 +81,7 @@
                                 </div>
                                 <div class="flex-grow-1">
                                     <div class="d-flex align-center gap-2 flex-wrap">
-                                        <MudText Typo="Typo.h6">@suggestion.Symbol</MudText>
+                                        <MudText Typo="Typo.h6"><SymbolLabel Symbol="@suggestion.Symbol" Name="@suggestion.Name" /></MudText>
                                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(buy ? Color.Success : Color.Error)" Class="ma-0">@(buy ? "COMPRAR" : "VENDER")</MudChip>
                                         @if (suggestion.Horizon == SuggestionHorizon.Intraday)
                                         {
@@ -200,7 +200,7 @@
             </div>
 
             <MudPaper Elevation="0" Outlined="true" Class="mb-4">
-                <MudTable Items="_radar.Events" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarEvent" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                <MudTable Items="_radar.Events.OrderByDescending(e => e.Time)" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarEvent" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
                     <ToolBarContent>
                         <MudText Typo="Typo.subtitle1">Movimentos anormais detetados</MudText>
                     </ToolBarContent>
@@ -217,7 +217,7 @@
                     <RowTemplate>
                         <MudTd>@TimeAgo(context.Time)</MudTd>
                         <MudTd>
-                            <MudText Typo="Typo.body2">@context.Symbol</MudText>
+                            <MudText Typo="Typo.body2"><SymbolLabel Symbol="@context.Symbol" Name="@context.Name" /></MudText>
                             <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
                         </MudTd>
                         <MudTd>@KindLabel(context.Kind)</MudTd>
@@ -262,7 +262,7 @@
                                 <MudTh Style="text-align:right">vs VWAP</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd>@context.Symbol</MudTd>
+                                <MudTd><SymbolLabel Symbol="@context.Symbol" Name="@context.Name" /></MudTd>
                                 <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
                                 <MudTd Style="text-align:right">@Percent(context.DayChangePercent)</MudTd>
                                 <MudTd Style="text-align:right">@(context.RelativeVolume is { } rvol ? $"{rvol.ToString("0.0", CultureInfo.InvariantCulture)}×" : "—")</MudTd>
@@ -288,7 +288,7 @@
                                 <MudTh Style="text-align:right">Volume</MudTh>
                             </HeaderContent>
                             <RowTemplate>
-                                <MudTd>@context.Symbol</MudTd>
+                                <MudTd><SymbolLabel Symbol="@context.Symbol" Name="@context.Name" /></MudTd>
                                 <MudTd Style="text-align:right">@Price(context.Price)</MudTd>
                                 <MudTd Style="text-align:right">@Percent(context.DayChangePercent)</MudTd>
                                 <MudTd Style="text-align:right">@Percent(context.GapPercent)</MudTd>
@@ -409,7 +409,7 @@
                             <MudTh>Fechada</MudTh>
                         </HeaderContent>
                         <RowTemplate>
-                            <MudTd>@context.Symbol</MudTd>
+                            <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
                             <MudTd>@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
                             <MudTd>@StatusLabel(context.Status)</MudTd>
                             <MudTd Style="text-align:right">
@@ -422,6 +422,9 @@
                     </MudTable>
                 </MudPaper>
             }
+        </MudTabPanel>
+        <MudTabPanel Text="Fiabilidade">
+            <ModelReliabilityPanel />
         </MudTabPanel>
         <MudTabPanel Text="Backtest">
             <MudToggleGroup T="string" @bind-Value="_backtestKind" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary" Class="mb-4">
@@ -687,7 +690,7 @@
             $"/journal?symbol={Uri.EscapeDataString(s.Symbol)}&entry={s.Entry / s.DisplayFactor:R}&sl={s.StopLoss / s.DisplayFactor:R}&tp={s.TakeProfit / s.DisplayFactor:R}&suggestion={s.Id}");
 
     private static string Price(double value) =>
-        value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", CultureInfo.GetCultureInfo("pt-PT"));
+        PriceFormat.Adaptive(value, CultureInfo.GetCultureInfo("pt-PT"));
 
     private static string Distance(double entry, double level) =>
         $"{(level - entry) / entry * 100:+0.0;-0.0}%".Replace('.', ',');

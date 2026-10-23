@@ -356,6 +356,12 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<ModelReliabilityReport> GetReliabilityAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<ModelReliabilityReport>(horizon is null ? "api/suggestions/reliability" : $"api/suggestions/reliability?horizon={horizon}", cancellationToken))!;
+
+    public async Task<SentimentStudyResult> GetSentimentStudyAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<SentimentStudyResult>("api/suggestions/reliability/sentiment", cancellationToken))!;
+
     public async Task<IReadOnlyList<HealthItem>> GetHealthAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<HealthItem>>("api/system/health", cancellationToken) ?? [];
 

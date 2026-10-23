@@ -64,7 +64,7 @@ else
                     <MudTh Style="text-align:right">Diferença</MudTh>
                 </HeaderContent>
                 <RowTemplate>
-                    <MudTd>@context.Symbol</MudTd>
+                    <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
                     <MudTd>@Outcome(context.SuggestionOutcome)</MudTd>
                     <MudTd Style="text-align:right">@Signed(context.SuggestionR)</MudTd>
                     <MudTd Style="text-align:right">@Signed(context.YourR)</MudTd>

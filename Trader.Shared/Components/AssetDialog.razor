@@ -1,0 +1,158 @@
+@using System.Globalization
+@using Trader.Core.Calendar
+@implements IDisposable
+@inject TraderApiClient Api
+@inject SymbolDirectory Directory
+@inject IDialogService DialogService
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-3">
+            <MudText Typo="Typo.h6">@Symbol</MudText>
+            <MudText Typo="Typo.body2" Class="symbol-name">@Name@(Directory.Find(Symbol) is { } item ? " · " + SymbolDirectory.ClassLabel(item.AssetClass) : string.Empty)</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @if (_loading)
+        {
+            <MudProgressLinear Indeterminate="true" Color="Color.Primary" Class="mb-3" />
+        }
+        else
+        {
+            @if (_quote?.Price is { } price)
+            {
+                <div class="d-flex align-baseline gap-3 mb-2">
+                    <MudText Typo="Typo.h5">@price.ToString("#,0.00####", Pt) @_quote.Currency</MudText>
+                    @if (_quote.ChangePercent is { } change)
+                    {
+                        <MudText Typo="Typo.subtitle1" Color="@(change >= 0 ? Color.Success : Color.Error)">@change.ToString("+0.00;-0.00;0.00", Pt)%</MudText>
+                    }
+                    <MudText Typo="Typo.caption" Class="symbol-name">cotação @DataFreshness.Describe(_quote.AsOf, DateTimeOffset.UtcNow)</MudText>
+                </div>
+            }
+
+            @if (_closes.Count >= 2)
+            {
+                <Sparkline Values="_closes" Width="560" Height="120" />
+                <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">Últimos 3 meses (fecho diário)</MudText>
+            }
+
+            <div class="d-flex flex-wrap gap-2 mb-3">
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.CandlestickChart" OnClick="OpenChartAsync">Abrir gráfico</MudButton>
+                <MudButton Size="Size.Small" Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.QuestionAnswer" OnClick="OpenWhyAsync">Porque se mexeu?</MudButton>
+            </div>
+
+            @if (_moves.Count > 0)
+            {
+                <MudText Typo="Typo.subtitle2" Class="mb-1">Últimos movimentos</MudText>
+                <div class="d-flex flex-wrap gap-2 mb-3">
+                    @foreach ((DateTimeOffset day, double pct) in _moves)
+                    {
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(pct >= 0 ? Color.Success : Color.Error)" Class="ma-0">@day.ToLocalTime().ToString("dd/MM") @pct.ToString("+0.0;-0.0;0.0", Pt)%</MudChip>
+                    }
+                </div>
+            }
+
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Eventos futuros</MudText>
+            @if (_events.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="symbol-name mb-3">Sem resultados ou eventos próprios nos próximos 30 dias. Eventos macro (juros, inflação) estão no Calendário.</MudText>
+            }
+            else
+            {
+                <div class="mb-3">
+                    @foreach (CalendarEvent calendarEvent in _events)
+                    {
+                        <MudText Typo="Typo.body2">@calendarEvent.Date.ToString("dd/MM") · @calendarEvent.Title@(calendarEvent.Detail.Length > 0 ? " (" + calendarEvent.Detail + ")" : string.Empty)</MudText>
+                    }
+                </div>
+            }
+
+            <MudText Typo="Typo.subtitle2" Class="mb-1">Notícias recentes</MudText>
+            @if (_news.Count == 0)
+            {
+                <MudText Typo="Typo.body2" Class="symbol-name">Sem notícias guardadas para este ativo.</MudText>
+            }
+            else
+            {
+                @foreach (ArticleDto article in _news)
+                {
+                    <div class="mb-2">
+                        <MudLink Href="@article.Url" Target="_blank" Typo="Typo.body2">@article.Title</MudLink>
+                        <MudText Typo="Typo.caption" Class="symbol-name">@article.Source · @article.PublishedAt.ToLocalTime().ToString("dd/MM HH:mm")@(article.Sentiment is { } s ? " · sentimento " + s.ToString("+0.00;-0.00;0.00", Pt) : string.Empty)</MudText>
+                    </div>
+                }
+            }
+
+            @if (_error is not null)
+            {
+                <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-2">@_error</MudAlert>
+            }
+        }
+    </DialogContent>
+</MudDialog>
+
+@code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    private readonly CancellationTokenSource _cts = new();
+    private InstrumentQuote? _quote;
+    private IReadOnlyList<double> _closes = [];
+    private IReadOnlyList<(DateTimeOffset Day, double Percent)> _moves = [];
+    private IReadOnlyList<CalendarEvent> _events = [];
+    private IReadOnlyList<ArticleDto> _news = [];
+    private string? _error;
+    private bool _loading = true;
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public string Symbol { get; set; } = string.Empty;
+
+    [Parameter] public string Name { get; set; } = string.Empty;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await Directory.EnsureLoadedAsync();
+            Task<IReadOnlyList<InstrumentQuote>> quotes = Api.GetInstrumentsAsync(_cts.Token);
+            Task<IReadOnlyList<Candle>> candles = Api.GetCandlesAsync(Symbol, "1d", "3mo", _cts.Token);
+            Task<IReadOnlyList<ArticleDto>> news = Api.GetNewsAsync(new NewsQuery(Symbol, Limit: 8), _cts.Token);
+            Task<CalendarFeed> calendar = Api.GetCalendarAsync(30, _cts.Token);
+
+            _quote = (await quotes).FirstOrDefault(q => q.Symbol == Symbol);
+            IReadOnlyList<Candle> daily = await candles;
+            _closes = daily.Select(c => c.Close).ToList();
+            _moves = daily
+                .Zip(daily.Skip(1), (previous, current) => (current.Time, previous.Close == 0 ? 0 : (current.Close - previous.Close) / previous.Close * 100))
+                .TakeLast(7)
+                .Reverse()
+                .ToList();
+            _news = await news;
+            _events = (await calendar).Events.Where(e => e.Symbol is not null && e.Symbol.Equals(Symbol, StringComparison.OrdinalIgnoreCase)).OrderBy(e => e.Date).ToList();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar tudo. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task OpenChartAsync()
+    {
+        MudDialog.Close();
+        InstrumentQuote quote = _quote ?? new InstrumentQuote(Symbol, Name, Directory.Find(Symbol)?.AssetClass ?? AssetClass.Stock, "USD", null, null, null, []);
+        await DialogService.ShowAsync<ChartDialog>(Symbol, new DialogParameters<ChartDialog> { { x => x.Quote, quote } }, new DialogOptions { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true });
+    }
+
+    private async Task OpenWhyAsync()
+    {
+        MudDialog.Close();
+        await WhyDialogLauncher.ShowAsync(DialogService, Symbol, Name);
+    }
+
+    public void Dispose() => _cts.Cancel();
+}

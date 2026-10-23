@@ -85,7 +85,8 @@ public static class ExplanationText
         {
             MoveCause top = explanation.Causes[0];
             string title = top.Title.Length > 110 ? top.Title[..109] + "…" : top.Title;
-            return $"Provável causa: {CauseClassifier.Label(top.Category).ToLowerInvariant()} — {title}";
+            string category = top.Category == CauseCategory.Other ? string.Empty : $" ({CauseClassifier.Label(top.Category).ToLowerInvariant()})";
+            return $"Provável causa{category}: {title}";
         }
 
         return analysis.Scope switch

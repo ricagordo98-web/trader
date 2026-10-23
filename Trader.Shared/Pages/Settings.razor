@@ -209,7 +209,7 @@
                         <MudTh></MudTh>
                     </HeaderContent>
                     <RowTemplate>
-                        <MudTd>@context.Symbol</MudTd>
+                        <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
                         <MudTd>@context.Name</MudTd>
                         <MudTd>@ClassLabel(context.AssetClass)</MudTd>
                         <MudTd>@context.Currency</MudTd>
@@ -346,7 +346,7 @@
                             @foreach (PriceAlertDto alert in _priceAlerts)
                             {
                                 <tr>
-                                    <td>@alert.Symbol</td>
+                                    <td><SymbolLabel Symbol="@alert.Symbol" /></td>
                                     <td>@(alert.Condition == PriceCondition.Above ? "acima de" : "abaixo de") @alert.Price.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</td>
                                     <td>@alert.Note</td>
                                     <td>@(alert.TriggeredAt is { } at ? $"disparado {at.ToLocalTime():dd/MM HH:mm}" : "ativo")</td>

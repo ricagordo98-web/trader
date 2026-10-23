@@ -1,0 +1,239 @@
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+
+<div class="d-flex align-center flex-wrap gap-3 mb-3">
+    <MudText Typo="Typo.subtitle1">Fiabilidade do modelo</MudText>
+    <MudSpacer />
+    <MudToggleGroup T="SuggestionHorizon?" Value="_horizon" ValueChanged="SetHorizonAsync" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+        <MudToggleItem Value="@((SuggestionHorizon?)null)" Text="Todas" />
+        <MudToggleItem Value="@((SuggestionHorizon?)SuggestionHorizon.Intraday)" Text="Intraday" />
+        <MudToggleItem Value="@((SuggestionHorizon?)SuggestionHorizon.Swing)" Text="Swing" />
+    </MudToggleGroup>
+</div>
+
+@if (_error is not null)
+{
+    <MudAlert Severity="Severity.Warning" Class="mb-3">@_error</MudAlert>
+}
+
+@if (_report is { } report)
+{
+    <MudAlert Severity="@VerdictSeverity(report.Verdict.Level)" Variant="Variant.Outlined" Class="mb-4">
+        <MudText Typo="Typo.subtitle2">@report.Verdict.Title</MudText>
+        @foreach (string reason in report.Verdict.Reasons)
+        {
+            <MudText Typo="Typo.body2">@reason</MudText>
+        }
+    </MudAlert>
+
+    @if (report.Closed > 0)
+    {
+        <MudGrid Spacing="3" Class="mb-2">
+            @foreach ((string label, string value, string hint) in Kpis(report))
+            {
+                <MudItem xs="6" md="4" lg="3">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                        <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                        <MudText Typo="Typo.h5">@value</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name">@hint</MudText>
+                    </MudPaper>
+                </MudItem>
+            }
+        </MudGrid>
+
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+            <MudText Typo="Typo.subtitle1" Class="mb-2">Como terminam as sugestões</MudText>
+            <div class="outcome-bar" role="img" aria-label="Distribuição dos resultados">
+                <div style="@($"width:{Share(report.TakeProfitHits, report.Closed)}%;background:var(--mud-palette-success)")" title="Take profit"></div>
+                <div style="@($"width:{Share(report.Expired, report.Closed)}%;background:var(--mud-palette-gray-default)")" title="Expiradas"></div>
+                <div style="@($"width:{Share(report.StopLossHits, report.Closed)}%;background:var(--mud-palette-error)")" title="Stop loss"></div>
+            </div>
+            <div class="d-flex flex-wrap gap-4 mt-2">
+                <MudText Typo="Typo.body2" Color="Color.Success">Take profit: @report.TakeProfitHits (@Percent(report.TakeProfitHits, report.Closed))</MudText>
+                <MudText Typo="Typo.body2" Color="Color.Error">Stop loss: @report.StopLossHits (@Percent(report.StopLossHits, report.Closed))</MudText>
+                <MudText Typo="Typo.body2" Class="symbol-name">Expiradas: @report.Expired (@Percent(report.Expired, report.Closed))</MudText>
+            </div>
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mt-2">
+                Tempo médio até fechar @Hours(report.AverageHoursToClose) · até ao alvo @Hours(report.AverageHoursToTakeProfit) · até ao stop @Hours(report.AverageHoursToStopLoss).
+                Ganho médio @report.AverageWinR.ToString("+0.00;-0.00;0.00", Pt) R · perda média @report.AverageLossR.ToString("+0.00;-0.00;0.00", Pt) R.
+            </MudText>
+        </MudPaper>
+
+        <MudGrid Spacing="3" Class="mb-2">
+            @foreach ((string title, IReadOnlyList<ReliabilityStat> stats, string note) in Tables(report))
+            {
+                @if (stats.Count > 0)
+                {
+                    <MudItem xs="12" md="6">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">@title</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">@note</MudText>
+                            <MudSimpleTable Dense="true" Elevation="0">
+                                <thead><tr><th></th><th>N</th><th>Acerto</th><th>Intervalo 95%</th><th>R médio</th></tr></thead>
+                                <tbody>
+                                    @foreach (ReliabilityStat stat in stats)
+                                    {
+                                        <tr>
+                                            <td>@stat.Name</td>
+                                            <td>@stat.Count</td>
+                                            <td>@stat.WinRate.ToString("P0", Pt)</td>
+                                            <td>@stat.WinRateCi.Low.ToString("P0", Pt) – @stat.WinRateCi.High.ToString("P0", Pt)</td>
+                                            <td>@stat.AverageR.ToString("+0.00;-0.00;0.00", Pt)</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        </MudPaper>
+                    </MudItem>
+                }
+            }
+        </MudGrid>
+    }
+}
+else if (_loading)
+{
+    <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+}
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
+    <div class="d-flex align-center gap-3">
+        <MudText Typo="Typo.subtitle1">Captação de sentimento das notícias</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="_studyBusy" OnClick="RunStudyAsync">@(_study is null ? "Analisar" : "Atualizar")</MudButton>
+    </div>
+    <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+        Compara o sentimento de cada notícia (modelo FinBERT) com o que o preço fez depois, nos últimos 90 dias. Usa o fecho do dia da notícia como base, por isso mede se o sentimento antecipa o preço e não se apenas o acompanha.
+    </MudText>
+
+    @if (_studyBusy)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (_study is { } study)
+    {
+        <MudAlert Severity="@VerdictSeverity(study.Verdict.Level)" Variant="Variant.Outlined" Class="mb-3">
+            <MudText Typo="Typo.subtitle2">@study.Verdict.Title</MudText>
+            @foreach (string reason in study.Verdict.Reasons)
+            {
+                <MudText Typo="Typo.body2">@reason</MudText>
+            }
+        </MudAlert>
+
+        <MudSimpleTable Dense="true" Elevation="0">
+            <thead><tr><th>Horizonte</th><th>Notícias</th><th>Sentido certo</th><th>Intervalo 95%</th><th>Correlação</th><th>Retorno médio (sent. +)</th><th>Retorno médio (sent. −)</th></tr></thead>
+            <tbody>
+                @foreach (SentimentHorizonResult h in study.Horizons)
+                {
+                    <tr>
+                        <td>@h.Label</td>
+                        <td>@h.Samples</td>
+                        <td>@h.HitRate.ToString("P0", Pt)</td>
+                        <td>@h.HitRateCi.Low.ToString("P0", Pt) – @h.HitRateCi.High.ToString("P0", Pt)</td>
+                        <td>@(h.Correlation?.ToString("+0.00;-0.00;0.00", Pt) ?? "—")</td>
+                        <td>@h.AverageReturnPositive.ToString("+0.00%;-0.00%;0.00%", Pt)</td>
+                        <td>@h.AverageReturnNegative.ToString("+0.00%;-0.00%;0.00%", Pt)</td>
+                    </tr>
+                }
+            </tbody>
+        </MudSimpleTable>
+    }
+</MudPaper>
+
+<MudText Typo="Typo.caption" Class="symbol-name d-block mt-3">
+    Como ler: o intervalo de 95% diz onde o acerto verdadeiro deve estar; quanto mais sugestões fechadas, mais estreito. O ponto de equilíbrio é o acerto mínimo para não perder dinheiro com o R:R médio.
+    Esta análise mede o passado: não garante resultados futuros nem é aconselhamento financeiro.
+</MudText>
+
+@code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    private readonly CancellationTokenSource _cts = new();
+    private ModelReliabilityReport? _report;
+    private SentimentStudyResult? _study;
+    private SuggestionHorizon? _horizon;
+    private string? _error;
+    private bool _loading = true;
+    private bool _studyBusy;
+
+    protected override Task OnInitializedAsync() => LoadAsync();
+
+    private async Task SetHorizonAsync(SuggestionHorizon? horizon)
+    {
+        _horizon = horizon;
+        await LoadAsync();
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _report = await Api.GetReliabilityAsync(_horizon, _cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível calcular a fiabilidade. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private async Task RunStudyAsync()
+    {
+        _studyBusy = true;
+
+        try
+        {
+            _study = await Api.GetSentimentStudyAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível analisar o sentimento agora.";
+        }
+        finally
+        {
+            _studyBusy = false;
+        }
+    }
+
+    private static Severity VerdictSeverity(ReliabilityLevel level) => level switch
+    {
+        ReliabilityLevel.High or ReliabilityLevel.Moderate => Severity.Success,
+        ReliabilityLevel.Unproven => Severity.Info,
+        ReliabilityLevel.NoEdge => Severity.Warning,
+        _ => Severity.Normal
+    };
+
+    private IEnumerable<(string, string, string)> Kpis(ModelReliabilityReport r)
+    {
+        yield return ("Sugestões fechadas", r.Closed.ToString(Pt), "amostra usada");
+        yield return ("Acerto (lucro)", r.WinRate.ToString("P0", Pt), $"IC 95%: {r.WinRateCi.Low.ToString("P0", Pt)} – {r.WinRateCi.High.ToString("P0", Pt)}");
+        yield return ("Ponto de equilíbrio", r.BreakEvenWinRate.ToString("P0", Pt), r.WinRate >= r.BreakEvenWinRate ? "acima do mínimo necessário" : "abaixo do mínimo necessário");
+        yield return ("R médio por sugestão", r.AverageR.ToString("+0.00;-0.00;0.00", Pt), $"IC 95%: {r.AverageRCi.Low.ToString("+0.00;-0.00;0.00", Pt)} a {r.AverageRCi.High.ToString("+0.00;-0.00;0.00", Pt)}");
+        yield return ("Profit factor", r.ProfitFactor?.ToString("0.00", Pt) ?? "—", "ganhos totais / perdas totais");
+        yield return ("Certeza média indicada", r.AverageConfidence.ToString("P0", Pt), $"acerto real {r.WinRate.ToString("P0", Pt)}");
+        yield return ("Erro de calibração", r.CalibrationError.ToString("P1", Pt), "diferença média entre certeza e acerto (menor é melhor)");
+        yield return ("Brier", r.BrierScore.ToString("0.000", Pt), $"palpite à média: {r.BaselineBrier.ToString("0.000", Pt)} (menor é melhor)");
+    }
+
+    private static IEnumerable<(string, IReadOnlyList<ReliabilityStat>, string)> Tables(ModelReliabilityReport r)
+    {
+        yield return ("Por horizonte", r.ByHorizon, "Intraday (horas) contra swing (dias).");
+        yield return ("Por direção", r.ByDirection, "Compra contra venda.");
+        yield return ("Por faixa de certeza", r.ByConfidence, "Certezas mais altas deviam acertar mais.");
+        yield return ("Sentimento a favor ou contra", r.BySentiment, "O acerto quando as notícias apontavam no mesmo sentido da sugestão, e quando apontavam ao contrário.");
+    }
+
+    private static double Share(int part, int total) => total == 0 ? 0 : Math.Round(part * 100.0 / total, 1);
+
+    private static string Percent(int part, int total) => total == 0 ? "0%" : (part / (double)total).ToString("P0", Pt);
+
+    private static string Hours(double hours) => hours <= 0 ? "—" : hours >= 48 ? $"{hours / 24:0.#} d" : $"{hours:0.#} h";
+
+    public void Dispose() => _cts.Cancel();
+}

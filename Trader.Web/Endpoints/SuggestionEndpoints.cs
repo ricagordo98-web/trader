@@ -33,6 +33,12 @@ public static class SuggestionEndpoints
         group.MapGet("/track-record", async (SuggestionHorizon? horizon, ISuggestionService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GetTrackRecordAsync(horizon, cancellationToken)));
 
+        group.MapGet("/reliability", async (SuggestionHorizon? horizon, IModelReliabilityService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.GetReportAsync(horizon, cancellationToken)));
+
+        group.MapGet("/reliability/sentiment", async (IModelReliabilityService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.GetSentimentStudyAsync(cancellationToken)));
+
         group.MapPost("/refresh", async (ISuggestionService service, CancellationToken cancellationToken) =>
             Results.Ok(new { created = await service.RefreshAsync(cancellationToken) }));
 

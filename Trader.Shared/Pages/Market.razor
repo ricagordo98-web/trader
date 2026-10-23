@@ -98,7 +98,7 @@
                             @foreach (ScreenerRow row in visible)
                             {
                                 <tr style="cursor:pointer" @onclick="@(() => OpenChartAsync(row.Quote))">
-                                    <td><strong>@row.Quote.Symbol</strong> <span class="symbol-name">@row.Quote.Name</span></td>
+                                    <td><strong><SymbolLabel Symbol="@row.Quote.Symbol" Name="@row.Quote.Name" /></strong> <span class="symbol-name">@row.Quote.Name</span></td>
                                     <td>@ClassLabel(row.Quote.AssetClass)</td>
                                     <td style="text-align:right">@(row.Quote.Price?.ToString("F" + PriceFormat.Decimals(row.Quote.AssetClass, row.Quote.Symbol, row.Quote.Price), CultureInfo.InvariantCulture) ?? "—")</td>
                                     <td style="text-align:right"><MudText Typo="Typo.body2" Color="@ChangeColor(row.Quote.ChangePercent)">@(row.Quote.ChangePercent is { } c ? c.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) + "%" : "—")</MudText></td>

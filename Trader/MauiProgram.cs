@@ -26,6 +26,7 @@ public static class MauiProgram
         builder.Services.AddScoped<IClientStore, SecureClientStore>();
         builder.Services.AddTraderApiClient(_ => new Uri(Preferences.Default.Get(ServerUrlKey, DefaultServerUrl)));
         builder.Services.AddTraderShared();
+        builder.Logging.AddProvider(new ErrorFileLoggerProvider());
 
 #if DEBUG
         builder.Services.AddBlazorWebViewDeveloperTools();
