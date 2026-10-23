@@ -4,13 +4,17 @@
     <div class="d-flex align-center flex-wrap gap-2">
         <MudIcon Icon="@Icons.Material.Filled.AutoAwesome" Color="Color.Primary" Size="Size.Small" />
         <MudText Typo="Typo.subtitle1">Resumo do dia</MudText>
-        @if (_summary is not null)
+        @if (_current is not null)
         {
-            <MudText Typo="Typo.caption" Class="symbol-name">@_summary.GeneratedAt.ToLocalTime().ToString("dd/MM HH:mm") · @_summary.Source</MudText>
+            <MudText Typo="Typo.caption" Class="symbol-name">@_current.GeneratedAt.ToLocalTime().ToString("dd/MM HH:mm") · @_current.Source</MudText>
         }
         <MudSpacer />
-        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="_busy" OnClick="GenerateAsync" StartIcon="@Icons.Material.Filled.Refresh">@(_summary is null ? "Gerar" : "Atualizar")</MudButton>
-        @if (_summary is not null)
+        <MudToggleGroup T="bool" Value="_weekly" ValueChanged="SetWeeklyAsync" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="false" Text="Dia" />
+            <MudToggleItem Value="true" Text="Semana" />
+        </MudToggleGroup>
+        <MudButton Size="Size.Small" Variant="Variant.Text" Disabled="_busy" OnClick="GenerateAsync" StartIcon="@Icons.Material.Filled.Refresh">@(_current is null ? "Gerar" : "Atualizar")</MudButton>
+        @if (_current is not null)
         {
             <MudIconButton Icon="@(_expanded ? Icons.Material.Filled.ExpandLess : Icons.Material.Filled.ExpandMore)" Size="Size.Small" aria-label="@(_expanded ? "Recolher resumo" : "Expandir resumo")" OnClick="@(() => _expanded = !_expanded)" />
         }
@@ -25,16 +29,16 @@
     {
         <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_error</MudAlert>
     }
-    else if (_summary is null && !_busy)
+    else if (_current is null && !_busy)
     {
         <MudText Typo="Typo.body2" Class="symbol-name mt-1">Ainda não há resumo. É gerado automaticamente todas as manhãs; podes pedir um agora.</MudText>
     }
-    else if (_summary is not null)
+    else if (_current is not null)
     {
-        <MudText Typo="Typo.body1" Class="mt-2">@(_summary.Narrative ?? _summary.Headline)</MudText>
+        <MudText Typo="Typo.body1" Class="mt-2">@(_current.Narrative ?? _current.Headline)</MudText>
 
         <MudCollapse Expanded="_expanded">
-            @foreach (SummarySection section in _summary.Sections)
+            @foreach (SummarySection section in _current.Sections)
             {
                 <MudText Typo="Typo.subtitle2" Class="mt-3 mb-1">@section.Title</MudText>
                 @foreach (string line in section.Lines)
@@ -49,6 +53,20 @@
 @code {
     private readonly CancellationTokenSource _cts = new();
     private DailySummary? _summary;
+    private DailySummary? _weeklySummary;
+    private bool _weekly;
+
+    private DailySummary? _current => _weekly ? _weeklySummary : _summary;
+
+    private async Task SetWeeklyAsync(bool weekly)
+    {
+        _weekly = weekly;
+
+        if (weekly && _weeklySummary is null)
+        {
+            await GenerateAsync();
+        }
+    }
     private string? _error;
     private bool _busy;
     private bool _expanded;
@@ -71,7 +89,15 @@
 
         try
         {
-            _summary = await Api.GenerateDailySummaryAsync(_cts.Token);
+            if (_weekly)
+            {
+                _weeklySummary = await Api.GetWeeklySummaryAsync(_cts.Token);
+            }
+            else
+            {
+                _summary = await Api.GenerateDailySummaryAsync(_cts.Token);
+            }
+
             _expanded = true;
         }
         catch (HttpRequestException)

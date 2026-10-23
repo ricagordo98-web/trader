@@ -14,6 +14,9 @@ public static class ExplainEndpoints
         group.MapGet("/stats", async (IMoveExplainer explainer, CancellationToken cancellationToken) =>
             Results.Ok(await explainer.GetStatsAsync(cancellationToken)));
 
+        group.MapGet("/cached", async (string symbols, IMoveExplainer explainer, CancellationToken cancellationToken) =>
+            Results.Ok(await explainer.GetCachedOneLinersAsync(symbols.Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries).Take(50).ToList(), cancellationToken)));
+
         group.MapGet("/{symbol}", async (
             string symbol,
             DateTimeOffset? from,

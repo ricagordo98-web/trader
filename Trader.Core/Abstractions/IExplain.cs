@@ -25,4 +25,6 @@ public interface IMoveExplainer
     Task<MoveExplanation?> ExplainAsync(MoveRequest request, CancellationToken cancellationToken);
 
     Task<ExplainStats> GetStatsAsync(CancellationToken cancellationToken);
+
+    Task<IReadOnlyDictionary<string, string>> GetCachedOneLinersAsync(IReadOnlyList<string> symbols, CancellationToken cancellationToken);
 }

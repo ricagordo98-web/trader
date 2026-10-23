@@ -16,12 +16,16 @@ public static class SentimentAggregator
     private const int BaselineDays = 29;
     private const int MinBaselineDays = 3;
 
-    public static SentimentSnapshot Build(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset now, ScoringOptions options)
+    private const double DuplicateSimilarity = 0.6;
+    private static readonly TimeSpan DuplicateWindow = TimeSpan.FromHours(12);
+
+    public static SentimentSnapshot Build(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset now, ScoringOptions options, IReadOnlyDictionary<string, double>? sourceWeights = null)
     {
+        rows = Deduplicate(rows);
         List<ArticleSentimentRow> recent = rows.Where(r => now - r.PublishedAt <= TimeSpan.FromHours(RecentHours)).ToList();
 
         List<(ArticleSentimentRow Row, double Weight)> weighted = recent
-            .Select(r => (Row: r, Weight: Math.Pow(0.5, Math.Max(0, (now - r.PublishedAt).TotalHours) / options.SentimentHalfLifeHours) * Reliability(r.SourceType)))
+            .Select(r => (Row: r, Weight: Math.Pow(0.5, Math.Max(0, (now - r.PublishedAt).TotalHours) / options.SentimentHalfLifeHours) * Reliability(r.SourceType) * (sourceWeights?.GetValueOrDefault(r.Source, 1) ?? 1)))
             .ToList();
 
         double totalWeight = weighted.Sum(w => w.Weight);
@@ -32,6 +36,49 @@ public static class SentimentAggregator
             .ToList();
 
         return new SentimentSnapshot(average, recent.Count, BuzzZScore(rows, now), articles);
+    }
+
+    public static IReadOnlyList<ArticleSentimentRow> Deduplicate(IReadOnlyList<ArticleSentimentRow> rows)
+    {
+        List<ArticleSentimentRow> kept = [];
+        List<HashSet<string>> tokens = [];
+
+        foreach (ArticleSentimentRow row in rows.OrderBy(r => r.PublishedAt))
+        {
+            HashSet<string> current = Tokens(row.Title);
+            bool duplicate = false;
+
+            for (int i = kept.Count - 1; i >= 0 && !duplicate; i--)
+            {
+                if (row.PublishedAt - kept[i].PublishedAt > DuplicateWindow)
+                {
+                    break;
+                }
+
+                duplicate = Jaccard(tokens[i], current) >= DuplicateSimilarity;
+            }
+
+            if (!duplicate)
+            {
+                kept.Add(row);
+                tokens.Add(current);
+            }
+        }
+
+        return kept;
+    }
+
+    private static HashSet<string> Tokens(string title) =>
+        System.Text.RegularExpressions.Regex.Matches(title.ToLowerInvariant(), @"[\p{L}\p{N}]+").Select(m => m.Value).Where(w => w.Length >= 3).ToHashSet();
+
+    private static double Jaccard(HashSet<string> a, HashSet<string> b)
+    {
+        if (a.Count == 0 || b.Count == 0)
+        {
+            return 0;
+        }
+
+        return (double)a.Intersect(b).Count() / a.Union(b).Count();
     }
 
     private static double? BuzzZScore(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset now)

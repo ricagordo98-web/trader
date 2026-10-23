@@ -1,6 +1,7 @@
 @page "/trading"
 @inject TraderApiClient Api
 @inject IDialogService DialogService
+@inject ISnackbar Snackbar
 
 <PageTitle>Trading · Trader</PageTitle>
 
@@ -23,9 +24,9 @@
 
     <MudPaper Elevation="0" Outlined="true">
         <MudTabs Rounded="true" TabPanelsClass="pa-0" ApplyEffectsToContainer="true">
-            @foreach ((AssetClass assetClass, string title) in _tabs)
+            @foreach ((AssetClass? assetClass, string title) in _tabs)
             {
-                <MudTabPanel Text="@title">
+                <MudTabPanel Text="@(assetClass is null ? $"{title} ({Favorites.Count})" : title)">
                     <MudTable Items="Filter(assetClass)" Hover="true" OnRowClick="@((TableRowClickEventArgs<InstrumentQuote> args) => OpenChartAsync(args.Item))" RowStyle="cursor:pointer" Dense="true" Elevation="0" Loading="_loading" LoadingProgressColor="Color.Primary" Breakpoint="Breakpoint.None">
                         <HeaderContent>
                             <MudTh>Instrumento</MudTh>
@@ -36,8 +37,16 @@
                         </HeaderContent>
                         <RowTemplate>
                             <MudTd>
+                                <div class="d-flex align-center">
+                                    <MudTooltip Text="@(IsFavorite(context.Symbol) ? "Remover dos favoritos" : "Adicionar aos favoritos")">
+                                        <MudIconButton Icon="@(IsFavorite(context.Symbol) ? Icons.Material.Filled.Star : Icons.Material.Filled.StarBorder)" Color="@(IsFavorite(context.Symbol) ? Color.Warning : Color.Default)" Size="Size.Small"
+                                                       aria-label="@($"Favorito {context.Symbol}")" OnClick="@(() => ToggleFavoriteAsync(context.Symbol))" />
+                                    </MudTooltip>
+                                    <div>
                                 <MudText Typo="Typo.subtitle2">@context.Symbol</MudText>
                                 <MudText Typo="Typo.caption" Class="symbol-name">@context.Name</MudText>
+                                    </div>
+                                </div>
                             </MudTd>
                             <MudTd Style="text-align:right;white-space:nowrap" title="@($"Fonte: {PriceSources.Yahoo}. {PriceSources.Describe(context.Symbol, context.AssetClass, CryptoBasis.Usd).Note}")">
                                 @(context.Price is null ? "—" : $"{context.Price.Value.ToString("F" + PriceFormat.Decimals(context.AssetClass, context.Symbol, context.Price), _culture)} {context.Currency}")
@@ -73,7 +82,7 @@
                             }
                             else
                             {
-                                <MudText Class="pa-4" Color="Color.Secondary">Sem instrumentos.</MudText>
+                                <MudText Class="pa-4" Color="Color.Secondary">@(assetClass is null ? "Ainda sem favoritos. Toca na estrela de um ativo para o teres aqui, à mão." : "Sem instrumentos.")</MudText>
                             }
                         </NoRecordsContent>
                     </MudTable>
@@ -86,8 +95,9 @@
 @code {
     private static readonly System.Globalization.CultureInfo _culture = System.Globalization.CultureInfo.GetCultureInfo("pt-PT");
 
-    private readonly (AssetClass AssetClass, string Title)[] _tabs =
+    private readonly (AssetClass? AssetClass, string Title)[] _tabs =
     [
+        (null, "Favoritos"),
         (AssetClass.Stock, "Ações"),
         (AssetClass.Commodity, "Mercadorias"),
         (AssetClass.Etf, "ETFs"),
@@ -97,6 +107,33 @@
     ];
 
     private IReadOnlyList<InstrumentQuote> _quotes = [];
+    private UserPreferences _profile = UserPreferences.Default;
+
+    private IReadOnlyList<string> Favorites => _profile.Favorites ?? [];
+
+    private bool IsFavorite(string symbol) => Favorites.Contains(symbol, StringComparer.OrdinalIgnoreCase);
+
+    private async Task ToggleFavoriteAsync(string symbol)
+    {
+        List<string> next = Favorites.Where(f => !f.Equals(symbol, StringComparison.OrdinalIgnoreCase)).ToList();
+
+        if (!IsFavorite(symbol))
+        {
+            next.Add(symbol);
+        }
+
+        UserPreferences updated = _profile with { Favorites = next };
+        string? error = await Api.SaveProfileAsync(updated);
+
+        if (error is null)
+        {
+            _profile = updated;
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Error);
+        }
+    }
     private string _search = string.Empty;
     private string? _error;
     private bool _loading;
@@ -132,6 +169,7 @@
         try
         {
             _quotes = await Api.GetInstrumentsAsync();
+            _profile = await Api.GetProfileAsync();
         }
         catch (HttpRequestException)
         {
@@ -143,8 +181,8 @@
         }
     }
 
-    private IEnumerable<InstrumentQuote> Filter(AssetClass assetClass) =>
-        _quotes.Where(q => q.AssetClass == assetClass
+    private IEnumerable<InstrumentQuote> Filter(AssetClass? assetClass) =>
+        _quotes.Where(q => (assetClass is null ? IsFavorite(q.Symbol) : q.AssetClass == assetClass)
             && (string.IsNullOrWhiteSpace(_search)
                 || q.Symbol.Contains(_search, StringComparison.OrdinalIgnoreCase)
                 || q.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)));

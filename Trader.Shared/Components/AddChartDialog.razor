@@ -1,0 +1,83 @@
+@using System.Globalization
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.AddChart" />
+            <MudText Typo="Typo.h6">Adicionar gráfico</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudTextField T="string" @bind-Value="_search" Immediate="true" Placeholder="Pesquisar símbolo ou nome" Variant="Variant.Outlined" Margin="Margin.Dense"
+                      Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-3" />
+        <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-2" Class="add-chart-tabs">
+            @foreach ((AssetClass assetClass, string title) in Sections)
+            {
+                IReadOnlyList<InstrumentQuote> items = Filter(assetClass);
+
+                <MudTabPanel Text="@($"{title} ({items.Count})")">
+                    <div class="add-chart-list">
+                        @if (items.Count == 0)
+                        {
+                            <MudText Color="Color.Secondary" Class="pa-3">Nenhum resultado.</MudText>
+                        }
+
+                        @foreach (InstrumentQuote quote in items)
+                        {
+                            <button type="button" class="add-chart-row" @onclick="@(() => Pick(quote.Symbol))">
+                                <span class="add-chart-symbol">@quote.Symbol</span>
+                                <span class="add-chart-name">@quote.Name</span>
+                                <span class="add-chart-spacer"></span>
+                                @if (Used.Contains(quote.Symbol))
+                                {
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">no painel</MudChip>
+                                }
+                                @if (quote.ChangePercent is { } change)
+                                {
+                                    <span class="add-chart-change" style="color:@(change >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")">
+                                        @(change >= 0 ? "+" : string.Empty)@change.ToString("0.00", CultureInfo.GetCultureInfo("pt-PT"))%
+                                    </span>
+                                }
+                            </button>
+                        }
+                    </div>
+                </MudTabPanel>
+            }
+        </MudTabs>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private static readonly (AssetClass, string)[] Sections =
+    [
+        (AssetClass.Stock, "Ações"),
+        (AssetClass.Etf, "ETFs"),
+        (AssetClass.Commodity, "Mercadorias"),
+        (AssetClass.Forex, "Forex"),
+        (AssetClass.Crypto, "Cripto"),
+        (AssetClass.Index, "Índices")
+    ];
+
+    private string _search = string.Empty;
+
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<InstrumentQuote> Instruments { get; set; } = [];
+
+    [Parameter] public IReadOnlySet<string> Used { get; set; } = new HashSet<string>();
+
+    private IReadOnlyList<InstrumentQuote> Filter(AssetClass assetClass) =>
+        Instruments
+            .Where(q => q.AssetClass == assetClass
+                && (string.IsNullOrWhiteSpace(_search)
+                    || q.Symbol.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                    || q.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+            .ToList();
+
+    private void Pick(string symbol) => Dialog.Close(DialogResult.Ok(symbol));
+
+    private void Cancel() => Dialog.Cancel();
+}

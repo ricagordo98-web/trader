@@ -15,6 +15,9 @@ public static class SummaryEndpoints
         group.MapPost("/generate", async (IDailySummaryService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GenerateAsync(cancellationToken)));
 
+        group.MapGet("/weekly", async (System.Security.Claims.ClaimsPrincipal user, IDailySummaryService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.GenerateWeeklyAsync(UserDisplay.UserId(user), cancellationToken)));
+
         return app;
     }
 }

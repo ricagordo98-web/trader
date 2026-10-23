@@ -34,7 +34,8 @@ public sealed record DisplayConversion(string Currency, IReadOnlyDictionary<stri
             Currency = Currency,
             Price = quote.Price * factor,
             Change = quote.Change * factor,
-            Sparkline = quote.Sparkline.Select(p => p * factor).ToList()
+            Sparkline = quote.Sparkline.Select(p => p * factor).ToList(),
+            DisplayFactor = factor
         };
     }
 

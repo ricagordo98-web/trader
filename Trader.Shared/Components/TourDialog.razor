@@ -1,0 +1,88 @@
+@using Trader.Core.Help
+@inject NavigationManager Navigation
+@inject IClientStore Store
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Explore" />
+            <MudText Typo="Typo.h6">Guia rápido</MudText>
+            <MudSpacer />
+            <MudText Typo="Typo.caption" Class="symbol-name">@(_index + 1) / @Steps.Count</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <div class="tour-step">
+            <div class="tour-icon"><MudIcon Icon="@IconFor(Current.Icon)" Size="Size.Large" Color="Color.Primary" /></div>
+            <MudText Typo="Typo.h5" Class="mb-2">@Current.Title</MudText>
+            <MudText Typo="Typo.body1">@Current.Text</MudText>
+            @if (Current.Link is { } link)
+            {
+                <MudButton Variant="Variant.Text" Class="mt-3" EndIcon="@Icons.Material.Filled.ArrowForward" OnClick="@(() => Open(link))">Ir para esta secção</MudButton>
+            }
+        </div>
+        <div class="tour-dots">
+            @for (int i = 0; i < Steps.Count; i++)
+            {
+                int target = i;
+                <button type="button" class="@($"tour-dot{(i == _index ? " active" : string.Empty)}")" aria-label="@($"Passo {i + 1}")" @onclick="@(() => _index = target)"></button>
+            }
+        </div>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="FinishAsync">@(_index == Steps.Count - 1 ? "Concluir" : "Saltar")</MudButton>
+        <MudSpacer />
+        <MudButton Disabled="@(_index == 0)" OnClick="@(() => _index--)">Anterior</MudButton>
+        @if (_index < Steps.Count - 1)
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="@(() => _index++)">Seguinte</MudButton>
+        }
+        else
+        {
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="FinishAsync">Começar</MudButton>
+        }
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public const string StoreKey = "tour.done";
+
+    private static IReadOnlyList<TourStep> Steps => HelpContent.Tour;
+
+    private int _index;
+
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    private TourStep Current => Steps[_index];
+
+    private async Task FinishAsync()
+    {
+        try
+        {
+            await Store.SetAsync(StoreKey, "1");
+        }
+        catch (InvalidOperationException)
+        {
+        }
+
+        Dialog.Close();
+    }
+
+    private void Open(string link)
+    {
+        Navigation.NavigateTo(link);
+        Dialog.Close();
+    }
+
+    private static string IconFor(string name) => name switch
+    {
+        "newspaper" => Icons.Material.Filled.Newspaper,
+        "candlestick_chart" => Icons.Material.Filled.CandlestickChart,
+        "dashboard" => Icons.Material.Filled.GridView,
+        "insights" => Icons.Material.Filled.AutoGraph,
+        "menu_book" => Icons.Material.Filled.MenuBook,
+        "notifications" => Icons.Material.Filled.Notifications,
+        "help" => Icons.Material.Filled.HelpOutline,
+        _ => Icons.Material.Filled.WavingHand
+    };
+}

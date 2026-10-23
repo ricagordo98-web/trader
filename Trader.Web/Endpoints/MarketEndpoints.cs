@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using System.Text.Json;
+using Trader.Core.Charts;
 using Trader.Core.Abstractions;
 using Trader.Core.Models;
 
@@ -79,6 +80,23 @@ public static class MarketEndpoints
                 return Results.Problem(title: "Market data provider unavailable", statusCode: StatusCodes.Status502BadGateway);
             }
         });
+
+        group.MapGet("/instruments/{symbol}/levels", async (string symbol, IChartInsights insights, IDisplayCurrency display, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                DisplayConversion conversion = await UserDisplay.ConversionAsync(user, prefs, display, cancellationToken);
+                double factor = conversion.FactorFor(symbol);
+                return Results.Ok((await insights.GetLevelsAsync(symbol, cancellationToken)).Select(l => l with { Price = l.Price * factor }).ToList());
+            }
+            catch (HttpRequestException)
+            {
+                return Results.Problem(title: "Market data provider unavailable", statusCode: StatusCodes.Status502BadGateway);
+            }
+        });
+
+        group.MapGet("/instruments/{symbol}/events", async (string symbol, DateTimeOffset from, DateTimeOffset to, IChartInsights insights, ClaimsPrincipal user, CancellationToken cancellationToken) =>
+            Results.Ok(await insights.GetEventsAsync(symbol, UserDisplay.UserId(user), from, to, cancellationToken)));
 
         group.MapGet("/instruments/{symbol}/drawings", async (string symbol, IChartDrawingService service, IDisplayCurrency display, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
         {

@@ -80,6 +80,11 @@ public static class AccountProfileValidator
             errors.Add("O risco por operação tem de estar entre 0% e 10%.");
         }
 
+        if (profile.MaxDailyLossPercent is < 0 or > 100 || profile.MaxTradesPerDay is < 0 or > 1000)
+        {
+            errors.Add("Os limites diários são inválidos (0 desliga o limite).");
+        }
+
         if (string.IsNullOrWhiteSpace(profile.Currency) || profile.Currency.Trim().Length is < 1 or > 8)
         {
             errors.Add("Indica a moeda da conta (ex.: EUR).");

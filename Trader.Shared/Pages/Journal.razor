@@ -19,6 +19,11 @@
         <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
     }
 
+    @if (_risk?.Message is { } riskMessage)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-4">@riskMessage</MudAlert>
+    }
+
     @if (_loading)
     {
         <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="320px" />
@@ -28,7 +33,7 @@
         <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
             <MudTabPanel Text="Calculadora">
                 <PositionCalculatorPanel Account="_account" Watchlist="_watchlist" Quotes="_quotes" OpenSuggestions="_openSuggestions"
-                                         Initial="_prefill" OnRegister="OpenTradeDialogAsync" OnSaveAccount="SaveAccountAsync" />
+                                         Initial="_prefill" Costs="_costs" OnRegister="OpenTradeDialogAsync" OnSaveAccount="SaveAccountAsync" />
             </MudTabPanel>
 
             <MudTabPanel Text="@($"Trades ({_trades.Count})")">
@@ -110,13 +115,19 @@
                                     {
                                         <MudTooltip Text="Fechar trade"><MudIconButton Icon="@Icons.Material.Filled.CheckCircleOutline" Size="Size.Small" aria-label="@($"Fechar {context.Symbol}")" OnClick="@(() => CloseTradeDialogAsync(context))" /></MudTooltip>
                                     }
+                                    <MudTooltip Text="Setup, emoção, etiquetas, notas e imagem"><MudIconButton Icon="@Icons.Material.Filled.EditNote" Size="Size.Small" aria-label="@($"Detalhes {context.Symbol}")" OnClick="@(() => EditDetailsAsync(context))" /></MudTooltip>
                                     <MudTooltip Text="Apagar"><MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" aria-label="@($"Apagar {context.Symbol}")" OnClick="@(() => DeleteTradeAsync(context))" /></MudTooltip>
                                 </MudTd>
                             </RowTemplate>
                             <ChildRowContent>
-                                @if (!string.IsNullOrWhiteSpace(context.Notes))
+                                @if (!string.IsNullOrWhiteSpace(context.Notes) || context.Setup.Length > 0 || context.Tags.Length > 0 || context.Emotion.Length > 0 || context.HasImage)
                                 {
-                                    <MudTd colspan="6"><MudText Typo="Typo.caption" Class="symbol-name">📝 @context.Notes</MudText></MudTd>
+                                    <MudTd colspan="6">
+                                        <MudText Typo="Typo.caption" Class="symbol-name">
+                                            @(string.Join(" · ", new[] { context.Setup, context.Emotion, context.Tags }.Where(x => x.Length > 0)))@(context.HasImage ? " · 🖼 imagem" : string.Empty)
+                                            @(string.IsNullOrWhiteSpace(context.Notes) ? string.Empty : "📝 " + context.Notes)
+                                        </MudText>
+                                    </MudTd>
                                 }
                             </ChildRowContent>
                         </MudTable>
@@ -126,6 +137,10 @@
 
             <MudTabPanel Text="Estatísticas">
                 <JournalStatsPanel Stats="_stats" Currency="@_account.Currency" />
+            </MudTabPanel>
+
+            <MudTabPanel Text="Análise">
+                <JournalInsightsPanel Insights="_insights" Currency="@_account.Currency" />
             </MudTabPanel>
         </MudTabs>
     }
@@ -146,6 +161,9 @@
     private IReadOnlyList<SuggestionDto> _openSuggestions = [];
     private IReadOnlyList<JournalTradeDto> _trades = [];
     private JournalStats _stats = new(0, 0, 0, 0, 0, 0, null, 0, null, 0, 0, 0, [], 0, null, null, []);
+    private JournalInsights _insights = new(0, [], [], [], [], [], [], [], [], 0, 0, null, null);
+    private DailyRiskStatus? _risk;
+    private CostModel _costs = new();
     private TradePrefill? _prefill;
     private TradeStatus? _filter;
     private string? _error;
@@ -208,6 +226,7 @@
         try
         {
             _account = await Api.GetAccountAsync(_cts.Token);
+            _costs = (await Api.GetProfileAsync(_cts.Token)).Costs ?? new CostModel();
             _watchlist = await Api.GetWatchlistAsync(_cts.Token);
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token, native: true)).ToDictionary(q => q.Symbol);
             _openSuggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, native: true);
@@ -240,6 +259,20 @@
     {
         _trades = await Api.GetTradesAsync(null, _cts.Token);
         _stats = await Api.GetJournalStatsAsync(_cts.Token);
+        _insights = await Api.GetJournalInsightsAsync(_cts.Token);
+        _risk = await Api.GetDailyRiskAsync(_cts.Token);
+    }
+
+    private async Task EditDetailsAsync(JournalTradeDto trade)
+    {
+        DialogParameters<TradeDetailsDialog> parameters = new() { { x => x.Trade, trade } };
+        IDialogReference dialog = await DialogService.ShowAsync<TradeDetailsDialog>("Detalhes da trade", parameters, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+        DialogResult? result = await dialog.Result;
+
+        if (result is { Canceled: false })
+        {
+            await ReloadTradesAsync();
+        }
     }
 
     private async Task SaveAccountAsync(AccountProfile profile)
@@ -249,6 +282,7 @@
         if (error is null)
         {
             _account = profile with { Currency = profile.Currency.Trim().ToUpperInvariant() };
+            _risk = await Api.GetDailyRiskAsync(_cts.Token);
             Snackbar.Add("Predefinições guardadas.", Severity.Success);
         }
         else

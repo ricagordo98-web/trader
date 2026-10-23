@@ -1,11 +1,14 @@
 using System.Net.Http.Json;
 using Trader.Core.Alerts;
 using Trader.Core.Backtesting;
+using Trader.Core.Charts;
 using Trader.Core.Calendar;
 using Trader.Core.Charts;
 using Trader.Core.Abstractions;
 using Trader.Core.Explain;
 using Trader.Core.Intraday;
+using Trader.Core.Market;
+using Trader.Core.Health;
 using Trader.Core.Journal;
 using Trader.Core.Maintenance;
 using Trader.Core.Models;
@@ -60,6 +63,9 @@ public sealed class TraderApiClient(HttpClient httpClient)
             : await response.Content.ReadFromJsonAsync<DailySummary>(cancellationToken);
     }
 
+    public async Task<DailySummary?> GetWeeklySummaryAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<DailySummary>("api/summary/weekly", cancellationToken);
+
     public async Task<DailySummary?> GenerateDailySummaryAsync(CancellationToken cancellationToken = default)
     {
         using HttpResponseMessage response = await httpClient.PostAsync("api/summary/generate", null, cancellationToken);
@@ -98,6 +104,59 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<IReadOnlyList<InstrumentQuote>> GetInstrumentsAsync(CancellationToken cancellationToken = default, bool native = false) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<InstrumentQuote>>(native ? "api/instruments?native=true" : "api/instruments", cancellationToken) ?? [];
+
+    public async Task<IReadOnlyDictionary<string, string>> GetCachedExplanationsAsync(IEnumerable<string> symbols, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<Dictionary<string, string>>($"api/explain/cached?symbols={Uri.EscapeDataString(string.Join(',', symbols))}", cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<AutoLevel>> GetLevelsAsync(string symbol, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<AutoLevel>>($"api/instruments/{Uri.EscapeDataString(symbol)}/levels", cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<ChartEventDto>> GetChartEventsAsync(string symbol, DateTimeOffset from, DateTimeOffset to, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<ChartEventDto>>(
+            $"api/instruments/{Uri.EscapeDataString(symbol)}/events?from={Uri.EscapeDataString(from.UtcDateTime.ToString("o"))}&to={Uri.EscapeDataString(to.UtcDateTime.ToString("o"))}",
+            cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<ChartLayoutDto>> GetChartLayoutsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<ChartLayoutDto>>("api/chart-layouts", cancellationToken) ?? [];
+
+    public async Task<string?> SaveChartLayoutAsync(string name, string json, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/chart-layouts", new { name, json }, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<bool> DeleteChartLayoutAsync(string name, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync($"api/chart-layouts/{Uri.EscapeDataString(name)}", cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<IReadOnlyList<AlertRuleDto>> GetAlertRulesAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<AlertRuleDto>>("api/alert-rules", cancellationToken) ?? [];
+
+    public async Task<string?> SaveAlertRuleAsync(AlertRuleDto rule, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/alert-rules", rule, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<bool> DeleteAlertRuleAsync(long id, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync($"api/alert-rules/{id}", cancellationToken);
+        return response.IsSuccessStatusCode;
+    }
+
+    public async Task<IReadOnlyList<SessionStatus>> GetSessionsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<SessionStatus>>("api/market/sessions", cancellationToken) ?? [];
+
+    public async Task<IReadOnlyList<CompanyProfile>> GetProfilesAsync(IEnumerable<string> symbols, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<CompanyProfile>>($"api/market/profiles?symbols={Uri.EscapeDataString(string.Join(',', symbols))}", cancellationToken) ?? [];
+
+    public async Task<OrderFlowSnapshot?> GetFlowAsync(string symbol, CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<OrderFlowSnapshot>($"api/market/flow/{Uri.EscapeDataString(symbol)}", cancellationToken);
+
+    public async Task<IReadOnlyList<TradingHalt>> GetHaltsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<TradingHalt>>("api/market/halts", cancellationToken) ?? [];
 
     public async Task<PaperOverview> GetPaperAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<PaperOverview>("api/simulator", cancellationToken)
@@ -297,6 +356,9 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode;
     }
 
+    public async Task<IReadOnlyList<HealthItem>> GetHealthAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<HealthItem>>("api/system/health", cancellationToken) ?? [];
+
     public async Task<IReadOnlyList<SourceStatus>> GetSourcesAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<SourceStatus>>("api/sources", cancellationToken) ?? [];
 
@@ -412,6 +474,32 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<AccountProfile> GetAccountAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<AccountProfile>("api/journal/account", cancellationToken) ?? new AccountProfile(10_000, 1, "EUR");
+
+    public async Task<JournalInsights> GetJournalInsightsAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<JournalInsights>("api/journal/insights", cancellationToken)
+        ?? new JournalInsights(0, [], [], [], [], [], [], [], [], 0, 0, null, null);
+
+    public async Task<DailyRiskStatus?> GetDailyRiskAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<DailyRiskStatus>("api/journal/risk", cancellationToken);
+
+    public async Task<string?> UpdateTradeDetailsAsync(long id, TradeDetailsRequest request, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync($"api/journal/trades/{id}/details", request, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<string?> GetTradeImageAsync(long id, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.GetAsync($"api/journal/trades/{id}/image", cancellationToken);
+
+        if (!response.IsSuccessStatusCode)
+        {
+            return null;
+        }
+
+        using System.Text.Json.JsonDocument document = System.Text.Json.JsonDocument.Parse(await response.Content.ReadAsStringAsync(cancellationToken));
+        return document.RootElement.GetProperty("image").GetString();
+    }
 
     public async Task<string?> SaveAccountAsync(AccountProfile profile, CancellationToken cancellationToken = default)
     {

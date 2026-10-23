@@ -10,13 +10,17 @@ public sealed class NtfyPublisher(HttpClient httpClient) : IAlertPublisher
     {
         foreach (AlertDto alert in alerts)
         {
+            string? click = NtfyRouting.ClickUrl(settings, alert);
+
             var body = new
             {
                 topic = settings.Topic,
                 title = alert.Title,
                 message = alert.Message,
                 tags = new[] { TagFor(alert.Kind) },
-                priority = alert.Kind is AlertKind.StopLoss or AlertKind.TradeStopLoss ? 4 : 3
+                priority = NtfyRouting.IsCritical(alert.Kind) ? 4 : 3,
+                click,
+                actions = click is null ? null : new[] { new { action = "view", label = "Abrir no Trader", url = click, clear = true } }
             };
 
             using HttpResponseMessage response = await httpClient.PostAsJsonAsync(settings.Server, body, cancellationToken);

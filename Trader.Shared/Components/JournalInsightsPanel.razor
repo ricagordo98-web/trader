@@ -1,0 +1,94 @@
+@using System.Globalization
+@using Trader.Core.Journal
+
+@if (Insights.ClosedCount == 0)
+{
+    <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem dados para analisar</MudText>
+        <MudText Color="Color.Secondary">Fecha algumas trades e aqui vês a que horas, em que dias e em que ativos ganhas ou perdes mais.</MudText>
+    </MudPaper>
+}
+else
+{
+    @if (Insights.BestHour is not null)
+    {
+        <MudAlert Severity="Severity.Info" Variant="Variant.Outlined" Class="mb-4">
+            Melhor hora de entrada: <b>@Insights.BestHour</b>@(Insights.WorstHour is not null && Insights.WorstHour != Insights.BestHour ? $" · pior hora: {Insights.WorstHour}" : string.Empty)
+            (só horas com pelo menos @JournalAnalyzer.MinTradesForHourVerdict trades). Tempo médio em posição: @Minutes(Insights.AverageMinutesHeld).
+        </MudAlert>
+    }
+
+    <MudGrid Spacing="3" Class="mb-2">
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Curva de capital (@Currency)</MudText>
+                @if (Insights.Equity.Count >= 2)
+                {
+                    <CumulativeCurve Points="@Insights.Equity.Select(p => p.Value).ToList()" />
+                }
+                else
+                {
+                    <MudText Typo="Typo.body2" Class="symbol-name">A curva aparece a partir da segunda trade fechada.</MudText>
+                }
+            </MudPaper>
+        </MudItem>
+        <MudItem xs="12" md="6">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Drawdown (máx. @Money(-Insights.MaxDrawdown))</MudText>
+                @if (Insights.Drawdown.Count >= 2)
+                {
+                    <CumulativeCurve Points="@Insights.Drawdown.Select(p => p.Value).ToList()" />
+                }
+            </MudPaper>
+        </MudItem>
+        @foreach ((string title, IReadOnlyList<InsightGroup> groups) in Tables())
+        {
+            @if (groups.Count > 0)
+            {
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">@title</MudText>
+                        <MudTable Items="groups" Dense="true" Elevation="0" Breakpoint="Breakpoint.Sm">
+                            <HeaderContent>
+                                <MudTh></MudTh>
+                                <MudTh Style="text-align:right">Trades</MudTh>
+                                <MudTh Style="text-align:right">Acertos</MudTh>
+                                <MudTh Style="text-align:right">Resultado</MudTh>
+                                <MudTh Style="text-align:right">R médio</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Name</MudTd>
+                                <MudTd Style="text-align:right">@context.Count</MudTd>
+                                <MudTd Style="text-align:right">@context.WinRate.ToString("P0", Pt)</MudTd>
+                                <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@(context.NetPnl >= 0 ? Color.Success : Color.Error)">@Money(context.NetPnl)</MudText></MudTd>
+                                <MudTd Style="text-align:right">@(context.AverageR is { } r ? r.ToString("+0.00;-0.00", Pt) : "—")</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                </MudItem>
+            }
+        }
+    </MudGrid>
+}
+
+@code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    [Parameter] public JournalInsights Insights { get; set; } = default!;
+
+    [Parameter] public string Currency { get; set; } = "EUR";
+
+    private IEnumerable<(string, IReadOnlyList<InsightGroup>)> Tables() =>
+    [
+        ("Por hora de entrada", Insights.ByHour),
+        ("Por dia da semana", Insights.ByWeekday),
+        ("Por ativo", Insights.BySymbol),
+        ("Por setup", Insights.BySetup),
+        ("Por estado emocional", Insights.ByEmotion),
+        ("Compra vs venda", Insights.ByDirection)
+    ];
+
+    private string Money(double value) => $"{value.ToString("+#,0.00;-#,0.00;0.00", Pt)} {Currency}";
+
+    private static string Minutes(double minutes) => minutes >= 120 ? $"{minutes / 60:0.#} h" : $"{minutes:0} min";
+}

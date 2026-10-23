@@ -78,6 +78,8 @@
 
     [Parameter] public bool Maximized { get; set; }
 
+    [Parameter] public string? SyncGroup { get; set; }
+
     [Parameter] public EventCallback OnToggleMaximize { get; set; }
 
     [Parameter] public EventCallback OnClose { get; set; }
@@ -102,11 +104,19 @@
         await LoadAsync();
     }
 
+    private string? _appliedSync;
+
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
         if (firstRender)
         {
             await StartStreamingAsync();
+        }
+
+        if (_chart is not null && _appliedSync != SyncGroup)
+        {
+            _appliedSync = SyncGroup;
+            await _chart.SetSyncGroupAsync(SyncGroup);
         }
     }
 

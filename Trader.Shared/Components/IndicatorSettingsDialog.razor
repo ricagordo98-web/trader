@@ -1,0 +1,117 @@
+@using System.Globalization
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.Tune" />
+            <MudText Typo="Typo.h6">Configurar indicador</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        <MudSelect T="string" Value="_name" ValueChanged="SelectAsync" Label="Indicador" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3">
+            @foreach ((string name, string label) in Options)
+            {
+                <MudSelectItem T="string" Value="@name">@label</MudSelectItem>
+            }
+        </MudSelect>
+        <MudTextField T="string" @bind-Value="_parameters" Label="Parâmetros (separados por vírgulas)" Variant="Variant.Outlined" Margin="Margin.Dense" HelperText="@Help" Class="mb-3" />
+        <div class="d-flex align-center gap-3">
+            <div>
+                <MudText Typo="Typo.caption" Class="symbol-name">Cor das linhas</MudText>
+                <input type="color" value="@_color" @onchange="OnColorChanged" class="indicator-color" aria-label="Cor das linhas" />
+            </div>
+            <MudNumericField T="int" @bind-Value="_size" Label="Espessura" Min="1" Max="5" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:120px" />
+            <MudSpacer />
+            <MudButton Variant="Variant.Text" OnClick="ResetAsync">Repor por omissão</MudButton>
+        </div>
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Warning" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="Apply">Aplicar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    public sealed record Result(string Name, int[] Parameters, string Color, int Size, bool Reset);
+
+    private static readonly Dictionary<string, string> Defaults = new()
+    {
+        ["MA"] = "5,10,30,60",
+        ["EMA"] = "6,12,20",
+        ["BOLL"] = "20,2",
+        ["SAR"] = "2,2,20",
+        ["VOL"] = "5,10,20",
+        ["MACD"] = "12,26,9",
+        ["RSI"] = "6,12,24",
+        ["KDJ"] = "9,3,3",
+        ["OBV"] = "30",
+        ["CCI"] = "20"
+    };
+
+    private string _name = "MA";
+    private string _parameters = Defaults["MA"];
+    private string _color = "#4C8DFF";
+    private int _size = 1;
+    private string? _error;
+
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public IReadOnlyList<(string Name, string Label)> Options { get; set; } = [];
+
+    [Parameter] public string? Initial { get; set; }
+
+    private string Help => _name switch
+    {
+        "BOLL" => "Período e número de desvios (por exemplo 20,2).",
+        "MACD" => "Média rápida, lenta e sinal (por exemplo 12,26,9).",
+        "MA" or "EMA" or "VOL" or "RSI" => "Um período por linha (por exemplo 5,10,30).",
+        _ => "Valores inteiros positivos separados por vírgulas."
+    };
+
+    protected override void OnInitialized()
+    {
+        if (Initial is { } initial && Defaults.ContainsKey(initial))
+        {
+            _name = initial;
+            _parameters = Defaults[initial];
+        }
+    }
+
+    private Task SelectAsync(string? name)
+    {
+        _name = name ?? "MA";
+        _parameters = Defaults.GetValueOrDefault(_name, string.Empty);
+        return Task.CompletedTask;
+    }
+
+    private void OnColorChanged(ChangeEventArgs args) => _color = args.Value?.ToString() ?? _color;
+
+    private Task ResetAsync()
+    {
+        _parameters = Defaults.GetValueOrDefault(_name, string.Empty);
+        _size = 1;
+        return Task.CompletedTask;
+    }
+
+    private void Apply()
+    {
+        int[] values = _parameters
+            .Split(',', StringSplitOptions.RemoveEmptyEntries | StringSplitOptions.TrimEntries)
+            .Select(p => int.TryParse(p, NumberStyles.Integer, CultureInfo.InvariantCulture, out int v) ? v : -1)
+            .ToArray();
+
+        if (values.Length == 0 || values.Any(v => v is < 1 or > 500) || values.Length > 8)
+        {
+            _error = "Usa até 8 números inteiros entre 1 e 500, separados por vírgulas.";
+            return;
+        }
+
+        Dialog.Close(DialogResult.Ok(new Result(_name, values, _color, Math.Clamp(_size, 1, 5), false)));
+    }
+
+    private void Cancel() => Dialog.Cancel();
+}

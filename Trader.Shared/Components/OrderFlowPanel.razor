@@ -1,0 +1,94 @@
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+
+<div class="order-flow">
+    <div class="d-flex align-center flex-wrap gap-3 mb-1">
+        <MudText Typo="Typo.subtitle2"><GlossaryTerm Key="order-flow">Fluxo de ordens</GlossaryTerm> · @Symbol · última hora</MudText>
+        <MudSpacer />
+        @if (_snapshot is { Available: true } snapshot)
+        {
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(snapshot.BuyShare >= 0.5 ? Color.Success : Color.Error)" Class="ma-0">
+                compras @((snapshot.BuyShare * 100).ToString("0", CultureInfo.InvariantCulture))%
+            </MudChip>
+            <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(snapshot.CumulativeDelta >= 0 ? Color.Success : Color.Error)" Class="ma-0">
+                delta @snapshot.CumulativeDelta.ToString("+#,0.###;-#,0.###;0", CultureInfo.InvariantCulture)
+            </MudChip>
+            @if (snapshot.Imbalance is { } imbalance)
+            {
+                <MudTooltip Text="Desequilíbrio do livro de ofertas (5 níveis): positivo quando há mais volume a comprar do que a vender.">
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(imbalance >= 0 ? Color.Success : Color.Error)" Class="ma-0">
+                        livro @((imbalance * 100).ToString("+0;-0;0", CultureInfo.InvariantCulture))%
+                    </MudChip>
+                </MudTooltip>
+            }
+        }
+    </div>
+
+    @if (_snapshot is null)
+    {
+        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+    }
+    else if (!_snapshot.Available)
+    {
+        <MudText Typo="Typo.caption" Class="symbol-name">@_snapshot.Note</MudText>
+    }
+    else
+    {
+        double max = Math.Max(1e-9, _snapshot.Buckets.Max(b => Math.Abs(b.Delta)));
+        <svg viewBox="0 0 600 70" preserveAspectRatio="none" class="order-flow-svg" role="img" aria-label="Delta por minuto">
+            <line x1="0" y1="35" x2="600" y2="35" stroke="var(--mud-palette-lines-default)" stroke-width="1" />
+            @for (int i = 0; i < _snapshot.Buckets.Count; i++)
+            {
+                FlowBucket bucket = _snapshot.Buckets[i];
+                double height = Math.Abs(bucket.Delta) / max * 32;
+                double width = 600.0 / _snapshot.Buckets.Count;
+                <rect x="@((i * width + 0.6).ToString("0.##", CultureInfo.InvariantCulture))" y="@((bucket.Delta >= 0 ? 35 - height : 35).ToString("0.##", CultureInfo.InvariantCulture))"
+                      width="@Math.Max(0.5, width - 1.2).ToString("0.##", CultureInfo.InvariantCulture)" height="@height.ToString("0.##", CultureInfo.InvariantCulture)"
+                      fill="@(bucket.Delta >= 0 ? "var(--mud-palette-success)" : "var(--mud-palette-error)")" opacity=".85" />
+            }
+        </svg>
+        <MudText Typo="Typo.caption" Class="symbol-name">@_snapshot.Note Barras acima da linha: compradores agressivos dominaram esse minuto.</MudText>
+    }
+</div>
+
+@code {
+    private static readonly TimeSpan Interval = TimeSpan.FromSeconds(5);
+
+    private readonly CancellationTokenSource _cts = new();
+    private OrderFlowSnapshot? _snapshot;
+
+    [Parameter, EditorRequired] public string Symbol { get; set; } = string.Empty;
+
+    protected override void OnInitialized() => _ = PollAsync();
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            using PeriodicTimer timer = new(Interval);
+
+            do
+            {
+                try
+                {
+                    _snapshot = await Api.GetFlowAsync(Symbol, _cts.Token);
+                    await InvokeAsync(StateHasChanged);
+                }
+                catch (HttpRequestException)
+                {
+                }
+            }
+            while (await timer.WaitForNextTickAsync(_cts.Token));
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

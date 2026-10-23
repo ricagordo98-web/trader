@@ -191,6 +191,66 @@ namespace Trader.Infrastructure.Persistence.Migrations
                     b.ToTable("Alerts");
                 });
 
+            modelBuilder.Entity("Trader.Core.Alerts.AlertRule", b =>
+                {
+                    b.Property<long>("Id")
+                        .ValueGeneratedOnAdd()
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("AssetClass")
+                        .HasMaxLength(16)
+                        .HasColumnType("TEXT");
+
+                    b.Property<int>("CooldownMinutes")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<long>("CreatedAt")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("Direction")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<bool>("Enabled")
+                        .HasColumnType("INTEGER");
+
+                    b.Property<string>("EventKind")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<double?>("MinChangePercent")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("MinRelativeVolume")
+                        .HasColumnType("REAL");
+
+                    b.Property<string>("Name")
+                        .IsRequired()
+                        .HasMaxLength(64)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Sentiment")
+                        .IsRequired()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Symbol")
+                        .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("UserId")
+                        .IsRequired()
+                        .HasMaxLength(450)
+                        .HasColumnType("TEXT");
+
+                    b.HasKey("Id");
+
+                    b.HasIndex("UserId");
+
+                    b.ToTable("AlertRules");
+                });
+
             modelBuilder.Entity("Trader.Core.Alerts.PriceAlert", b =>
                 {
                     b.Property<long>("Id")
@@ -239,9 +299,17 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .ValueGeneratedOnAdd()
                         .HasColumnType("INTEGER");
 
+                    b.Property<string>("ChartImage")
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Direction")
                         .IsRequired()
                         .HasMaxLength(8)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Emotion")
+                        .IsRequired()
+                        .HasMaxLength(20)
                         .HasColumnType("TEXT");
 
                     b.Property<double>("EntryPrice")
@@ -280,6 +348,11 @@ namespace Trader.Infrastructure.Persistence.Migrations
                     b.Property<double>("Quantity")
                         .HasColumnType("REAL");
 
+                    b.Property<string>("Setup")
+                        .IsRequired()
+                        .HasMaxLength(40)
+                        .HasColumnType("TEXT");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -297,6 +370,11 @@ namespace Trader.Infrastructure.Persistence.Migrations
                     b.Property<string>("Symbol")
                         .IsRequired()
                         .HasMaxLength(32)
+                        .HasColumnType("TEXT");
+
+                    b.Property<string>("Tags")
+                        .IsRequired()
+                        .HasMaxLength(120)
                         .HasColumnType("TEXT");
 
                     b.Property<double?>("TakeProfit")

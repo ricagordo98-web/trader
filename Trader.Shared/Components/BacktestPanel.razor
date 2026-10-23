@@ -1,6 +1,7 @@
 @using System.Globalization
 @implements IDisposable
 @inject TraderApiClient Api
+@inject ISnackbar Snackbar
 
 <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
     <MudText Typo="Typo.subtitle1" Class="mb-1">Backtest</MudText>
@@ -37,6 +38,7 @@
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.IndexRoundTripPercent" Label="Índices (%)" Min="0" Max="5" Step="0.01" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                 <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_request.Costs.OvernightPercentPerDay" Label="Financiamento por dia (%)" Min="0" Max="5" Step="0.005" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
             </MudGrid>
+            <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-2" OnClick="SaveCostsAsync">Guardar como os meus custos</MudButton>
         </MudExpansionPanel>
     </MudExpansionPanels>
 
@@ -188,12 +190,18 @@ else
         try
         {
             _result = await Api.GetLastBacktestAsync(_cts.Token);
+            _profile = await Api.GetProfileAsync(_cts.Token);
 
             if (_result is not null)
             {
                 _request.Range = _result.Range;
                 _request.UseSentiment = _result.UsedSentiment;
                 _request.Costs = _result.Costs;
+            }
+
+            if (_profile.Costs is { } mine)
+            {
+                _request.Costs = mine;
             }
         }
         catch (HttpRequestException)
@@ -204,6 +212,15 @@ else
         {
             _loading = false;
         }
+    }
+
+    private UserPreferences _profile = UserPreferences.Default;
+
+    private async Task SaveCostsAsync()
+    {
+        _profile = _profile with { Costs = _request.Costs };
+        string? error = await Api.SaveProfileAsync(_profile);
+        Snackbar.Add(error ?? "Custos guardados. Passam a ser o valor por omissão nos backtests e na calculadora.", error is null ? Severity.Success : Severity.Error);
     }
 
     private async Task RunAsync()

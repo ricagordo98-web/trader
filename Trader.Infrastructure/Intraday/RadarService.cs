@@ -67,6 +67,8 @@ public sealed class RadarService(IServiceScopeFactory scopeFactory, IntradayOpti
                 Publish(now, instruments.Count, contexts, []);
             }
 
+            await EvaluateRulesAsync(scope.ServiceProvider.GetRequiredService<IAlertRuleService>(), explained, now, cancellationToken);
+
             IAlertService alerts = scope.ServiceProvider.GetRequiredService<IAlertService>();
             await alerts.RaiseAsync(AlertFactory.ForRadarEvents(explained.Where(e => e.Strength >= AlertStrength).ToList(), now), cancellationToken);
 
@@ -109,6 +111,19 @@ public sealed class RadarService(IServiceScopeFactory scopeFactory, IntradayOpti
         return reasons.Count == 0
             ? fresh
             : fresh.Select(e => reasons.TryGetValue(e.Symbol, out string? why) ? e with { Why = why } : e).ToList();
+    }
+
+    private async Task EvaluateRulesAsync(IAlertRuleService rules, List<RadarEvent> fresh, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            RadarSnapshot snapshot = GetSnapshot();
+            await rules.EvaluateAsync(snapshot.Board, snapshot.Events.Concat(fresh).DistinctBy(e => (e.Symbol, e.Kind, e.Direction, e.Time)).ToList(), now, cancellationToken);
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            logger.LogWarning("Alert rules evaluation failed: {Message}", ex.Message);
+        }
     }
 
     private void Attach(List<RadarEvent> explained)

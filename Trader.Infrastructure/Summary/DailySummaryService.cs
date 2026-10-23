@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging;
 using Microsoft.Extensions.Options;
 using Trader.Core.Abstractions;
 using Trader.Core.Calendar;
+using Trader.Core.Journal;
 using Trader.Core.Explain;
 using Trader.Core.Models;
 using Trader.Core.Summary;
@@ -66,6 +67,7 @@ public sealed class DailySummaryService(
     ICalendarService calendar,
     ISummaryNarrator narrator,
     IMoveExplainer explainer,
+    IJournalService journal,
     ILogger<DailySummaryService> logger) : IDailySummaryService
 {
     private const string SettingKey = "summary.last";
@@ -101,6 +103,21 @@ public sealed class DailySummaryService(
         await SaveAsync(summary, cancellationToken);
         logger.LogInformation("Daily summary generated ({Source})", summary.Source);
         return summary;
+    }
+
+    public async Task<DailySummary> GenerateWeeklyAsync(string userId, CancellationToken cancellationToken)
+    {
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+        DateTimeOffset since = now.AddDays(-7);
+
+        IReadOnlyList<InstrumentQuote> quotes = await SafeAsync(() => marketData.GetQuotesAsync(null, cancellationToken), []);
+        CalendarFeed feed = await SafeAsync(() => calendar.GetAsync(8, cancellationToken), new CalendarFeed([], []));
+        List<Suggestion> closed = await dbContext.Suggestions.AsNoTracking().Where(s => s.ClosedAt != null && s.ClosedAt >= since).ToListAsync(cancellationToken);
+        IReadOnlyList<JournalTradeDto> trades = (await journal.ListAsync(userId, TradeStatus.Closed, cancellationToken))
+            .Where(t => t.ExitTime is { } exit && exit >= since)
+            .ToList();
+
+        return WeeklySummaryBuilder.Build(new WeeklyInput(quotes, closed.Select(ToDto).ToList(), trades, feed.Events, DateOnly.FromDateTime(DateTime.Now), now));
     }
 
     public async Task<DailySummary?> GetLastAsync(CancellationToken cancellationToken)

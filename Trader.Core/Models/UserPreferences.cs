@@ -4,7 +4,12 @@ public sealed record UserPreferences(
     string Broker,
     string? DisplayCurrency,
     IReadOnlyList<AssetClass> EnabledClasses,
-    bool NarrativeEnabled)
+    bool NarrativeEnabled,
+    int? QuietFromHour = null,
+    int? QuietToHour = null,
+    Trader.Core.Backtesting.CostModel? Costs = null,
+    string? NtfyTopic = null,
+    IReadOnlyList<string>? Favorites = null)
 {
     public static readonly UserPreferences Default = new(BrokerCatalog.Other, null, [], true);
 
@@ -32,7 +37,16 @@ public static class BrokerCatalog
 
 public static class UserPreferencesValidator
 {
+    public const int MaxFavorites = 200;
+
     private static readonly string[] Currencies = ["EUR", "USD", "GBP"];
+
+    private static bool CostsInRange(Trader.Core.Backtesting.CostModel costs) =>
+        new[]
+        {
+            costs.StockRoundTripPercent, costs.EtfRoundTripPercent, costs.CommodityRoundTripPercent, costs.ForexRoundTripPercent,
+            costs.CryptoRoundTripPercent, costs.IndexRoundTripPercent, costs.OvernightPercentPerDay
+        }.All(v => v is >= 0 and <= 5);
 
     public static IReadOnlyList<string> Validate(UserPreferences preferences)
     {
@@ -46,6 +60,27 @@ public static class UserPreferencesValidator
         if (preferences.DisplayCurrency is { Length: > 0 } currency && !Currencies.Contains(currency))
         {
             errors.Add($"Moeda não suportada. Usa uma destas: {string.Join(", ", Currencies)}.");
+        }
+
+        if (preferences.QuietFromHour is < 0 or > 23 || preferences.QuietToHour is < 0 or > 23 || (preferences.QuietFromHour is null) != (preferences.QuietToHour is null))
+        {
+            errors.Add("O horário silencioso tem de ter início e fim entre 0 e 23 horas.");
+        }
+
+        if (preferences.NtfyTopic is { Length: > 0 } topic
+            && Trader.Core.Alerts.NtfySettingsValidator.Validate(new Trader.Core.Alerts.NtfySettings(Trader.Core.Alerts.NtfySettings.DefaultServer, topic)).Count > 0)
+        {
+            errors.Add("O teu tópico ntfy deve ter 8 a 64 caracteres (letras, números, - e _).");
+        }
+
+        if (preferences.Favorites is { } favorites && (favorites.Count > MaxFavorites || favorites.Any(f => string.IsNullOrWhiteSpace(f) || f.Length > 32)))
+        {
+            errors.Add($"Os favoritos têm de ser símbolos válidos (máx. {MaxFavorites}).");
+        }
+
+        if (preferences.Costs is { } costs && !CostsInRange(costs))
+        {
+            errors.Add("Os custos têm de estar entre 0% e 5%.");
         }
 
         if (preferences.EnabledClasses.Any(c => !Enum.IsDefined(c)))

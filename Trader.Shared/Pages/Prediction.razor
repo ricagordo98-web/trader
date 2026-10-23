@@ -127,6 +127,10 @@
                             </div>
 
                             <MudText Typo="Typo.body2" Class="mt-3">@suggestion.Explanation</MudText>
+                            @if (_why.TryGetValue(suggestion.Symbol, out string? why))
+                            {
+                                <MudText Typo="Typo.caption" Color="Color.Info" Class="d-block mt-1">@why</MudText>
+                            }
 
                             <MudExpansionPanels Class="mt-3" Elevation="0" Outlined="true">
                                 <MudExpansionPanel Text="Provas">
@@ -174,6 +178,7 @@
 
                             <div class="d-flex justify-end mt-3">
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.School" OnClick="@(() => HowToReadAsync(suggestion))">Como ler</MudButton>
+                                <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.QuestionAnswer" OnClick="@(() => WhyDialogLauncher.ShowAsync(DialogService, suggestion.Symbol, suggestion.Name))">Porquê?</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.Calculate" Href="@JournalLink(suggestion)">Calcular posição</MudButton>
                                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.CandlestickChart" OnClick="@(() => OpenChartAsync(suggestion))">Ver gráfico</MudButton>
                             </div>
@@ -456,6 +461,7 @@
     private bool _loading = true;
     private bool _refreshing;
     private int _tab;
+    private IReadOnlyDictionary<string, string> _why = new Dictionary<string, string>();
     private string _backtestKind = "swing";
     private SuggestionDto? _focus;
     private bool _focusScrolled;
@@ -590,6 +596,7 @@
             _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token, Horizon);
             _record = await Api.GetTrackRecordAsync(_cts.Token, Horizon);
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
+            _why = await Api.GetCachedExplanationsAsync(_open.Select(s => s.Symbol).Distinct(), _cts.Token);
             _earnings = (await Api.GetCalendarAsync(7, _cts.Token)).Events
                 .Where(e => e is { Kind: CalendarKind.Earnings, Symbol: not null })
                 .GroupBy(e => e.Symbol!)

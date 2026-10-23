@@ -138,6 +138,32 @@ public sealed class SuggestionService(
         return TrackRecordCalculator.Calculate(closed.Select(ToDto).ToList(), openCount);
     }
 
+    private async Task<IReadOnlyDictionary<string, double>> GetSourceWeightsAsync(CancellationToken cancellationToken)
+    {
+        if (cache.TryGetValue("source-weights", out IReadOnlyDictionary<string, double>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        var closed = await dbContext.Suggestions
+            .AsNoTracking()
+            .Where(s => s.Status != SuggestionStatus.Open && s.RMultiple != null)
+            .Select(s => new { s.EvidenceJson, R = s.RMultiple!.Value })
+            .ToListAsync(cancellationToken);
+
+        List<(IReadOnlyList<string> Sources, bool Win)> outcomes = [];
+
+        foreach (var row in closed)
+        {
+            SuggestionEvidence? evidence = JsonSerializer.Deserialize<SuggestionEvidence>(row.EvidenceJson, JsonOptions);
+            outcomes.Add((evidence?.Articles.Select(a => a.Source).ToList() ?? [], row.R > 0));
+        }
+
+        IReadOnlyDictionary<string, double> weights = SourceWeightCalculator.Calculate(outcomes);
+        cache.Set("source-weights", weights, CalibrationCacheDuration);
+        return weights;
+    }
+
     private async Task<ConfidenceCalibration?> GetCalibrationAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
     {
         string key = $"calibration:{horizon}";
@@ -267,7 +293,8 @@ public sealed class SuggestionService(
         return SentimentAggregator.Build(
             rows.Select(r => new ArticleSentimentRow(r.Title, r.Url, r.Source, r.SourceType, r.Sentiment, r.PublishedAt)).ToList(),
             now,
-            scoring);
+            scoring,
+            await GetSourceWeightsAsync(cancellationToken));
     }
 
     private static Suggestion ToEntity(SuggestionDraft draft, DateTimeOffset now, DateTimeOffset expiresAt, SuggestionHorizon horizon) => new()

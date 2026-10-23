@@ -1,0 +1,122 @@
+@page "/help"
+@using Trader.Core.Help
+@implements IDisposable
+@inject NavigationManager Navigation
+@inject IDialogService DialogService
+@inject IJSRuntime JS
+
+<PageTitle>Ajuda · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.Large" Class="pa-6 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-1">
+        <MudText Typo="Typo.h4">Ajuda</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Explore" OnClick="OpenTourAsync">Repetir o guia rápido</MudButton>
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">Conceitos, como ler as sugestões e respostas às dúvidas mais comuns.</MudText>
+
+    <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
+        <MudTabPanel Text="Glossário">
+            <MudTextField T="string" @bind-Value="_search" Immediate="true" Placeholder="Pesquisar um termo (por exemplo VWAP, stop loss, drawdown)" Variant="Variant.Outlined" Margin="Margin.Dense"
+                          Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="mb-4" />
+
+            @foreach (IGrouping<string, GlossaryEntry> group in Results.GroupBy(e => e.Category))
+            {
+                <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2">@group.Key</MudText>
+
+                @foreach (GlossaryEntry entry in group.OrderBy(e => e.Term, StringComparer.CurrentCultureIgnoreCase))
+                {
+                    <MudPaper Elevation="0" Outlined="true" Class="@($"pa-3 mb-2 glossary-card{(entry.Key == _focus ? " focus-card" : string.Empty)}")" id="@entry.Key">
+                        <MudText Typo="Typo.subtitle2">@entry.Term</MudText>
+                        <MudText Typo="Typo.body2" Class="mb-1"><strong>@entry.Short</strong></MudText>
+                        <MudText Typo="Typo.body2">@entry.Long</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name d-block mt-1">Onde vês: @entry.Where</MudText>
+                    </MudPaper>
+                }
+            }
+
+            @if (!Results.Any())
+            {
+                <MudText Color="Color.Secondary">Nenhum termo encontrado para «@_search».</MudText>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Como ler uma sugestão">
+            <MudText Typo="Typo.body2" Class="mb-3">Exemplo com uma sugestão fictícia. Nas sugestões reais, o botão «Como ler» explica os valores dessa sugestão.</MudText>
+            @foreach (ReadingLine line in HelpContent.HowToRead(Sample))
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-2">
+                    <MudText Typo="Typo.subtitle2">@line.Title</MudText>
+                    <MudText Typo="Typo.body2">@line.Text</MudText>
+                </MudPaper>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Perguntas frequentes">
+            <MudExpansionPanels Elevation="0" Outlined="true">
+                @foreach (FaqItem item in HelpContent.Faq)
+                {
+                    <MudExpansionPanel Text="@item.Question">
+                        <MudText Typo="Typo.body2">@item.Answer</MudText>
+                    </MudExpansionPanel>
+                }
+            </MudExpansionPanels>
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mt-4">
+                Nada nesta aplicação é aconselhamento financeiro. Os CFD são instrumentos complexos e a maioria dos clientes de retalho perde dinheiro.
+            </MudText>
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private static readonly SuggestionDto Sample = new(
+        0, "EXEMPLO", "Empresa de exemplo", TradeDirection.Buy, 0.72, 100, 98.5, 103.5, 2.33,
+        string.Empty, DateTimeOffset.UtcNow, DateTimeOffset.UtcNow.AddDays(5), SuggestionStatus.Open, null, null, null, [], []);
+
+    private string _search = string.Empty;
+    private int _tab;
+    private string? _focus;
+    private bool _scrollPending;
+
+    private IEnumerable<GlossaryEntry> Results => Glossary.Search(_search);
+
+    protected override void OnInitialized()
+    {
+        Navigation.LocationChanged += OnLocationChanged;
+        ApplyFragment();
+    }
+
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_scrollPending && _focus is not null)
+        {
+            _scrollPending = false;
+            await using IJSObjectReference module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/nav.js");
+            await module.InvokeVoidAsync("scrollToSelector", $"#{_focus}");
+        }
+    }
+
+    private void OnLocationChanged(object? sender, Microsoft.AspNetCore.Components.Routing.LocationChangedEventArgs e)
+    {
+        ApplyFragment();
+        InvokeAsync(StateHasChanged);
+    }
+
+    private void ApplyFragment()
+    {
+        string fragment = new Uri(Navigation.Uri).Fragment.TrimStart('#');
+
+        if (fragment.Length > 0 && Glossary.Find(fragment) is not null)
+        {
+            _tab = 0;
+            _search = string.Empty;
+            _focus = fragment;
+            _scrollPending = true;
+        }
+    }
+
+    private Task OpenTourAsync() =>
+        DialogService.ShowAsync<TourDialog>(string.Empty, new DialogOptions { MaxWidth = MaxWidth.Small, FullWidth = true, CloseOnEscapeKey = true });
+
+    public void Dispose() => Navigation.LocationChanged -= OnLocationChanged;
+}

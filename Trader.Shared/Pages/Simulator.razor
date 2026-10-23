@@ -1,0 +1,251 @@
+@page "/simulator"
+@using System.Globalization
+@implements IDisposable
+@inject TraderApiClient Api
+@inject ISnackbar Snackbar
+
+<PageTitle>Simulador · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-1">
+        <MudText Typo="Typo.h4">Simulador</MudText>
+        <MudSpacer />
+        <MudButton Variant="Variant.Outlined" Color="Color.Error" StartIcon="@Icons.Material.Filled.RestartAlt" OnClick="ResetAsync" Disabled="@(_overview.Summary.OpenCount + _overview.Summary.ClosedCount == 0)">Recomeçar</MudButton>
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-4">
+        Treina sem dinheiro a sério: abre posições com preços reais e vê como teriam corrido, com o stop loss, o take profit e o <GlossaryTerm Key="r-multiplo">R múltiplo</GlossaryTerm>. Os resultados são em unidades do preço do ativo (sem custos nem conversão de moeda).
+    </MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <MudGrid Spacing="3" Class="mb-4">
+        @foreach ((string label, string value, Color color) in Kpis())
+        {
+            <MudItem xs="6" md="3" lg="2">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                    <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                    <MudText Typo="Typo.h6" Color="color">@value</MudText>
+                </MudPaper>
+            </MudItem>
+        }
+    </MudGrid>
+
+    <MudGrid Spacing="4">
+        <MudItem xs="12" lg="4">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Conta simulada</MudText>
+                <MudGrid Spacing="2">
+                    <MudItem xs="7"><MudNumericField T="double" @bind-Value="_capital" Label="Capital" Min="100" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                    <MudItem xs="5"><MudNumericField T="double" @bind-Value="_risk" Label="Risco %" Min="0.1" Max="10" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                </MudGrid>
+                <MudButton Variant="Variant.Text" Class="mt-2" OnClick="SaveAccountAsync">Guardar conta</MudButton>
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-3">Abrir posição</MudText>
+                <MudSelect T="string" @bind-Value="_symbol" Label="Ativo" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-2">
+                    @foreach (InstrumentQuote quote in _quotes)
+                    {
+                        <MudSelectItem T="string" Value="@quote.Symbol">@quote.Symbol · @quote.Name</MudSelectItem>
+                    }
+                </MudSelect>
+                <MudToggleGroup T="TradeDirection" @bind-Value="_direction" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary" Class="mb-3">
+                    <MudToggleItem Value="TradeDirection.Buy" Text="Comprar" />
+                    <MudToggleItem Value="TradeDirection.Sell" Text="Vender" />
+                </MudToggleGroup>
+                <MudGrid Spacing="2">
+                    <MudItem xs="6"><MudNumericField T="double" @bind-Value="_stop" Label="Stop loss" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                    <MudItem xs="6"><MudNumericField T="double" @bind-Value="_target" Label="Take profit" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+                </MudGrid>
+                <MudText Typo="Typo.caption" Class="symbol-name d-block mt-2">
+                    Entra ao preço atual. Preço agora: @CurrentPriceLabel. A quantidade é calculada para arriscares @_risk.ToString("0.#", Pt)% do capital.
+                </MudText>
+                <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-3" StartIcon="@Icons.Material.Filled.PlayArrow" OnClick="OpenAsync" Disabled="_busy">Abrir posição</MudButton>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="8">
+            <MudPaper Elevation="0" Outlined="true" Class="mb-4">
+                <MudTable Items="_overview.Open" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="PaperTradeDto">
+                    <ToolBarContent><MudText Typo="Typo.subtitle1">Posições abertas (@_overview.Open.Count)</MudText></ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Ativo</MudTh>
+                        <MudTh>Entrada</MudTh>
+                        <MudTh>Agora</MudTh>
+                        <MudTh>SL / TP</MudTh>
+                        <MudTh Style="text-align:right">P&amp;L</MudTh>
+                        <MudTh Style="text-align:right">R</MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            <MudText Typo="Typo.body2">@context.Symbol</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda") · @context.Quantity.ToString("0.####", Pt) un</MudText>
+                        </MudTd>
+                        <MudTd>@Price(context.EntryPrice)</MudTd>
+                        <MudTd>@(context.CurrentPrice is { } now ? Price(now) : "—")</MudTd>
+                        <MudTd>@Price(context.StopLoss) / @Price(context.TakeProfit)</MudTd>
+                        <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@PnlColor(context.Pnl)">@Money(context.Pnl)</MudText></MudTd>
+                        <MudTd Style="text-align:right">@R(context.RMultiple)</MudTd>
+                        <MudTd Style="text-align:right"><MudButton Size="Size.Small" Variant="Variant.Text" OnClick="@(() => CloseAsync(context.Id))">Fechar</MudButton></MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4" Color="Color.Secondary">Sem posições abertas. Abre uma ao lado.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true">
+                <MudTable Items="_overview.Closed" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="PaperTradeDto">
+                    <ToolBarContent><MudText Typo="Typo.subtitle1">Histórico (@_overview.Closed.Count)</MudText></ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Ativo</MudTh>
+                        <MudTh>Resultado</MudTh>
+                        <MudTh>Saída</MudTh>
+                        <MudTh Style="text-align:right">P&amp;L</MudTh>
+                        <MudTh Style="text-align:right">R</MudTh>
+                        <MudTh>Fechada</MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>@context.Symbol · @(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
+                        <MudTd>@StatusLabel(context.Status)</MudTd>
+                        <MudTd>@(context.ExitPrice is { } exit ? Price(exit) : "—")</MudTd>
+                        <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@PnlColor(context.Pnl)">@Money(context.Pnl)</MudText></MudTd>
+                        <MudTd Style="text-align:right">@R(context.RMultiple)</MudTd>
+                        <MudTd>@(context.ClosedAt?.ToLocalTime().ToString("dd/MM HH:mm", Pt) ?? "—")</MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4" Color="Color.Secondary">Ainda sem posições fechadas.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
+    private readonly CancellationTokenSource _cts = new();
+    private PaperOverview _overview = new(PaperAccount.Default, new PaperSummary(PaperAccount.Default.Capital, PaperAccount.Default.Capital, 0, 0, 0, 0, 0, 0, 0), [], []);
+    private IReadOnlyList<InstrumentQuote> _quotes = [];
+    private string? _symbol;
+    private TradeDirection _direction = TradeDirection.Buy;
+    private double _capital = PaperAccount.Default.Capital;
+    private double _risk = PaperAccount.Default.RiskPercent;
+    private double _stop;
+    private double _target;
+    private string? _error;
+    private bool _busy;
+
+    private string CurrentPriceLabel => _quotes.FirstOrDefault(q => q.Symbol == _symbol)?.Price is { } price ? Price(price) : "—";
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _quotes = await Api.GetInstrumentsAsync(_cts.Token, native: true);
+            _symbol = _quotes.FirstOrDefault()?.Symbol;
+            await LoadAsync();
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar o simulador. Verifica se o servidor está a correr.";
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _overview = await Api.GetPaperAsync(_cts.Token);
+        _capital = _overview.Account.Capital;
+        _risk = _overview.Account.RiskPercent;
+    }
+
+    private async Task OpenAsync()
+    {
+        if (_symbol is null)
+        {
+            return;
+        }
+
+        _busy = true;
+        string? error = await Api.OpenPaperTradeAsync(new OpenPaperTradeRequest(_symbol, _direction, null, _stop, _target, null), _cts.Token);
+        _busy = false;
+
+        if (error is null)
+        {
+            Snackbar.Add("Posição aberta.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Warning);
+        }
+    }
+
+    private async Task CloseAsync(long id)
+    {
+        if (await Api.ClosePaperTradeAsync(id, _cts.Token))
+        {
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add("Não foi possível fechar agora (sem preço).", Severity.Warning);
+        }
+    }
+
+    private async Task SaveAccountAsync()
+    {
+        string? error = await Api.SavePaperAccountAsync(new PaperAccount(_capital, _risk), _cts.Token);
+
+        if (error is null)
+        {
+            Snackbar.Add("Conta guardada.", Severity.Success);
+            await LoadAsync();
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Warning);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        await Api.ResetPaperAsync(_cts.Token);
+        await LoadAsync();
+    }
+
+    private IEnumerable<(string Label, string Value, Color Color)> Kpis()
+    {
+        PaperSummary s = _overview.Summary;
+
+        yield return ("Capital", Money(s.Capital), Color.Default);
+        yield return ("Valor atual", Money(s.Equity), s.Equity >= s.Capital ? Color.Success : Color.Error);
+        yield return ("Realizado", Money(s.RealizedPnl), PnlColor(s.RealizedPnl));
+        yield return ("Em aberto", Money(s.UnrealizedPnl), PnlColor(s.UnrealizedPnl));
+        yield return ("Taxa de acerto", s.ClosedCount == 0 ? "—" : $"{s.WinRate * 100:0}%", s.WinRate >= 0.5 ? Color.Success : Color.Warning);
+        yield return ("R total", s.ClosedCount == 0 ? "—" : s.TotalR.ToString("+0.0;-0.0;0.0", Pt), PnlColor(s.TotalR));
+    }
+
+    private static Color PnlColor(double value) => value > 0 ? Color.Success : value < 0 ? Color.Error : Color.Default;
+
+    private static string Money(double value) => value.ToString("+#,0.00;-#,0.00;0.00", Pt);
+
+    private static string Price(double value) => value.ToString(value >= 100 ? "N2" : value >= 1 ? "N3" : "N5", Pt);
+
+    private static string R(double value) => value.ToString("+0.00;-0.00;0.00", Pt);
+
+    private static string StatusLabel(PaperStatus status) => status switch
+    {
+        PaperStatus.HitTakeProfit => "Take profit",
+        PaperStatus.HitStopLoss => "Stop loss",
+        PaperStatus.ClosedManually => "Fechada à mão",
+        _ => "Aberta"
+    };
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

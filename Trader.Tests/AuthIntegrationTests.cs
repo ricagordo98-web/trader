@@ -34,7 +34,7 @@ public sealed class TraderFactory : WebApplicationFactory<Program>
             foreach (ServiceDescriptor descriptor in services
                 .Where(d => d.ServiceType == typeof(IHostedService)
                     && d.ImplementationType is { } type
-                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker) || type == typeof(SummaryWorker) || type == typeof(QuoteWarmupWorker) || type == typeof(RadarWorker)))
+                    && (type == typeof(IngestionWorker) || type == typeof(SuggestionWorker) || type == typeof(PriceWatchWorker) || type == typeof(BackupWorker) || type == typeof(CalendarAlertWorker) || type == typeof(SummaryWorker) || type == typeof(QuoteWarmupWorker) || type == typeof(RadarWorker) || type == typeof(HaltWorker) || type == typeof(BinanceFlowFeed)))
                 .ToList())
             {
                 services.Remove(descriptor);

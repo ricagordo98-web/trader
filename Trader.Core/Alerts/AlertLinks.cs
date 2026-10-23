@@ -12,6 +12,7 @@ public static class AlertLinks
             alert.SuggestionId > 0 ? $"/prediction?suggestion={alert.SuggestionId}" : "/prediction",
         AlertKind.PriceTarget => ChartLink(alert.Symbol),
         AlertKind.Radar => alert.Symbol == GroupedRadar ? "/prediction?tab=radar" : ChartLink(alert.Symbol),
+        AlertKind.Halt or AlertKind.Rule => ChartLink(alert.Symbol),
         AlertKind.Calendar => "/calendar",
         _ => "/"
     };

@@ -156,6 +156,48 @@ public sealed class JournalService(TraderDbContext dbContext) : IJournalService
         return new ImportSummary(imported, skipped, errors);
     }
 
+    public async Task<JournalResult<JournalTradeDto>> UpdateDetailsAsync(string userId, long id, TradeDetailsRequest request, CancellationToken cancellationToken)
+    {
+        JournalTrade? trade = await dbContext.JournalTrades.FirstOrDefaultAsync(t => t.Id == id && t.UserId == userId, cancellationToken);
+
+        if (trade is null)
+        {
+            return JournalResult<JournalTradeDto>.Missing();
+        }
+
+        IReadOnlyList<string> errors = JournalValidator.ValidateDetails(request);
+
+        if (errors.Count > 0)
+        {
+            return JournalResult<JournalTradeDto>.Invalid(errors);
+        }
+
+        trade.Setup = request.Setup?.Trim() ?? string.Empty;
+        trade.Tags = request.Tags?.Trim() ?? string.Empty;
+        trade.Emotion = request.Emotion?.Trim() ?? string.Empty;
+
+        if (request.Notes is not null)
+        {
+            trade.Notes = request.Notes.Trim();
+        }
+
+        if (request.ClearImage)
+        {
+            trade.ChartImage = null;
+        }
+        else if (request.ChartImage is not null)
+        {
+            trade.ChartImage = request.ChartImage;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+
+        return JournalResult<JournalTradeDto>.Ok(ToDto(trade, await LoadSuggestionsAsync([trade], cancellationToken)));
+    }
+
+    public async Task<string?> GetImageAsync(string userId, long id, CancellationToken cancellationToken) =>
+        await dbContext.JournalTrades.AsNoTracking().Where(t => t.Id == id && t.UserId == userId).Select(t => t.ChartImage).FirstOrDefaultAsync(cancellationToken);
+
     public async Task<bool> DeleteAsync(string userId, long id, CancellationToken cancellationToken) =>
         await dbContext.JournalTrades.Where(t => t.Id == id && t.UserId == userId).ExecuteDeleteAsync(cancellationToken) > 0;
 
@@ -235,6 +277,10 @@ public sealed class JournalService(TraderDbContext dbContext) : IJournalService
             outcome.NetPnl,
             outcome.RMultiple,
             suggestionClosed ? suggestion!.Status : null,
-            suggestionClosed ? suggestion!.RMultiple : null);
+            suggestionClosed ? suggestion!.RMultiple : null,
+            t.Setup,
+            t.Tags,
+            t.Emotion,
+            t.ChartImage is not null);
     }
 }

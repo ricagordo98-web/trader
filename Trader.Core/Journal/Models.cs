@@ -30,6 +30,10 @@ public sealed class JournalTrade
     public double? ExitPrice { get; set; }
     public bool StopLossAlerted { get; set; }
     public bool TakeProfitAlerted { get; set; }
+    public string Setup { get; set; } = string.Empty;
+    public string Tags { get; set; } = string.Empty;
+    public string Emotion { get; set; } = string.Empty;
+    public string? ChartImage { get; set; }
 }
 
 public sealed record OpenTradeRequest(
@@ -52,7 +56,9 @@ public sealed record CloseTradeRequest(
     double AdditionalFees,
     string? Notes);
 
-public sealed record AccountProfile(double Capital, double RiskPercent, string Currency);
+public sealed record TradeDetailsRequest(string? Setup, string? Tags, string? Emotion, string? Notes, string? ChartImage, bool ClearImage = false);
+
+public sealed record AccountProfile(double Capital, double RiskPercent, string Currency, double MaxDailyLossPercent = 0, int MaxTradesPerDay = 0);
 
 public sealed record JournalTradeDto(
     long Id,
@@ -76,7 +82,11 @@ public sealed record JournalTradeDto(
     double? NetPnl,
     double? RMultiple,
     SuggestionStatus? SuggestionOutcome,
-    double? SuggestionR);
+    double? SuggestionR,
+    string Setup = "",
+    string Tags = "",
+    string Emotion = "",
+    bool HasImage = false);
 
 public sealed record LinkedComparison(
     long TradeId,

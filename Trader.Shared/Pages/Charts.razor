@@ -5,6 +5,7 @@
 @inject IClientStore Store
 @inject IDialogService DialogService
 @inject IJSRuntime JS
+@inject ISnackbar Snackbar
 
 <PageTitle>Gráficos · Trader</PageTitle>
 
@@ -20,6 +21,25 @@
             <MudMenuItem OnClick="@(() => ArrangeAsync(3))">3 colunas</MudMenuItem>
             <MudMenuItem OnClick="CascadeAsync">Em cascata</MudMenuItem>
         </MudMenu>
+        <MudMenu Label="Disposições" StartIcon="@Icons.Material.Filled.Bookmarks" Variant="Variant.Outlined" Dense="true">
+            <MudMenuItem OnClick="SaveLayoutAsync">Guardar a disposição atual…</MudMenuItem>
+            @if (_layouts.Count > 0)
+            {
+                <MudDivider />
+                @foreach (ChartLayoutDto item in _layouts)
+                {
+                    <MudMenuItem OnClick="@(() => LoadLayoutAsync(item))">@(item.Name)</MudMenuItem>
+                }
+                <MudDivider />
+                @foreach (ChartLayoutDto item in _layouts)
+                {
+                    <MudMenuItem OnClick="@(() => DeleteLayoutAsync(item))">✕ Apagar «@(item.Name)»</MudMenuItem>
+                }
+            }
+        </MudMenu>
+        <MudTooltip Text="Sincroniza o cursor e a posição horizontal entre os gráficos">
+            <MudButton Variant="@(_sync ? Variant.Filled : Variant.Outlined)" Color="@(_sync ? Color.Primary : Color.Default)" StartIcon="@Icons.Material.Filled.Sync" OnClick="ToggleSyncAsync" Disabled="@(_panels.Count < 2)">Sincronizar</MudButton>
+        </MudTooltip>
         <MudButton Variant="@(_soloId is null ? Variant.Outlined : Variant.Filled)" Color="@(_soloId is null ? Color.Default : Color.Primary)"
                    StartIcon="@(_soloId is null ? Icons.Material.Filled.Fullscreen : Icons.Material.Filled.FullscreenExit)" OnClick="ToggleSoloTopAsync" Disabled="@(_panels.Count == 0)">
             @(_soloId is null ? "Só um gráfico" : "Mostrar todos")
@@ -58,7 +78,7 @@
                 bool solo = panel.Id == _soloId;
 
                 <div @key="panel.Id" class="@($"ws-panel{(solo ? " maximized" : string.Empty)}")" data-panel-id="@panel.Id" style="@PanelStyle(panel, solo)">
-                    <ChartPanel Symbol="@panel.Symbol" TimeframeIndex="panel.Timeframe" Instruments="_instruments" Maximized="solo"
+                    <ChartPanel Symbol="@panel.Symbol" TimeframeIndex="panel.Timeframe" Instruments="_instruments" Maximized="solo" SyncGroup="@(_sync ? "workspace" : null)"
                                 SymbolChanged="@(symbol => UpdatePanelAsync(panel, symbol, null))"
                                 TimeframeChanged="@(timeframe => UpdatePanelAsync(panel, null, timeframe))"
                                 OnToggleMaximize="@(() => ToggleSoloAsync(panel.Id))"
@@ -75,6 +95,7 @@
 
 @code {
     private const string StoreKey = "charts.workspace.v2";
+    private const string SyncKey = "charts.sync";
     private const int DefaultPanels = 4;
 
     private sealed record SavedWorkspace(List<WorkspacePanel> Panels, bool Auto);
@@ -95,6 +116,8 @@
     private double _contentHeight = 700;
     private int _topZ = 10;
     private string? _error;
+    private bool _sync;
+    private IReadOnlyList<ChartLayoutDto> _layouts = [];
 
     private IEnumerable<WorkspacePanel> VisiblePanels => _soloId is { } solo ? _panels.Where(p => p.Id == solo) : _panels;
 
@@ -110,6 +133,15 @@
             return;
         }
 
+        try
+        {
+            _layouts = await Api.GetChartLayoutsAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+        }
+
+        _sync = await Store.GetAsync(SyncKey) == "1";
         SavedWorkspace? saved = await LoadSavedAsync();
         HashSet<string> known = _instruments.Select(i => i.Symbol).ToHashSet();
 
@@ -248,6 +280,80 @@
 
         RefreshHeight();
         await SaveAsync();
+    }
+
+    private async Task ToggleSyncAsync()
+    {
+        _sync = !_sync;
+
+        try
+        {
+            await Store.SetAsync(SyncKey, _sync ? "1" : "0");
+        }
+        catch (InvalidOperationException)
+        {
+        }
+    }
+
+    private async Task SaveLayoutAsync()
+    {
+        DialogParameters<PromptDialog> parameters = new() { { x => x.Title, "Guardar disposição" }, { x => x.Label, "Nome (por exemplo Day trading)" } };
+        IDialogReference reference = await DialogService.ShowAsync<PromptDialog>(string.Empty, parameters, new DialogOptions { MaxWidth = MaxWidth.ExtraSmall, FullWidth = true, CloseOnEscapeKey = true });
+        DialogResult? result = await reference.Result;
+
+        if (result is not { Canceled: false, Data: string name })
+        {
+            return;
+        }
+
+        string? error = await Api.SaveChartLayoutAsync(name, JsonSerializer.Serialize(new SavedWorkspace(_panels, _auto)), _cts.Token);
+
+        if (error is null)
+        {
+            _layouts = await Api.GetChartLayoutsAsync(_cts.Token);
+            Snackbar.Add($"Disposição «{name}» guardada na tua conta.", Severity.Success);
+        }
+        else
+        {
+            Snackbar.Add(error, Severity.Warning);
+        }
+    }
+
+    private async Task LoadLayoutAsync(ChartLayoutDto layout)
+    {
+        SavedWorkspace? saved;
+
+        try
+        {
+            saved = JsonSerializer.Deserialize<SavedWorkspace>(layout.Json);
+        }
+        catch (JsonException)
+        {
+            saved = null;
+        }
+
+        if (saved is null)
+        {
+            Snackbar.Add("Esta disposição está danificada.", Severity.Warning);
+            return;
+        }
+
+        HashSet<string> known = _instruments.Select(i => i.Symbol).ToHashSet();
+        _panels = saved.Panels.Where(p => known.Contains(p.Symbol)).ToList();
+        _panels.ForEach(WorkspaceLayout.Normalize);
+        _auto = saved.Auto;
+        _soloId = null;
+        _topZ = _panels.Count == 0 ? 10 : _panels.Max(p => p.Z) + 1;
+        RefreshHeight();
+        await SaveAsync();
+    }
+
+    private async Task DeleteLayoutAsync(ChartLayoutDto layout)
+    {
+        if (await Api.DeleteChartLayoutAsync(layout.Name, _cts.Token))
+        {
+            _layouts = await Api.GetChartLayoutsAsync(_cts.Token);
+        }
     }
 
     private async Task ClearAsync()

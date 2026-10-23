@@ -23,6 +23,7 @@ public sealed class MoveExplainer(
     private static readonly TimeSpan RecentCacheDuration = TimeSpan.FromMinutes(10);
     private static readonly TimeSpan PastCacheDuration = TimeSpan.FromHours(24);
     private static readonly TimeSpan LongWindow = TimeSpan.FromDays(3);
+    private static readonly TimeSpan CachedLineAge = TimeSpan.FromHours(12);
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
 
     public async Task<MoveExplanation?> ExplainAsync(MoveRequest request, CancellationToken cancellationToken)
@@ -104,6 +105,35 @@ public sealed class MoveExplainer(
             Count(NarrativeStatus.Rejected),
             Count(NarrativeStatus.Disabled),
             Count(NarrativeStatus.Unavailable));
+    }
+
+    public async Task<IReadOnlyDictionary<string, string>> GetCachedOneLinersAsync(IReadOnlyList<string> symbols, CancellationToken cancellationToken)
+    {
+        if (symbols.Count == 0)
+        {
+            return new Dictionary<string, string>();
+        }
+
+        DateTimeOffset oldest = DateTimeOffset.UtcNow - CachedLineAge;
+        List<MoveExplanationRecord> records = await dbContext.MoveExplanations
+            .AsNoTracking()
+            .Where(r => symbols.Contains(r.Symbol) && r.CreatedAt >= oldest)
+            .OrderByDescending(r => r.CreatedAt)
+            .ToListAsync(cancellationToken);
+
+        Dictionary<string, string> lines = [];
+
+        foreach (MoveExplanationRecord record in records.DistinctBy(r => r.Symbol))
+        {
+            MoveExplanation? explanation = JsonSerializer.Deserialize<MoveExplanation>(record.Json, JsonOptions);
+
+            if (explanation is not null && ExplanationText.OneLiner(explanation) is { } line)
+            {
+                lines[record.Symbol] = line;
+            }
+        }
+
+        return lines;
     }
 
     private async Task<(DateTimeOffset, DateTimeOffset)?> ResolveWindowAsync(string symbol, MoveRequest request, CancellationToken cancellationToken)

@@ -129,6 +129,8 @@
         AlertKind.DailySummary => Icons.Material.Filled.AutoAwesome,
         AlertKind.Expired => Icons.Material.Filled.Schedule,
         AlertKind.Radar => Icons.Material.Filled.Radar,
+        AlertKind.Halt => Icons.Material.Filled.PauseCircle,
+        AlertKind.Rule => Icons.Material.Filled.Rule,
         _ => Icons.Material.Filled.AutoGraph
     };
 
@@ -136,7 +138,7 @@
     {
         AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Color.Success,
         AlertKind.StopLoss or AlertKind.TradeStopLoss => Color.Error,
-        AlertKind.PriceTarget or AlertKind.Calendar or AlertKind.Radar => Color.Warning,
+        AlertKind.PriceTarget or AlertKind.Calendar or AlertKind.Radar or AlertKind.Halt or AlertKind.Rule => Color.Warning,
         AlertKind.DailySummary => Color.Primary,
         AlertKind.Expired => Color.Default,
         _ => Color.Primary

@@ -182,6 +182,7 @@ public sealed class MarketDataService(
             price,
             change,
             changePercent,
-            closes);
+            closes,
+            AsOf: series.LastPriceTime);
     }
 }

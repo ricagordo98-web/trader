@@ -11,7 +11,9 @@ public enum AlertKind
     TradeTakeProfit,
     Calendar,
     DailySummary,
-    Radar
+    Radar,
+    Halt,
+    Rule
 }
 
 public sealed class Alert
@@ -32,6 +34,9 @@ public sealed class Alert
 
     public long TradeId { get; set; }
 
+    [System.ComponentModel.DataAnnotations.Schema.NotMapped]
+    public bool Quiet { get; set; }
+
     public DateTimeOffset CreatedAt { get; set; }
 }
 
@@ -39,7 +44,7 @@ public sealed record AlertDto(long Id, AlertKind Kind, string Symbol, string Tit
 
 public sealed record AlertFeed(IReadOnlyList<AlertDto> Items, int UnreadCount);
 
-public sealed record NtfySettings(string Server, string Topic)
+public sealed record NtfySettings(string Server, string Topic, string PublicUrl = "")
 {
     public const string DefaultServer = "https://ntfy.sh";
 

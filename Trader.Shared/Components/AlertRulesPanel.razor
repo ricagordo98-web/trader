@@ -1,0 +1,184 @@
+@using System.Globalization
+@using Trader.Core.Intraday
+@implements IDisposable
+@inject TraderApiClient Api
+@inject ISnackbar Snackbar
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+    <MudText Typo="Typo.subtitle1" Class="mb-1">Regras de alerta</MudText>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-3">
+        Define condições sobre o radar e recebe um alerta quando um ativo as cumpre, por exemplo «volume relativo acima de 3 com notícias positivas». O servidor avalia as regras a cada análise do radar (90 s), só com os mercados abertos.
+        Cada regra respeita o intervalo mínimo entre alertas do mesmo ativo e o teu horário silencioso (no Perfil).
+    </MudText>
+
+    <MudGrid Spacing="2">
+        <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_draft.Name" Label="Nome da regra" MaxLength="60" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="6" sm="4">
+            <MudSelect T="AssetClass?" @bind-Value="_draft.AssetClass" Label="Tipo de ativo" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Stock">Ações</MudSelectItem>
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Etf">ETFs</MudSelectItem>
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Commodity">Mercadorias</MudSelectItem>
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Forex">Forex</MudSelectItem>
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Crypto">Cripto</MudSelectItem>
+                <MudSelectItem T="AssetClass?" Value="AssetClass.Index">Índices</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="4"><MudTextField T="string" @bind-Value="_draft.Symbol" Label="Só este símbolo (opcional)" MaxLength="32" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField T="double?" @bind-Value="_draft.MinRelativeVolume" Label="Volume relativo ≥" Min="0.5" Max="50" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField T="double?" @bind-Value="_draft.MinChangePercent" Label="Variação do dia ≥ (%)" Min="0.1" Max="100" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="RuleDirection" @bind-Value="_draft.Direction" Label="Direção" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem Value="RuleDirection.Any">Qualquer</MudSelectItem>
+                <MudSelectItem Value="RuleDirection.Up">A subir</MudSelectItem>
+                <MudSelectItem Value="RuleDirection.Down">A descer</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3">
+            <MudSelect T="RuleSentiment" @bind-Value="_draft.Sentiment" Label="Notícias (3 h)" Variant="Variant.Outlined" Margin="Margin.Dense">
+                <MudSelectItem Value="RuleSentiment.Any">Indiferente</MudSelectItem>
+                <MudSelectItem Value="RuleSentiment.Positive">Positivas</MudSelectItem>
+                <MudSelectItem Value="RuleSentiment.Negative">Negativas</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="4">
+            <MudSelect T="RadarEventKind?" @bind-Value="_draft.EventKind" Label="Evento do radar" Variant="Variant.Outlined" Margin="Margin.Dense" Clearable="true">
+                <MudSelectItem T="RadarEventKind?" Value="RadarEventKind.VolumeSpike">Pico de volume</MudSelectItem>
+                <MudSelectItem T="RadarEventKind?" Value="RadarEventKind.Gap">Gap de abertura</MudSelectItem>
+                <MudSelectItem T="RadarEventKind?" Value="RadarEventKind.OpeningRangeBreakout">Rompimento dos 30 min</MudSelectItem>
+                <MudSelectItem T="RadarEventKind?" Value="RadarEventKind.PreviousDayBreakout">Rompimento do dia anterior</MudSelectItem>
+                <MudSelectItem T="RadarEventKind?" Value="RadarEventKind.MomentumBurst">Movimento brusco</MudSelectItem>
+            </MudSelect>
+        </MudItem>
+        <MudItem xs="6" sm="3"><MudNumericField T="int" @bind-Value="_draft.CooldownMinutes" Label="Intervalo mínimo (min)" Min="5" Max="1440" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
+        <MudItem xs="12" sm="5" Class="d-flex align-center">
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" StartIcon="@Icons.Material.Filled.Add" OnClick="SaveAsync" Disabled="_busy">Adicionar regra</MudButton>
+        </MudItem>
+    </MudGrid>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+    }
+</MudPaper>
+
+<MudPaper Elevation="0" Outlined="true">
+    <MudTable Items="_rules" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="AlertRuleDto">
+        <ToolBarContent><MudText Typo="Typo.subtitle1">As minhas regras (@_rules.Count)</MudText></ToolBarContent>
+        <HeaderContent>
+            <MudTh>Ativa</MudTh>
+            <MudTh>Nome</MudTh>
+            <MudTh>Condições</MudTh>
+            <MudTh></MudTh>
+        </HeaderContent>
+        <RowTemplate>
+            <MudTd><MudSwitch T="bool" Value="context.Enabled" ValueChanged="@((bool on) => ToggleAsync(context, on))" Color="Color.Primary" /></MudTd>
+            <MudTd>@context.Name</MudTd>
+            <MudTd><MudText Typo="Typo.caption" Class="symbol-name">@Describe(context)</MudText></MudTd>
+            <MudTd Style="text-align:right"><MudIconButton Icon="@Icons.Material.Filled.Delete" Size="Size.Small" aria-label="@($"Apagar regra {context.Name}")" OnClick="@(() => DeleteAsync(context))" /></MudTd>
+        </RowTemplate>
+        <NoRecordsContent><MudText Class="pa-4" Color="Color.Secondary">Ainda não tens regras.</MudText></NoRecordsContent>
+    </MudTable>
+</MudPaper>
+
+@code {
+    private sealed class Draft
+    {
+        public string Name { get; set; } = string.Empty;
+        public AssetClass? AssetClass { get; set; }
+        public string? Symbol { get; set; }
+        public double? MinRelativeVolume { get; set; }
+        public double? MinChangePercent { get; set; }
+        public RuleDirection Direction { get; set; }
+        public RuleSentiment Sentiment { get; set; }
+        public RadarEventKind? EventKind { get; set; }
+        public int CooldownMinutes { get; set; } = 60;
+    }
+
+    private readonly CancellationTokenSource _cts = new();
+    private Draft _draft = new();
+    private IReadOnlyList<AlertRuleDto> _rules = [];
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _rules = await Api.GetAlertRulesAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar as regras.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        AlertRuleDto rule = new(0, _draft.Name, true, _draft.AssetClass, _draft.Symbol, _draft.MinRelativeVolume, _draft.MinChangePercent, _draft.Direction, _draft.EventKind, _draft.Sentiment, _draft.CooldownMinutes);
+        _error = await Api.SaveAlertRuleAsync(rule, _cts.Token);
+        _busy = false;
+
+        if (_error is null)
+        {
+            _draft = new Draft();
+            _rules = await Api.GetAlertRulesAsync(_cts.Token);
+            Snackbar.Add("Regra adicionada.", Severity.Success);
+        }
+    }
+
+    private async Task ToggleAsync(AlertRuleDto rule, bool enabled)
+    {
+        _error = await Api.SaveAlertRuleAsync(rule with { Enabled = enabled }, _cts.Token);
+        _rules = await Api.GetAlertRulesAsync(_cts.Token);
+    }
+
+    private async Task DeleteAsync(AlertRuleDto rule)
+    {
+        if (await Api.DeleteAlertRuleAsync(rule.Id, _cts.Token))
+        {
+            _rules = await Api.GetAlertRulesAsync(_cts.Token);
+        }
+    }
+
+    private static string Describe(AlertRuleDto rule)
+    {
+        List<string> parts = [];
+
+        parts.Add(rule.Symbol is { Length: > 0 } ? rule.Symbol : rule.AssetClass?.ToString() ?? "qualquer ativo");
+
+        if (rule.MinRelativeVolume is { } volume)
+        {
+            parts.Add($"volume ≥ {volume.ToString("0.#", CultureInfo.GetCultureInfo("pt-PT"))}×");
+        }
+
+        if (rule.MinChangePercent is { } change)
+        {
+            parts.Add($"variação ≥ {change.ToString("0.#", CultureInfo.GetCultureInfo("pt-PT"))}%");
+        }
+
+        if (rule.Direction != RuleDirection.Any)
+        {
+            parts.Add(rule.Direction == RuleDirection.Up ? "a subir" : "a descer");
+        }
+
+        if (rule.EventKind is { } kind)
+        {
+            parts.Add(kind.ToString());
+        }
+
+        if (rule.Sentiment != RuleSentiment.Any)
+        {
+            parts.Add(rule.Sentiment == RuleSentiment.Positive ? "notícias positivas" : "notícias negativas");
+        }
+
+        parts.Add($"a cada {rule.CooldownMinutes} min no máximo");
+        return string.Join(" · ", parts);
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

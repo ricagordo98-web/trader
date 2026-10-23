@@ -8,4 +8,6 @@ public sealed record InstrumentQuote(
     double? Price,
     double? Change,
     double? ChangePercent,
-    IReadOnlyList<double> Sparkline);
+    IReadOnlyList<double> Sparkline,
+    double DisplayFactor = 1,
+    DateTimeOffset? AsOf = null);

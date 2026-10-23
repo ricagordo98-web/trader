@@ -1,0 +1,20 @@
+@using Trader.Core.Help
+
+@if (Entry is { } entry)
+{
+    <MudTooltip Text="@entry.Short" Arrow="true" Delay="250">
+        <a href="@($"/help#{entry.Key}")" class="glossary-term" aria-label="@($"Ajuda: {entry.Term}")">@(ChildContent is null ? entry.Term : ChildContent)</a>
+    </MudTooltip>
+}
+else if (ChildContent is not null)
+{
+    @ChildContent
+}
+
+@code {
+    [Parameter] public string? Key { get; set; }
+
+    [Parameter] public RenderFragment? ChildContent { get; set; }
+
+    private GlossaryEntry? Entry => Key is null ? null : Glossary.Find(Key);
+}

@@ -244,6 +244,12 @@ export function create(id, container, dotnet, dark, showVolume) {
         data: [],
         pushCallback: null,
         indicators: new Map(),
+        indicatorConfig: new Map(),
+        raw: [],
+        kind: 'candle_solid',
+        syncGroup: null,
+        planIds: [],
+        alertLineId: null,
         drawingIds: new Set(),
         levelIds: [],
         selectedId: null,
@@ -283,9 +289,29 @@ export function create(id, container, dotnet, dark, showVolume) {
     }
 }
 
+function heikinOne(bar, previous) {
+    const close = (bar.open + bar.high + bar.low + bar.close) / 4;
+    const open = previous ? (previous.open + previous.close) / 2 : (bar.open + bar.close) / 2;
+    return { ...bar, open, close, high: Math.max(bar.high, open, close), low: Math.min(bar.low, open, close) };
+}
+
+function displayData(state) {
+    if (state.kind !== 'heikin') {
+        return state.raw.slice();
+    }
+
+    const shown = [];
+    for (const bar of state.raw) {
+        shown.push(heikinOne(bar, shown[shown.length - 1]));
+    }
+    return shown;
+}
+
 export function setData(id, symbol, pricePrecision, interval, candles) {
     const state = charts.get(id);
-    state.data = candles.map(toBar);
+    state.raw = candles.map(toBar);
+    state.data = displayData(state);
+    state.interval = interval;
     state.chart.setSymbol({ ticker: symbol, pricePrecision, volumePrecision: 0 });
     state.chart.setPeriod(periods[interval] ?? periods['1d']);
     state.chart.resetData();
@@ -293,12 +319,12 @@ export function setData(id, symbol, pricePrecision, interval, candles) {
 
 export function pushBar(id, candle) {
     const state = charts.get(id);
-    if (!state || state.data.length === 0) {
+    if (!state || state.raw.length === 0) {
         return;
     }
 
     const bar = toBar(candle);
-    const last = state.data[state.data.length - 1];
+    const last = state.raw[state.raw.length - 1];
 
     if (bar.timestamp < last.timestamp) {
         return;
@@ -307,12 +333,219 @@ export function pushBar(id, candle) {
     if (bar.timestamp === last.timestamp) {
         bar.high = Math.max(bar.high, last.high);
         bar.low = Math.min(bar.low, last.low);
-        state.data[state.data.length - 1] = bar;
+        state.raw[state.raw.length - 1] = bar;
     } else {
-        state.data.push(bar);
+        state.raw.push(bar);
     }
 
-    state.pushCallback?.(bar);
+    const index = state.raw.length - 1;
+    const shown = state.kind === 'heikin' ? heikinOne(bar, state.data[index - 1]) : bar;
+    state.data[index] = shown;
+    state.pushCallback?.(shown);
+}
+
+export function setChartKind(id, kind) {
+    const state = charts.get(id);
+    if (!state) {
+        return;
+    }
+
+    state.kind = kind;
+    state.chart.setStyles({ candle: { type: kind === 'heikin' ? 'candle_solid' : kind } });
+    state.data = displayData(state);
+    state.chart.resetData();
+}
+
+export function setYAxisType(id, type) {
+    charts.get(id)?.chart.setStyles({ yAxis: { type } });
+}
+
+export function setIndicatorConfig(id, name, calcParams, color, size) {
+    const state = charts.get(id);
+    if (!state) {
+        return;
+    }
+
+    state.indicatorConfig.set(name, { calcParams, color, size });
+    applyIndicatorConfig(state, name);
+}
+
+function applyIndicatorConfig(state, name) {
+    const config = state.indicatorConfig.get(name);
+    const paneId = state.indicators.get(name);
+
+    if (!config || !paneId) {
+        return;
+    }
+
+    const lines = Array.from({ length: Math.max(config.calcParams.length, 3) }, () => ({
+        color: config.color,
+        size: config.size,
+        style: 'solid',
+        smooth: false,
+        dashedValue: [2, 2]
+    }));
+
+    try {
+        state.chart.overrideIndicator({ name, calcParams: config.calcParams.length > 0 ? config.calcParams : undefined, styles: { lines } }, paneId);
+    } catch (error) {
+        console.warn('Indicator configuration failed', error);
+    }
+}
+
+const syncGroups = new Map();
+
+export function setSyncGroup(id, group) {
+    const state = charts.get(id);
+    if (!state) {
+        return;
+    }
+
+    if (state.syncGroup) {
+        syncGroups.get(state.syncGroup)?.delete(id);
+    }
+
+    state.syncGroup = group;
+
+    if (!group) {
+        return;
+    }
+
+    if (!syncGroups.has(group)) {
+        syncGroups.set(group, new Set());
+    }
+
+    syncGroups.get(group).add(id);
+
+    if (state.syncSubscribed) {
+        return;
+    }
+
+    state.syncSubscribed = true;
+
+    try {
+        state.chart.subscribeAction('onCrosshairChange', crosshair => broadcastCrosshair(id, crosshair));
+        state.chart.subscribeAction('onScroll', () => broadcastScroll(id));
+        state.chart.subscribeAction('onZoom', () => broadcastScroll(id));
+    } catch (error) {
+        console.warn('Chart synchronisation unavailable', error);
+    }
+}
+
+function peers(id) {
+    const state = charts.get(id);
+    if (!state?.syncGroup) {
+        return [];
+    }
+
+    return Array.from(syncGroups.get(state.syncGroup) ?? []).filter(other => other !== id).map(other => charts.get(other)).filter(Boolean);
+}
+
+function broadcastCrosshair(id, crosshair) {
+    const source = charts.get(id);
+    if (!source || source.applyingSync || !crosshair?.timestamp) {
+        return;
+    }
+
+    for (const target of peers(id)) {
+        try {
+            target.applyingSync = true;
+            const bar = target.data.find(b => b.timestamp === crosshair.timestamp) ?? target.data.filter(b => b.timestamp <= crosshair.timestamp).pop();
+            if (bar) {
+                const pixel = target.chart.convertToPixel({ timestamp: bar.timestamp, value: bar.close }, { paneId: 'candle_pane' });
+                if (pixel && Number.isFinite(pixel.x)) {
+                    target.chart.executeAction('onCrosshairChange', { x: pixel.x, y: pixel.y, paneId: 'candle_pane' });
+                }
+            }
+        } catch (error) {
+            console.warn('Crosshair sync failed', error);
+        } finally {
+            target.applyingSync = false;
+        }
+    }
+}
+
+function broadcastScroll(id) {
+    const source = charts.get(id);
+    if (!source || source.applyingSync) {
+        return;
+    }
+
+    try {
+        const range = source.chart.getVisibleRange();
+        const edge = source.data[Math.min(source.data.length - 1, Math.max(0, Math.floor(range.to) - 1))];
+        const space = source.chart.getBarSpace?.();
+
+        for (const target of peers(id)) {
+            try {
+                target.applyingSync = true;
+                if (target.interval === source.interval && space && typeof space.bar === 'number') {
+                    target.chart.setBarSpace(space.bar);
+                }
+                if (edge) {
+                    target.chart.scrollToTimestamp(edge.timestamp);
+                }
+            } finally {
+                target.applyingSync = false;
+            }
+        }
+    } catch (error) {
+        console.warn('Scroll sync failed', error);
+    }
+}
+
+function lineOverlay(state, price, color, onMoved) {
+    const timestamp = state.data.length > 0 ? state.data[state.data.length - 1].timestamp : undefined;
+
+    return state.chart.createOverlay({
+        name: 'horizontalStraightLine',
+        points: [{ timestamp, value: price }],
+        lock: false,
+        styles: { line: { color, style: 'solid', size: 2 } },
+        onPressedMoveEnd: ({ overlay }) => {
+            onMoved(overlay.points[0].value);
+            return false;
+        }
+    });
+}
+
+export function startPlan(id, entry, stop, target) {
+    const state = charts.get(id);
+    if (!state) {
+        return;
+    }
+
+    clearPlan(id);
+    const make = (which, price, color) => lineOverlay(state, price, color, value => state.dotnet.invokeMethodAsync('OnPlanChanged', which, value));
+    state.planIds = [make('entry', entry, '#4C8DFF'), make('stop', stop, '#EF4444'), make('target', target, '#22C55E')].filter(Boolean);
+}
+
+export function clearPlan(id) {
+    const state = charts.get(id);
+    for (const planId of state?.planIds ?? []) {
+        state.chart.removeOverlay({ id: planId });
+    }
+    if (state) {
+        state.planIds = [];
+    }
+}
+
+export function startAlertLine(id, price) {
+    const state = charts.get(id);
+    if (!state) {
+        return;
+    }
+
+    clearAlertLine(id);
+    state.alertLineId = lineOverlay(state, price, '#F59E0B', value => state.dotnet.invokeMethodAsync('OnAlertLineChanged', value));
+}
+
+export function clearAlertLine(id) {
+    const state = charts.get(id);
+    if (state?.alertLineId) {
+        state.chart.removeOverlay({ id: state.alertLineId });
+        state.alertLineId = null;
+    }
 }
 
 export function setTheme(id, dark) {
@@ -328,6 +561,7 @@ export function toggleIndicator(id, name, mainPane) {
     } else {
         const paneId = state.chart.createIndicator(name, mainPane, mainPane ? { id: 'candle_pane' } : undefined);
         state.indicators.set(name, mainPane ? 'candle_pane' : paneId);
+        applyIndicatorConfig(state, name);
     }
 
     return Array.from(state.indicators.keys());
@@ -412,6 +646,9 @@ export function dispose(id) {
 
     document.removeEventListener('keydown', state.onKeyDown);
     state.observer?.disconnect();
+    if (state.syncGroup) {
+        syncGroups.get(state.syncGroup)?.delete(id);
+    }
     window.klinecharts.dispose(state.container);
     charts.delete(id);
 }

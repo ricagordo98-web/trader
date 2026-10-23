@@ -9,7 +9,7 @@ using Trader.Infrastructure.Persistence;
 
 namespace Trader.Infrastructure.Alerts;
 
-public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notifier, IAlertPublisher publisher, ILogger<AlertService> logger) : IAlertService
+public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notifier, IAlertPublisher publisher, IUserPreferences preferences, ILogger<AlertService> logger) : IAlertService
 {
     public async Task RaiseAsync(IReadOnlyList<Alert> alerts, CancellationToken cancellationToken)
     {
@@ -26,15 +26,27 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
             await notifier.NotifyAlertsAsync(group.Select(a => ToDto(a, true)).ToList(), group.Key, cancellationToken);
         }
 
-        List<AlertDto> dtos = alerts.Select(a => ToDto(a, true)).ToList();
-
         NtfySettings ntfy = await GetNtfyAsync(cancellationToken);
+        int hour = DateTime.Now.Hour;
 
-        if (ntfy.IsConfigured)
+        foreach (IGrouping<string?, Alert> group in alerts.GroupBy(a => a.UserId))
         {
+            UserPreferences? own = group.Key is null ? null : await preferences.GetAsync(group.Key, cancellationToken);
+            NtfySettings target = ntfy with { Topic = NtfyRouting.ResolveTopic(ntfy, own) };
+            List<AlertDto> dtos = group
+                .Select(a => (Alert: a, Dto: ToDto(a, true)))
+                .Where(x => NtfyRouting.ShouldPush(x.Dto, x.Alert.Quiet, own, hour))
+                .Select(x => x.Dto)
+                .ToList();
+
+            if (!target.IsConfigured || dtos.Count == 0)
+            {
+                continue;
+            }
+
             try
             {
-                await publisher.PublishAsync(ntfy, dtos, cancellationToken);
+                await publisher.PublishAsync(target, dtos, cancellationToken);
             }
             catch (HttpRequestException ex)
             {
@@ -54,7 +66,7 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
 
     public async Task<IReadOnlyList<string>> SaveNtfyAsync(NtfySettings settings, CancellationToken cancellationToken)
     {
-        NtfySettings clean = new(settings.Server.Trim().TrimEnd('/'), settings.Topic.Trim());
+        NtfySettings clean = new(settings.Server.Trim().TrimEnd('/'), settings.Topic.Trim(), settings.PublicUrl.Trim().TrimEnd('/'));
         IReadOnlyList<string> errors = NtfySettingsValidator.Validate(clean);
 
         if (errors.Count > 0)

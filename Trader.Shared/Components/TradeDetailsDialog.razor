@@ -1,0 +1,128 @@
+@inject TraderApiClient Api
+
+<MudDialog>
+    <TitleContent>
+        <MudText Typo="Typo.h6">Detalhes de @Trade.Symbol</MudText>
+    </TitleContent>
+    <DialogContent>
+        <MudGrid Spacing="2">
+            <MudItem xs="12" sm="6">
+                <MudTextField T="string" @bind-Value="_setup" Label="Setup (ex.: breakout, reversão)" MaxLength="40" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12" sm="6">
+                <MudSelect T="string" @bind-Value="_emotion" Label="Estado emocional" Clearable="true" Variant="Variant.Outlined" Margin="Margin.Dense">
+                    @foreach (string emotion in Emotions)
+                    {
+                        <MudSelectItem T="string" Value="@emotion">@emotion</MudSelectItem>
+                    }
+                </MudSelect>
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_tags" Label="Etiquetas (separadas por vírgula)" MaxLength="120" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudTextField T="string" @bind-Value="_notes" Label="Notas" Lines="3" MaxLength="2000" Variant="Variant.Outlined" Margin="Margin.Dense" />
+            </MudItem>
+            <MudItem xs="12">
+                <MudText Typo="Typo.caption" Class="symbol-name mb-1">Imagem do gráfico (PNG/JPEG até 400 KB)</MudText>
+                <div class="d-flex align-center gap-2">
+                    <InputFile OnChange="PickImageAsync" accept="image/png,image/jpeg" />
+                    @if (_image is not null)
+                    {
+                        <MudButton Size="Size.Small" OnClick="RemoveImage">Remover</MudButton>
+                    }
+                </div>
+                @if (_image is not null)
+                {
+                    <img src="@_image" alt="Gráfico da trade" style="max-width:100%;max-height:280px;margin-top:8px;border-radius:6px" />
+                }
+            </MudItem>
+        </MudGrid>
+
+        @if (_error is not null)
+        {
+            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_error</MudAlert>
+        }
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Cancel">Cancelar</MudButton>
+        <MudButton Color="Color.Primary" Variant="Variant.Filled" Disabled="_busy" OnClick="SaveAsync">Guardar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    private const long MaxImageBytes = 400 * 1024;
+
+    private static readonly string[] Emotions = ["calmo", "confiante", "ansioso", "impaciente", "vingativo", "com medo", "eufórico"];
+
+    [CascadingParameter] private IMudDialogInstance MudDialog { get; set; } = default!;
+
+    [Parameter] public JournalTradeDto Trade { get; set; } = default!;
+
+    private string _setup = string.Empty;
+    private string? _emotion;
+    private string _tags = string.Empty;
+    private string _notes = string.Empty;
+    private string? _image;
+    private bool _imageChanged;
+    private bool _busy;
+    private string? _error;
+
+    protected override async Task OnInitializedAsync()
+    {
+        _setup = Trade.Setup;
+        _emotion = Trade.Emotion.Length == 0 ? null : Trade.Emotion;
+        _tags = Trade.Tags;
+        _notes = Trade.Notes;
+
+        if (Trade.HasImage)
+        {
+            _image = await Api.GetTradeImageAsync(Trade.Id);
+        }
+    }
+
+    private async Task PickImageAsync(InputFileChangeEventArgs args)
+    {
+        if (args.File.Size > MaxImageBytes)
+        {
+            _error = "A imagem é demasiado grande (máx. 400 KB).";
+            return;
+        }
+
+        await using Stream stream = args.File.OpenReadStream(MaxImageBytes);
+        using MemoryStream buffer = new();
+        await stream.CopyToAsync(buffer);
+        _image = $"data:{args.File.ContentType};base64,{Convert.ToBase64String(buffer.ToArray())}";
+        _imageChanged = true;
+        _error = null;
+    }
+
+    private void RemoveImage()
+    {
+        _image = null;
+        _imageChanged = true;
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = null;
+
+        string? error = await Api.UpdateTradeDetailsAsync(
+            Trade.Id,
+            new TradeDetailsRequest(_setup, _tags, _emotion, _notes, _imageChanged ? _image : null, _imageChanged && _image is null));
+
+        _busy = false;
+
+        if (error is null)
+        {
+            MudDialog.Close(DialogResult.Ok(true));
+        }
+        else
+        {
+            _error = error;
+        }
+    }
+
+    private void Cancel() => MudDialog.Cancel();
+}

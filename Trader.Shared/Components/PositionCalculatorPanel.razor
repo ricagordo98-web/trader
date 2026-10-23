@@ -8,6 +8,8 @@
                 <MudItem xs="5"><MudNumericField T="double" @bind-Value="_capital" Label="@($"Capital ({_currency})")" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
                 <MudItem xs="4"><MudNumericField T="double" @bind-Value="_risk" Label="Risco (%)" Min="0" Max="10" Step="0.25" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" /></MudItem>
                 <MudItem xs="3"><MudTextField T="string" @bind-Value="_currency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="8" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="double" @bind-Value="_maxDailyLoss" Label="Perda máx. diária (%)" Min="0" Max="100" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" HelperText="0 = sem limite" /></MudItem>
+                <MudItem xs="6"><MudNumericField T="int" @bind-Value="_maxTrades" Label="Máx. trades por dia" Min="0" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" HelperText="0 = sem limite" /></MudItem>
             </MudGrid>
             <MudButton Size="Size.Small" Variant="Variant.Text" Class="mt-1" OnClick="SaveAccountAsync">Guardar como predefinição</MudButton>
 
@@ -89,6 +91,7 @@
                     <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Risco</div><div class="level-value" style="color:var(--mud-palette-error)">@Money(r.RiskAmount)</div><MudText Typo="Typo.caption" Class="symbol-name">com inteiras: @Money(r.ActualRiskAmount)</MudText></div></MudItem>
                     <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Distância do stop</div><div class="level-value">@r.StopDistance.ToString("0.#####", CultureInfo.InvariantCulture)</div><MudText Typo="Typo.caption" Class="symbol-name">@r.StopDistancePercent.ToString("0.00", CultureInfo.InvariantCulture)% do preço</MudText></div></MudItem>
                     <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Valor da posição</div><div class="level-value">@Money(r.Notional)</div></div></MudItem>
+                    <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Custo estimado (ida e volta)</div><div class="level-value">@Money(r.Notional * Costs.RoundTripPercent(_assetClass) / 100)</div><MudText Typo="Typo.caption" Class="symbol-name">@Costs.RoundTripPercent(_assetClass).ToString("0.##", CultureInfo.InvariantCulture)% · pressuposto editável nos backtests</MudText></div></MudItem>
                     <MudItem xs="6" md="4"><div class="level-box"><div class="level-label">Margem necessária</div><div class="level-value">@Money(r.MarginRequired)</div><MudText Typo="Typo.caption" Class="symbol-name">@((r.MarginRequired / _capital * 100).ToString("0", CultureInfo.InvariantCulture))% do capital</MudText></div></MudItem>
                     @if (r.RewardAmount is { } reward && r.RiskReward is { } rr)
                     {
@@ -140,6 +143,11 @@
 
     [Parameter] public EventCallback<AccountProfile> OnSaveAccount { get; set; }
 
+    [Parameter] public CostModel Costs { get; set; } = new();
+
+    private double _maxDailyLoss;
+    private int _maxTrades;
+
     private bool HasQuote => _symbol is not null && Quotes.TryGetValue(_symbol, out InstrumentQuote? q) && q.Price is not null;
 
     private PositionResult Result => PositionCalculator.Calculate(new PositionInput(_capital, _risk, _entry, _stop, _target, _leverage, _fx, _assetClass));
@@ -154,6 +162,8 @@
         _capital = Account.Capital;
         _risk = Account.RiskPercent;
         _currency = Account.Currency;
+        _maxDailyLoss = Account.MaxDailyLossPercent;
+        _maxTrades = Account.MaxTradesPerDay;
 
         if (Initial is not null)
         {
@@ -217,7 +227,7 @@
         ApplyAssetClassFor(suggestion.Symbol);
     }
 
-    private Task SaveAccountAsync() => OnSaveAccount.InvokeAsync(new AccountProfile(_capital, _risk, _currency));
+    private Task SaveAccountAsync() => OnSaveAccount.InvokeAsync(new AccountProfile(_capital, _risk, _currency, _maxDailyLoss, _maxTrades));
 
     private Task RegisterAsync()
     {

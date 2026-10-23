@@ -28,6 +28,32 @@ public static class JournalCalculator
 public static class JournalValidator
 {
     public const int MaxNotesLength = 2000;
+    public const int MaxSetupLength = 40;
+    public const int MaxTagsLength = 120;
+    public const int MaxEmotionLength = 20;
+    public const int MaxImageLength = 600_000;
+
+    public static IReadOnlyList<string> ValidateDetails(TradeDetailsRequest request)
+    {
+        List<string> errors = [];
+
+        if ((request.Setup?.Trim().Length ?? 0) > MaxSetupLength || (request.Tags?.Trim().Length ?? 0) > MaxTagsLength || (request.Emotion?.Trim().Length ?? 0) > MaxEmotionLength)
+        {
+            errors.Add("Setup, etiquetas ou emoção demasiado longos.");
+        }
+
+        if ((request.Notes?.Length ?? 0) > MaxNotesLength)
+        {
+            errors.Add("Notas demasiado longas.");
+        }
+
+        if (request.ChartImage is { } image && (image.Length > MaxImageLength || !image.StartsWith("data:image/", StringComparison.Ordinal)))
+        {
+            errors.Add("A imagem tem de ser um PNG/JPEG até cerca de 400 KB.");
+        }
+
+        return errors;
+    }
 
     public static IReadOnlyList<string> ValidateOpen(OpenTradeRequest request)
     {

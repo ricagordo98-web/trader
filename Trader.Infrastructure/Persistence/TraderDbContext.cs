@@ -17,6 +17,7 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
     public DbSet<AppSetting> AppSettings => Set<AppSetting>();
     public DbSet<MoveExplanationRecord> MoveExplanations => Set<MoveExplanationRecord>();
     public DbSet<PaperTrade> PaperTrades => Set<PaperTrade>();
+    public DbSet<AlertRule> AlertRules => Set<AlertRule>();
     public DbSet<JournalTrade> JournalTrades => Set<JournalTrade>();
     public DbSet<Alert> Alerts => Set<Alert>();
     public DbSet<PriceAlert> PriceAlerts => Set<PriceAlert>();
@@ -50,6 +51,19 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.HasKey(s => new { s.ArticleId, s.Symbol });
             entity.HasIndex(s => s.Symbol);
             entity.Property(s => s.Symbol).HasMaxLength(32).IsRequired();
+        });
+
+        modelBuilder.Entity<AlertRule>(entity =>
+        {
+            entity.HasIndex(r => r.UserId);
+            entity.Property(r => r.UserId).HasMaxLength(450).IsRequired();
+            entity.Property(r => r.Name).HasMaxLength(64).IsRequired();
+            entity.Property(r => r.Symbol).HasMaxLength(32);
+            entity.Property(r => r.AssetClass).HasConversion<string>().HasMaxLength(16);
+            entity.Property(r => r.Direction).HasConversion<string>().HasMaxLength(8);
+            entity.Property(r => r.EventKind).HasConversion<string>().HasMaxLength(32);
+            entity.Property(r => r.Sentiment).HasConversion<string>().HasMaxLength(8);
+            entity.Property(r => r.CreatedAt).HasConversion(utcTicks);
         });
 
         modelBuilder.Entity<PaperTrade>(entity =>
@@ -96,6 +110,9 @@ public sealed class TraderDbContext(DbContextOptions<TraderDbContext> options) :
             entity.Property(t => t.Name).HasMaxLength(128).IsRequired();
             entity.Property(t => t.Platform).HasMaxLength(64);
             entity.Property(t => t.Notes).HasMaxLength(2000);
+            entity.Property(t => t.Setup).HasMaxLength(40);
+            entity.Property(t => t.Tags).HasMaxLength(120);
+            entity.Property(t => t.Emotion).HasMaxLength(20);
             entity.Property(t => t.Direction).HasConversion<string>().HasMaxLength(8);
             entity.Property(t => t.Status).HasConversion<string>().HasMaxLength(16);
             entity.Property(t => t.EntryTime).HasConversion(utcTicks);

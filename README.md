@@ -87,6 +87,34 @@ Settings -> Perfil is stored per user (`GET/PUT /api/settings/profile`): broker 
 
 Trading 212 only offers a public API for Invest and Stocks ISA accounts, not CFD, so there is no automatic account link for CFD users.
 
+## Learning and simulation
+
+- **Ajuda** (`/help`): glossary (`Trader.Core/Help/Glossary.cs`, with inline `GlossaryTerm` hints), FAQ, a first-run tour, and a "Como ler esta sugestão" dialog on every suggestion card.
+- **Simulador** (`/simulator`): paper trading per user (`paper:{userId}` setting plus the `PaperTrades` table) with the same sizing rules as the journal.
+- **Sessao** (`/session`): market sessions and open/close countdowns, trading halts (Nasdaq RSS), top movers, upcoming events with countdown, open trades, and the daily risk warning.
+
+## Charts workspace
+
+Trading -> chart opens a workspace of draggable/resizable chart panels (`workspace.js`, `WorkspaceLayout`) with named layouts per user (`/api/charts/layouts`), synchronised crosshair/zoom, configurable indicators and chart types (candles, Heikin-Ashi, line, area, log/percent axes), automatic support/resistance levels, news/earnings events on the chart, an entry/SL/TP planner that feeds the position calculator, price alerts from drawn lines, and replay. Most of this is interactive UI that is only covered by unit tests of the pure logic.
+
+## Alert rules and notifications
+
+- Rule alerts (`/api/alerts/rules`): per-user conditions (price, % move, relative volume, RSI...) evaluated by the radar; quiet hours apply per user.
+- ntfy: shared topic in Settings -> Notificacoes, plus an optional personal topic per user (Settings -> Perfil). With a public app address set, each push carries a click URL and an "Abrir no Trader" action (`AlertLinks`). During quiet hours only stop-loss alerts are pushed.
+- Favorites: star an instrument in Trading and use the Favoritos tab as a quick list (stored in the profile). There are no native widgets.
+
+## Journal, risk and costs
+
+- Each trade can carry a setup, tags, an emotion and a chart image (<= 400 KB) (`PUT /api/journal/trades/{id}/details`).
+- Diario -> Analise (`GET /api/journal/insights`): result by entry hour, weekday, symbol, setup, emotion and direction, equity curve and drawdown (`JournalAnalyzer`). Hour verdicts need at least 3 trades.
+- Daily limits (max loss % of capital, max trades per day) are stored in the account profile; `GET /api/journal/risk` feeds the warning shown in the Diario and Sessao pages (`DailyRiskGuard`). It is a warning, nothing is blocked.
+- Imports: Trading 212 Invest history CSV is recognised; for CFD accounts export a sample and check the preview warnings.
+- Broker costs (round-trip % per asset class and overnight financing) are saved per user from the backtest panel and used as defaults in the swing/intraday backtests and in the calculator's cost estimate. The defaults are assumptions, not Trading 212 figures: edit them to match your account.
+
+## System status
+
+Settings -> Fontes shows `GET /api/system/health`: Yahoo price freshness (quotes carry `AsOf`; the chart chip tooltip shows how old the last quote is), news sources with errors, whether Finnhub live data is configured and whether the local Ollama model answers. No paid data provider is wired in.
+
 ## Accounts
 
 Every API route and the SignalR hub require a signed-in user (ASP.NET Core Identity, bearer tokens).

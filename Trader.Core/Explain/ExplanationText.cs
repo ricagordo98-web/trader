@@ -32,6 +32,11 @@ public static class ExplanationText
 
         text.Append(' ').Append(ScopeSentence(analysis));
 
+        if (PeerComparison(analysis) is { } comparison)
+        {
+            text.Append(' ').Append(comparison);
+        }
+
         if (analysis.VolumeRatio is { } volume && volume >= 1.5)
         {
             text.Append($" O volume esteve {volume.ToString("0.0", Pt)}× acima do normal.");
@@ -48,6 +53,24 @@ public static class ExplanationText
 
     public static string WithoutCitations(string text) =>
         System.Text.RegularExpressions.Regex.Replace(text, @"\s?\[E\d+\]", string.Empty).Trim();
+
+    public static string? PeerComparison(MoveAnalysis analysis)
+    {
+        if (analysis.Peers.Count < 2 || analysis.Scope == MoveScope.Sector)
+        {
+            return null;
+        }
+
+        double average = analysis.Peers.Average(p => p.ChangePercent);
+        double difference = analysis.ChangePercent - average;
+
+        if (Math.Abs(difference) < 0.3)
+        {
+            return $"Em linha com os ativos correlacionados (média {Percent(average)}).";
+        }
+
+        return $"Face aos ativos correlacionados (média {Percent(average)}), {(difference > 0 ? "subiu mais" : "desceu mais")} {Math.Abs(difference).ToString("0.0#", Pt)} pontos percentuais.";
+    }
 
     public static string? OneLiner(MoveExplanation explanation)
     {

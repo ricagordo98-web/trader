@@ -6,6 +6,7 @@
 @inject ThemeState Theme
 @inject ISnackbar Snackbar
 @inject IDialogService DialogService
+@inject IClientStore Store
 
 <MudDialog ContentClass="chart-dialog-content">
     <TitleContent>
@@ -28,6 +29,8 @@
                     {
                         <MudMenuItem OnClick="@(() => ToggleIndicatorAsync(indicator))">@(_activeIndicators.Contains(indicator.Name) ? "✓ " : "    ")@indicator.Label</MudMenuItem>
                     }
+                    <MudDivider />
+                    <MudMenuItem OnClick="ConfigureIndicatorAsync">Configurar parâmetros e cores…</MudMenuItem>
                 </MudMenu>
                 <MudMenu Label="Comparar" StartIcon="@Icons.Material.Filled.CompareArrows" Size="Size.Small" Variant="Variant.Text" Dense="true">
                     @if (_compareSymbol is not null)
@@ -41,6 +44,36 @@
                     }
                 </MudMenu>
                 <MudButton Size="Size.Small" Variant="Variant.Text" StartIcon="@Icons.Material.Filled.QuestionAnswer" OnClick="OpenWhyAsync">Porquê?</MudButton>
+                @if (Quote.AssetClass == AssetClass.Crypto)
+                {
+                    <MudButton Size="Size.Small" Variant="@(_showFlow ? Variant.Filled : Variant.Text)" Color="@(_showFlow ? Color.Primary : Color.Default)" StartIcon="@Icons.Material.Filled.SwapVert" OnClick="@(() => _showFlow = !_showFlow)">Fluxo</MudButton>
+                }
+                <MudMenu Label="Visual" StartIcon="@Icons.Material.Filled.Tune" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    @foreach (VisualOption option in Kinds)
+                    {
+                        <MudMenuItem OnClick="@(() => SetKindAsync(option))">@(_kind == option.Key ? "✓ " : "    ")@option.Label</MudMenuItem>
+                    }
+                    <MudDivider />
+                    @foreach (VisualOption option in Axes)
+                    {
+                        <MudMenuItem OnClick="@(() => SetAxisAsync(option))">@(_axis == option.Key ? "✓ " : "    ")@option.Label</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudMenu Label="Níveis" StartIcon="@Icons.Material.Filled.HorizontalSplit" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    @foreach ((string group, string label) in LevelGroups)
+                    {
+                        <MudMenuItem OnClick="@(() => ToggleLevelGroupAsync(group))">@(_levelGroups.Contains(group) ? "✓ " : "    ")@label</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudMenu Label="Eventos" StartIcon="@Icons.Material.Filled.Flag" Size="Size.Small" Variant="Variant.Text" Dense="true">
+                    @foreach ((string kind, string label) in EventKinds)
+                    {
+                        <MudMenuItem OnClick="@(() => ToggleEventKindAsync(kind))">@(_eventKinds.Contains(kind) ? "✓ " : "    ")@label</MudMenuItem>
+                    }
+                </MudMenu>
+                <MudButton Size="Size.Small" Variant="@(_plan is not null ? Variant.Filled : Variant.Text)" Color="@(_plan is not null ? Color.Primary : Color.Default)" StartIcon="@Icons.Material.Filled.Straighten" OnClick="TogglePlanAsync">Plano</MudButton>
+                <MudButton Size="Size.Small" Variant="@(_alertLinePrice is not null ? Variant.Filled : Variant.Text)" Color="@(_alertLinePrice is not null ? Color.Warning : Color.Default)" StartIcon="@Icons.Material.Filled.AddAlert" OnClick="ToggleAlertLineAsync">Alerta</MudButton>
+                <MudButton Size="Size.Small" Variant="@(_replaying ? Variant.Filled : Variant.Text)" Color="@(_replaying ? Color.Primary : Color.Default)" StartIcon="@Icons.Material.Filled.History" OnClick="ToggleReplayAsync" Disabled="@(!CanReplay && !_replaying)">Replay</MudButton>
                 <MudMenu Label="Modelos" StartIcon="@Icons.Material.Filled.Dashboard" Size="Size.Small" Variant="Variant.Text" Dense="true">
                     <MudMenuItem OnClick="SaveTemplateAsync">Guardar indicadores atuais…</MudMenuItem>
                     @if (_templates.Count > 0)
@@ -77,6 +110,59 @@
                     <MudIconButton Icon="@Icons.Material.Filled.DeleteSweep" Size="Size.Small" aria-label="Apagar todos os desenhos" OnClick="ClearDrawingsAsync" />
                 </MudTooltip>
             </div>
+            @if (_plan is { } plan)
+            {
+                PositionResult? result = PlanResult;
+                <div class="chart-strip">
+                    <MudText Typo="Typo.caption">Plano (arrasta as linhas azul, vermelha e verde):</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0">entrada @plan.Entry.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Error" Class="ma-0">SL @plan.Stop.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</MudChip>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Success" Class="ma-0">TP @plan.Target.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</MudChip>
+                    @if (result is { IsValid: true })
+                    {
+                        <MudText Typo="Typo.caption">@(result.Direction == TradeDirection.Buy ? "Compra" : "Venda") · R:R @(result.RiskReward?.ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) ?? "—") · risco @result.RiskAmount.ToString("0.00", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) @_account.Currency · @result.Units.ToString("0.####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT")) un</MudText>
+                    }
+                    else if (result is not null)
+                    {
+                        <MudText Typo="Typo.caption" Color="Color.Warning">@string.Join(" ", result.Errors)</MudText>
+                    }
+                    <MudSpacer />
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="FlipPlanAsync">Inverter</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" Href="@PlanJournalLink">Calcular e registar</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="TogglePlanAsync">Fechar</MudButton>
+                </div>
+            }
+
+            @if (_alertLinePrice is { } alertPrice)
+            {
+                <div class="chart-strip">
+                    <MudText Typo="Typo.caption">Arrasta a linha laranja até ao preço do alerta:</MudText>
+                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Class="ma-0">@alertPrice.ToString("0.#####", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))</MudChip>
+                    <MudSpacer />
+                    <MudButton Size="Size.Small" Variant="Variant.Filled" Color="Color.Warning" OnClick="CreateAlertAsync">Criar alerta</MudButton>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="ToggleAlertLineAsync">Cancelar</MudButton>
+                </div>
+            }
+
+            @if (_replaying)
+            {
+                <div class="chart-strip">
+                    <MudIconButton Icon="@(_replayPlaying ? Icons.Material.Filled.Pause : Icons.Material.Filled.PlayArrow)" Size="Size.Small" aria-label="Reproduzir ou pausar" OnClick="ToggleReplayPlayAsync" />
+                    <MudIconButton Icon="@Icons.Material.Filled.SkipNext" Size="Size.Small" aria-label="Avançar uma vela" OnClick="StepReplayAsync" Disabled="_replayPlaying" />
+                    <MudSlider T="int" Value="_replayIndex" ValueChanged="SeekReplayAsync" Min="@(ReplayMinCandles / 2)" Max="@_fullCandles.Count" Size="Size.Small" Style="max-width:360px" Disabled="_replayPlaying" />
+                    <MudText Typo="Typo.caption">vela @_replayIndex / @_fullCandles.Count</MudText>
+                    <MudToggleGroup T="int" @bind-Value="_replaySpeed" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+                        <MudToggleItem Value="1" Text="1×" />
+                        <MudToggleItem Value="2" Text="2×" />
+                        <MudToggleItem Value="5" Text="5×" />
+                        <MudToggleItem Value="10" Text="10×" />
+                    </MudToggleGroup>
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption" Class="symbol-name">Modo replay: o gráfico mostra só o passado até à vela escolhida.</MudText>
+                    <MudButton Size="Size.Small" Variant="Variant.Text" OnClick="StopReplayAsync">Sair do replay</MudButton>
+                </div>
+            }
+
             <div class="chart-body">
                 <div class="chart-tools">
                     @foreach (DrawingTool tool in DrawingTools)
@@ -98,10 +184,14 @@
                     else
                     {
                         <KLineChart @ref="_chart" Symbol="@Quote.Symbol" PricePrecision="@PricePrecision" Interval="@_timeframe.Interval" Candles="_candles"
-                                    Dark="Theme.IsDark" ShowVolume="@HasVolume" Levels="_levels" DrawingsJson="@_drawingsJson" DrawingsChanged="SaveDrawingsAsync" />
+                                    Dark="Theme.IsDark" ShowVolume="@HasVolume" Levels="_allLevels" DrawingsJson="@_drawingsJson" DrawingsChanged="SaveDrawingsAsync" PlanChanged="OnPlanChangedAsync" AlertLineChanged="OnAlertLineChangedAsync" />
                     }
                 </div>
             </div>
+            @if (_showFlow && Quote.AssetClass == AssetClass.Crypto)
+            {
+                <div class="pa-2 order-flow-wrap"><OrderFlowPanel Symbol="@Quote.Symbol" /></div>
+            }
         </div>
     </DialogContent>
 </MudDialog>
@@ -177,6 +267,7 @@
     private HubConnection? _hub;
     private bool _streaming;
     private bool _ready;
+    private bool _showFlow;
     private string _cryptoBasis = CryptoBasis.Usd;
     private string _broker = BrokerCatalog.Other;
 
@@ -186,7 +277,7 @@
 
     private string LiveLabel => Source.Live is { } live ? $"Em direto · {live}" : "Yahoo · pode ter atraso";
 
-    private string SourceTooltip => $"Histórico: {Source.History}. {Source.Note}{(BrokerCatalog.LabelOrNull(_broker) is { } broker ? $" Compara com o preço da tua conta na {broker}." : string.Empty)}";
+    private string SourceTooltip => $"Histórico: {Source.History}. {Source.Note} Última cotação do Yahoo: {DataFreshness.Describe(Quote.AsOf, DateTimeOffset.UtcNow)}.{(BrokerCatalog.LabelOrNull(_broker) is { } broker ? $" Compara com o preço da tua conta na {broker}." : string.Empty)}";
 
     private bool HasVolume => Quote.AssetClass is not (AssetClass.Forex or AssetClass.Index);
 
@@ -208,6 +299,7 @@
             _broker = (await Api.GetProfileAsync(_cts.Token)).Broker;
             _candles = await Api.GetCandlesAsync(Quote.Symbol, _timeframe.Interval, _timeframe.Range, _cts.Token);
             _levels = await LoadLevelsAsync();
+            RebuildLevels();
             _compareOptions = (await Api.GetInstrumentsAsync(_cts.Token)).Where(q => q.Symbol != Quote.Symbol).ToList();
             _templates = await Api.GetChartTemplatesAsync(_cts.Token);
             _ready = true;
@@ -261,11 +353,24 @@
         }
     }
 
+    protected override async Task OnAfterRenderAsync(bool firstRender)
+    {
+        if (_ready && _chart is not null && !_configApplied)
+        {
+            await ApplyStoredIndicatorConfigAsync();
+        }
+    }
+
     private async Task SelectTimeframeAsync(Timeframe timeframe)
     {
         if (timeframe == _timeframe)
         {
             return;
+        }
+
+        if (_replaying)
+        {
+            await StopReplayAsync();
         }
 
         try
@@ -423,7 +528,7 @@
             {
                 Timeframe timeframe = _timeframe;
 
-                if (_streaming)
+                if (_streaming || _replaying)
                 {
                     continue;
                 }
@@ -523,7 +628,7 @@
 
     private Task OnLiveCandlesAsync(LiveCandles message)
     {
-        if (_chart is null || message.Symbol != Quote.Symbol || message.Interval != _timeframe.Interval)
+        if (_chart is null || _replaying || message.Symbol != Quote.Symbol || message.Interval != _timeframe.Interval)
         {
             return Task.CompletedTask;
         }

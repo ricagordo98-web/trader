@@ -1,0 +1,303 @@
+@page "/session"
+@using System.Globalization
+@using Trader.Core.Intraday
+@implements IDisposable
+@inject TraderApiClient Api
+@inject IDialogService DialogService
+
+<PageTitle>Sessão · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.False" Class="pa-4 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-1">
+        <MudText Typo="Typo.h4">Sessão</MudText>
+        <MudSpacer />
+        <MudText Typo="Typo.caption" Class="symbol-name">Atualiza sozinho a cada 30 s · @(_updated is { } at ? $"última leitura {at.ToLocalTime():HH:mm:ss}" : "a carregar…")</MudText>
+        <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Refresh" OnClick="LoadAsync" Disabled="_loading">Atualizar</MudButton>
+    </div>
+    <MudText Typo="Typo.body2" Class="symbol-name mb-3">O essencial do dia de negociação num só ecrã: mercados abertos, eventos que aí vêm, o que se está a mexer, as tuas ideias e as tuas trades.</MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-3">@_error</MudAlert>
+    }
+
+    @if (_riskWarning is not null)
+    {
+        <MudAlert Severity="Severity.Warning" Variant="Variant.Filled" Class="mb-3">@_riskWarning</MudAlert>
+    }
+
+    <div class="session-sessions mb-3">
+        @foreach (SessionStatus session in _sessions)
+        {
+            <MudPaper Elevation="0" Outlined="true" Class="pa-3 session-clock">
+                <div class="d-flex align-center gap-2">
+                    <span class="@($"session-dot{(session.IsOpen ? " open" : string.Empty)}")"></span>
+                    <MudText Typo="Typo.subtitle2">@session.Name</MudText>
+                    <MudSpacer />
+                    <MudText Typo="Typo.caption" Color="@(session.IsOpen ? Color.Success : Color.Default)">@(session.IsOpen ? "Aberto" : "Fechado")</MudText>
+                </div>
+                <MudText Typo="Typo.caption" Class="symbol-name">@session.Detail</MudText>
+            </MudPaper>
+        }
+    </div>
+
+    <MudGrid Spacing="3">
+        <MudItem xs="12" lg="4">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Próximos eventos</MudText>
+                @if (_upcoming.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem eventos com hora conhecida nas próximas 24 h.</MudText>
+                }
+
+                @foreach (TimedEvent timed in _upcoming)
+                {
+                    <div class="d-flex align-center gap-2 py-1">
+                        <MudIcon Icon="@(timed.Event.Kind == CalendarKind.Macro ? Icons.Material.Filled.AccountBalance : Icons.Material.Filled.Business)" Size="Size.Small" />
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2">@timed.Event.Title</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">@timed.Time.ToLocalTime().ToString("dd/MM HH:mm", Pt)@(timed.Event.Detail.Length > 0 ? " · " + timed.Event.Detail : string.Empty)</MudText>
+                        </div>
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@CountdownColor(timed.Time)" Class="ma-0">@Countdown(timed.Time)</MudChip>
+                    </div>
+                }
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2"><GlossaryTerm Key="halt">Suspensões de negociação</GlossaryTerm> (EUA)</MudText>
+                @if (_halts.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Nenhuma suspensão nas últimas 12 h.</MudText>
+                }
+
+                @foreach (TradingHalt halt in _halts.Take(8))
+                {
+                    <div class="d-flex align-center gap-2 py-1">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(halt.IsActive ? Color.Warning : Color.Default)" Class="ma-0">@(halt.IsActive ? "Suspenso" : "Retomado")</MudChip>
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2">@halt.Symbol</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">@halt.Reason · @halt.HaltedAt.ToLocalTime().ToString("HH:mm", Pt)</MudText>
+                        </div>
+                    </div>
+                }
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">As minhas trades abertas</MudText>
+                @if (_trades.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem trades abertas no diário.</MudText>
+                }
+
+                @foreach (JournalTradeDto trade in _trades)
+                {
+                    double? price = _prices.GetValueOrDefault(trade.Symbol);
+                    double? r = price is { } p && trade.StopLoss is { } stop && Math.Abs(trade.EntryPrice - stop) > 0
+                        ? (trade.Direction == TradeDirection.Buy ? p - trade.EntryPrice : trade.EntryPrice - p) / Math.Abs(trade.EntryPrice - stop)
+                        : null;
+
+                    <div class="d-flex align-center gap-2 py-1">
+                        <div class="flex-grow-1">
+                            <MudText Typo="Typo.body2">@trade.Symbol · @(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">entrada @trade.EntryPrice.ToString("0.#####", Pt) · agora @(price?.ToString("0.#####", Pt) ?? "—")</MudText>
+                        </div>
+                        @if (r is { } value)
+                        {
+                            <MudText Typo="Typo.body2" Color="@(value >= 0 ? Color.Success : Color.Error)">@value.ToString("+0.00;-0.00;0.00", Pt) R</MudText>
+                        }
+                    </div>
+                }
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="4">
+            <MudPaper Elevation="0" Outlined="true" Class="mb-3">
+                <MudTable Items="_movers" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarRow" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                    <ToolBarContent><MudText Typo="Typo.subtitle1">Maiores movimentos agora</MudText></ToolBarContent>
+                    <HeaderContent>
+                        <MudTh>Ativo</MudTh>
+                        <MudTh Style="text-align:right">Var.</MudTh>
+                        <MudTh Style="text-align:right"><GlossaryTerm Key="rvol">Vol.</GlossaryTerm></MudTh>
+                        <MudTh></MudTh>
+                    </HeaderContent>
+                    <RowTemplate>
+                        <MudTd>
+                            @context.Symbol
+                            @if (_profiles.GetValueOrDefault(context.Symbol) is { LowShareCount: true } profile)
+                            {
+                                <MudTooltip Text="@($"Poucas ações emitidas ({profile.ShareOutstandingMillions.ToString("0.#", Pt)} M): costuma ser mais volátil.")">
+                                    <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Warning" Class="ma-0 ml-1">float baixo</MudChip>
+                                </MudTooltip>
+                            }
+                        </MudTd>
+                        <MudTd Style="text-align:right"><MudText Typo="Typo.body2" Color="@((context.DayChangePercent ?? 0) >= 0 ? Color.Success : Color.Error)">@Percent(context.DayChangePercent)</MudText></MudTd>
+                        <MudTd Style="text-align:right">@(context.RelativeVolume is { } rvol ? $"{rvol.ToString("0.0", Pt)}×" : "—")</MudTd>
+                        <MudTd Style="text-align:right">
+                            <MudTooltip Text="Porque se mexeu?">
+                                <MudIconButton Icon="@Icons.Material.Filled.QuestionAnswer" Size="Size.Small" aria-label="@($"Porque se mexeu {context.Symbol}")" OnClick="@(() => WhyDialogLauncher.ShowAsync(DialogService, context.Symbol, context.Name))" />
+                            </MudTooltip>
+                        </MudTd>
+                    </RowTemplate>
+                    <NoRecordsContent><MudText Class="pa-4" Color="Color.Secondary">Sem mercados abertos ou sem dados do radar ainda.</MudText></NoRecordsContent>
+                </MudTable>
+            </MudPaper>
+        </MudItem>
+
+        <MudItem xs="12" lg="4">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Eventos do radar (últimas horas)</MudText>
+                @if (_events.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem eventos recentes.</MudText>
+                }
+
+                @foreach (RadarEvent radarEvent in _events)
+                {
+                    <div class="py-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(radarEvent.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">@radarEvent.Symbol</MudChip>
+                            <MudText Typo="Typo.body2" Class="flex-grow-1">@radarEvent.Detail</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name">@radarEvent.Time.ToLocalTime().ToString("HH:mm", Pt)</MudText>
+                        </div>
+                        @if (radarEvent.Why is { Length: > 0 } why)
+                        {
+                            <MudText Typo="Typo.caption" Color="Color.Info" Class="d-block ml-1">@why</MudText>
+                        }
+                    </div>
+                }
+            </MudPaper>
+
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Sugestões ativas (@_suggestions.Count)</MudText>
+                @if (_suggestions.Count == 0)
+                {
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem sugestões abertas.</MudText>
+                }
+
+                @foreach (SuggestionDto suggestion in _suggestions)
+                {
+                    double? price = _prices.GetValueOrDefault(suggestion.Symbol);
+                    <MudLink Href="@($"/prediction?suggestion={suggestion.Id}")" Underline="Underline.None" Class="d-block py-1">
+                        <div class="d-flex align-center gap-2">
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(suggestion.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">@(suggestion.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER")</MudChip>
+                            <MudText Typo="Typo.body2">@suggestion.Symbol</MudText>
+                            @if (suggestion.Horizon == SuggestionHorizon.Intraday)
+                            {
+                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0">INTRADAY</MudChip>
+                            }
+                            <MudSpacer />
+                            <MudText Typo="Typo.caption" Class="symbol-name">@((suggestion.Confidence * 100).ToString("0", Pt))% · R:R @suggestion.RiskReward.ToString("0.0", Pt)</MudText>
+                        </div>
+                        <MudText Typo="Typo.caption" Class="symbol-name">entrada @suggestion.Entry.ToString("0.#####", Pt)@(price is { } now ? $" · agora {now.ToString("0.#####", Pt)}" : string.Empty) · expira @ExpiresIn(suggestion.ExpiresAt)</MudText>
+                    </MudLink>
+                }
+            </MudPaper>
+        </MudItem>
+    </MudGrid>
+</MudContainer>
+
+@code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+    private static readonly TimeSpan RefreshInterval = TimeSpan.FromSeconds(30);
+
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<SessionStatus> _sessions = [];
+    private IReadOnlyList<TimedEvent> _upcoming = [];
+    private IReadOnlyList<TradingHalt> _halts = [];
+    private IReadOnlyList<RadarRow> _movers = [];
+    private IReadOnlyList<RadarEvent> _events = [];
+    private IReadOnlyList<SuggestionDto> _suggestions = [];
+    private IReadOnlyList<JournalTradeDto> _trades = [];
+    private Dictionary<string, double?> _prices = [];
+    private Dictionary<string, CompanyProfile> _profiles = [];
+    private IReadOnlyList<InstrumentQuote> _quotes = [];
+    private string? _error;
+    private string? _riskWarning;
+    private DateTimeOffset? _updated;
+    private bool _loading;
+
+    protected override async Task OnInitializedAsync()
+    {
+        await LoadAsync();
+        _ = PollAsync();
+    }
+
+    private async Task PollAsync()
+    {
+        try
+        {
+            using PeriodicTimer timer = new(RefreshInterval);
+
+            while (await timer.WaitForNextTickAsync(_cts.Token))
+            {
+                await LoadAsync();
+                await InvokeAsync(StateHasChanged);
+            }
+        }
+        catch (OperationCanceledException)
+        {
+        }
+    }
+
+    private async Task LoadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _sessions = await Api.GetSessionsAsync(_cts.Token);
+            _halts = await Api.GetHaltsAsync(_cts.Token);
+            RadarSnapshot radar = await Api.GetRadarAsync(_cts.Token);
+            _movers = radar.Board.Where(r => r.DayChangePercent is not null).OrderByDescending(r => Math.Abs(r.DayChangePercent!.Value)).Take(10).ToList();
+            _events = radar.Events.Where(e => DateTimeOffset.UtcNow - e.Time < TimeSpan.FromHours(4)).Take(12).ToList();
+            _suggestions = (await Api.GetSuggestionsAsync(null, true, 30, _cts.Token)).OrderByDescending(s => s.Confidence).Take(8).ToList();
+            _trades = (await Api.GetTradesAsync(TradeStatus.Open, _cts.Token)).ToList();
+            _riskWarning = (await Api.GetDailyRiskAsync(_cts.Token))?.Message;
+            _quotes = await Api.GetInstrumentsAsync(_cts.Token, native: true);
+            _prices = _quotes.ToDictionary(q => q.Symbol, q => q.Price);
+
+            CalendarFeed calendar = await Api.GetCalendarAsync(2, _cts.Token);
+            _upcoming = CalendarTimes.Upcoming(calendar.Events, DateTimeOffset.UtcNow, TimeSpan.FromHours(24)).Take(8).ToList();
+
+            IEnumerable<string> usMovers = _movers.Where(m => m.AssetClass == AssetClass.Stock).Select(m => m.Symbol);
+            _profiles = (await Api.GetProfilesAsync(usMovers, _cts.Token)).ToDictionary(p => p.Symbol);
+            _updated = DateTimeOffset.UtcNow;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível atualizar. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OpenChartAsync(string symbol, string name)
+    {
+        InstrumentQuote quote = _quotes.FirstOrDefault(q => q.Symbol == symbol) ?? new InstrumentQuote(symbol, name, AssetClass.Stock, "USD", null, null, null, []);
+        DialogParameters<ChartDialog> parameters = new() { { x => x.Quote, quote } };
+        return DialogService.ShowAsync<ChartDialog>(symbol, parameters, new DialogOptions { FullScreen = true, CloseButton = true, CloseOnEscapeKey = true });
+    }
+
+    private static string Countdown(DateTimeOffset time) =>
+        time <= DateTimeOffset.UtcNow ? "agora" : MarketSessions.Remaining(time - DateTimeOffset.UtcNow);
+
+    private static Color CountdownColor(DateTimeOffset time) =>
+        time - DateTimeOffset.UtcNow < TimeSpan.FromMinutes(30) ? Color.Warning : Color.Default;
+
+    private static string Percent(double? value) => value is { } v ? $"{v:+0.00;-0.00;0.00}%".Replace('.', ',') : "—";
+
+    private static string ExpiresIn(DateTimeOffset time)
+    {
+        TimeSpan remaining = time - DateTimeOffset.UtcNow;
+        return remaining.TotalHours < 1 ? "em menos de 1 h" : remaining.TotalHours < 48 ? $"em {(int)remaining.TotalHours} h" : $"em {(int)remaining.TotalDays} d";
+    }
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

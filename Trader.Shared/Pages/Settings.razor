@@ -86,6 +86,26 @@
                     Filtra as cotações, sugestões e radar que vês. Os alertas enviados pelo servidor (incluindo o ntfy) continuam a cobrir tudo.
                 </MudText>
             </MudPaper>
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Horário silencioso</MudText>
+                <div class="d-flex align-center gap-3">
+                    <MudNumericField T="int?" Label="Das (hora)" Min="0" Max="23" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" Style="max-width:120px"
+                                     Value="_profile.QuietFromHour" ValueChanged="@((int? hour) => SetQuietAsync(hour, _profile.QuietToHour))" />
+                    <MudNumericField T="int?" Label="Até (hora)" Min="0" Max="23" Variant="Variant.Outlined" Margin="Margin.Dense" HideSpinButtons="true" Style="max-width:120px"
+                                     Value="_profile.QuietToHour" ValueChanged="@((int? hour) => SetQuietAsync(_profile.QuietFromHour, hour))" />
+                    <MudButton Variant="Variant.Text" OnClick="@(() => SaveProfileAsync(_profile with { QuietFromHour = null, QuietToHour = null }))">Desativar</MudButton>
+                </div>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-1">
+                    Nestas horas (hora do servidor) os teus alertas continuam a registar-se na campainha, mas não enviam notificações para o telemóvel (ntfy). Só os stops atingidos passam sempre.
+                </MudText>
+                <div class="d-flex align-center gap-3 mt-3">
+                    <MudTextField T="string" @bind-Value="_myTopic" Label="O meu tópico ntfy (opcional, só para ti)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" Style="max-width:380px" />
+                    <MudButton Variant="Variant.Text" OnClick="@(() => SaveProfileAsync(_profile with { NtfyTopic = string.IsNullOrWhiteSpace(_myTopic) ? null : _myTopic.Trim() }))">Guardar</MudButton>
+                </div>
+                <MudText Typo="Typo.caption" Class="symbol-name mt-1">
+                    Se definires um tópico teu, os teus alertas (trades, regras, preços) vão para ele em vez do tópico partilhado. Na app ntfy do Android, subscreve-o e os botões de ação aparecem na notificação.
+                </MudText>
+            </MudPaper>
             <MudPaper Elevation="0" Outlined="true" Class="pa-4">
                 <MudText Typo="Typo.subtitle1" Class="mb-2">Texto do "Porquê?"</MudText>
                 <MudSwitch T="bool" Label="Usar o modelo local (Ollama) para escrever a explicação" Color="Color.Primary" Value="_profile.NarrativeEnabled" ValueChanged="SetNarrativeAsync" />
@@ -97,6 +117,10 @@
                     <MudAlert Severity="Severity.Error" Dense="true" Class="mt-2">@_profileError</MudAlert>
                 }
             </MudPaper>
+        </MudTabPanel>
+
+        <MudTabPanel Text="Regras de alerta">
+            <AlertRulesPanel />
         </MudTabPanel>
 
         <MudTabPanel Text="Conta">
@@ -200,6 +224,16 @@
         </MudTabPanel>
 
         <MudTabPanel Text="Fontes">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-3">
+                <MudText Typo="Typo.subtitle1" Class="mb-2">Estado do sistema</MudText>
+                @foreach (HealthItem item in _health)
+                {
+                    <div class="d-flex align-center mb-1">
+                        <MudIcon Icon="@HealthIcon(item.Level)" Color="@HealthColor(item.Level)" Size="Size.Small" Class="mr-2" />
+                        <MudText Typo="Typo.body2"><b>@item.Name</b> · @item.Detail</MudText>
+                    </div>
+                }
+            </MudPaper>
             <MudPaper Elevation="0" Outlined="true">
                 <MudTable Items="_sources" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
                     <HeaderContent>
@@ -250,6 +284,8 @@
                     <MudGrid Spacing="3">
                         <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="_ntfyTopic" Label="Tópico (vazio = desligado)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" /></MudItem>
                         <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="_ntfyServer" Label="Servidor" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                        <MudItem xs="12"><MudTextField T="string" @bind-Value="_ntfyPublicUrl" Label="Endereço público da app (opcional)" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="https://trader.exemplo.com"
+                                                       HelperText="Com este endereço, tocar na notificação abre a app no sítio certo (e aparece o botão Abrir no Trader). Tem de ser acessível a partir do telemóvel." /></MudItem>
                     </MudGrid>
                 </MudPaper>
                 @if (_ntfyError is not null)
@@ -403,8 +439,27 @@
     private readonly CancellationTokenSource _cts = new();
     private IReadOnlyList<WatchlistItem> _watchlist = [];
     private IReadOnlyList<SourceStatus> _sources = [];
+    private IReadOnlyList<HealthItem> _health = [];
+
+    private static string HealthIcon(HealthLevel level) => level switch
+    {
+        HealthLevel.Ok => Icons.Material.Filled.CheckCircle,
+        HealthLevel.Warning => Icons.Material.Filled.Warning,
+        HealthLevel.Down => Icons.Material.Filled.Error,
+        _ => Icons.Material.Filled.RemoveCircleOutline
+    };
+
+    private static Color HealthColor(HealthLevel level) => level switch
+    {
+        HealthLevel.Ok => Color.Success,
+        HealthLevel.Warning => Color.Warning,
+        HealthLevel.Down => Color.Error,
+        _ => Color.Default
+    };
     private ScoringOptions? _scoring;
     private string? _ntfyTopic;
+    private string _ntfyPublicUrl = string.Empty;
+    private string _myTopic = string.Empty;
     private string _ntfyServer = NtfySettings.DefaultServer;
     private string? _ntfyError;
     private IReadOnlyList<PriceAlertDto> _priceAlerts = [];
@@ -451,13 +506,16 @@
         {
             _watchlist = await Api.GetWatchlistAsync(_cts.Token);
             _sources = await Api.GetSourcesAsync(_cts.Token);
+            _health = await Api.GetHealthAsync(_cts.Token);
             _scoring = await Api.GetScoringAsync(_cts.Token);
             NtfySettings ntfy = await Api.GetNtfyAsync(_cts.Token);
             _ntfyTopic = ntfy.Topic;
             _ntfyServer = ntfy.Server;
+            _ntfyPublicUrl = ntfy.PublicUrl;
             _backups = await Api.GetBackupsAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
             _profile = await Api.GetProfileAsync(_cts.Token);
+            _myTopic = _profile.NtfyTopic ?? string.Empty;
             _cryptoBasis = await Api.GetCryptoBasisAsync(_cts.Token);
             _alertSymbol = _watchlist.FirstOrDefault()?.Symbol;
         }
@@ -481,6 +539,9 @@
             Snackbar.Add(error, Severity.Error);
         }
     }
+
+    private Task SetQuietAsync(int? from, int? to) =>
+        from is not null && to is not null ? SaveProfileAsync(_profile with { QuietFromHour = from, QuietToHour = to }) : Task.CompletedTask;
 
     private bool IsClassEnabled(AssetClass assetClass) => _profile.Allows(assetClass);
 
@@ -565,7 +626,7 @@
     private async Task SaveNtfyAsync()
     {
         _busy = true;
-        _ntfyError = await Api.SaveNtfyAsync(new NtfySettings(_ntfyServer, _ntfyTopic ?? string.Empty), _cts.Token);
+        _ntfyError = await Api.SaveNtfyAsync(new NtfySettings(_ntfyServer, _ntfyTopic ?? string.Empty, _ntfyPublicUrl), _cts.Token);
         _busy = false;
 
         if (_ntfyError is null)

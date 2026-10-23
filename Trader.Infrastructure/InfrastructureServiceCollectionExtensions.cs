@@ -46,10 +46,13 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ILiveTradeFeed>(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddHostedService(sp => sp.GetRequiredService<FinnhubTradeFeed>());
         services.AddScoped<IChartDrawingService, ChartDrawingService>();
+        services.AddScoped<IChartInsights, ChartInsightsService>();
+        services.AddScoped<IChartLayoutService, ChartLayoutService>();
         services.AddScoped<IDisplayCurrency, DisplayCurrencyService>();
         services.AddScoped<IPriceSettings, PriceSettingsService>();
         services.AddScoped<IUserPreferences, UserPreferencesService>();
         services.AddScoped<IPaperTradingService, PaperTradingService>();
+        services.AddScoped<IAlertRuleService, AlertRuleService>();
 
         services.Configure<SourcesOptions>(configuration.GetSection(SourcesOptions.SectionName));
         services.AddSingleton<ITickerExtractor, TickerExtractor>();
@@ -88,6 +91,21 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IMoveExplainer, MoveExplainer>();
         services.AddSingleton<IRadarService, RadarService>();
         services.AddHostedService<RadarWorker>();
+        services.AddSingleton<HaltMonitor>();
+        services.AddHttpClient<ICompanyProfileService, CompanyProfileService>(client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+            client.Timeout = TimeSpan.FromSeconds(10);
+        });
+        services.AddSingleton<BinanceFlowFeed>();
+        services.AddSingleton<IOrderFlowService>(sp => sp.GetRequiredService<BinanceFlowFeed>());
+        services.AddHostedService(sp => sp.GetRequiredService<BinanceFlowFeed>());
+        services.AddHttpClient(nameof(HaltWorker), client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+            client.Timeout = TimeSpan.FromSeconds(15);
+        });
+        services.AddHostedService<HaltWorker>();
         services.AddHostedService<SuggestionWorker>();
         services.AddHostedService<QuoteWarmupWorker>();
         services.AddHostedService<PriceWatchWorker>();

@@ -19,6 +19,12 @@ public static partial class NtfySettingsValidator
             errors.Add("O servidor ntfy deve ser um URL https.");
         }
 
+        if (settings.PublicUrl.Length > 0
+            && (!Uri.TryCreate(settings.PublicUrl, UriKind.Absolute, out Uri? publicUri) || publicUri.Scheme is not ("http" or "https")))
+        {
+            errors.Add("O endereço público da app deve ser um URL http(s) completo.");
+        }
+
         return errors;
     }
 

@@ -1,0 +1,31 @@
+@using Trader.Core.Help
+
+<MudDialog>
+    <TitleContent>
+        <div class="d-flex align-center gap-2">
+            <MudIcon Icon="@Icons.Material.Filled.School" />
+            <MudText Typo="Typo.h6">Como ler esta sugestão: @Suggestion.Symbol</MudText>
+        </div>
+    </TitleContent>
+    <DialogContent>
+        @foreach (ReadingLine line in HelpContent.HowToRead(Suggestion))
+        {
+            <div class="mb-3">
+                <MudText Typo="Typo.subtitle2">@line.Title</MudText>
+                <MudText Typo="Typo.body2">@line.Text</MudText>
+            </div>
+        }
+        <MudText Typo="Typo.caption" Class="symbol-name">Ferramenta de apoio à decisão, não é aconselhamento financeiro. <a href="/help">Abrir o glossário</a>.</MudText>
+    </DialogContent>
+    <DialogActions>
+        <MudButton OnClick="Close">Fechar</MudButton>
+    </DialogActions>
+</MudDialog>
+
+@code {
+    [CascadingParameter] private IMudDialogInstance Dialog { get; set; } = default!;
+
+    [Parameter, EditorRequired] public SuggestionDto Suggestion { get; set; } = default!;
+
+    private void Close() => Dialog.Close();
+}
