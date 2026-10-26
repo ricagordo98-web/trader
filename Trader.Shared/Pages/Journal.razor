@@ -6,10 +6,10 @@
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
 
-<PageTitle>Diário · Trader</PageTitle>
+<PageTitle>Carteira · Trader</PageTitle>
 
 <MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6">
-    <MudText Typo="Typo.h4" Class="mb-1">Diário</MudText>
+    <MudText Typo="Typo.h4" Class="mb-1">Carteira</MudText>
     <MudText Typo="Typo.body2" Class="symbol-name mb-4">
         Calcula quanto arriscar em cada operação e regista as que fazes na corretora, para comparares o teu resultado com o das sugestões.
     </MudText>
@@ -248,7 +248,7 @@
         }
         catch (HttpRequestException)
         {
-            _error = "Não foi possível carregar o diário. Verifica se o servidor está a correr.";
+            _error = "Não foi possível carregar a carteira. Verifica se o servidor está a correr.";
         }
         finally
         {

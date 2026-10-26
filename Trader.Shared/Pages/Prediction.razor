@@ -303,143 +303,147 @@
             </MudGrid>
         </MudTabPanel>
 
-        <MudTabPanel Text="Track record">
-            @if (_loading)
-            {
-                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="160px" Class="mb-4" />
-                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="260px" />
-            }
-            else if (_record is null || _record.ClosedCount == 0)
-            {
-                <MudPaper Elevation="0" Outlined="true" Class="pa-6">
-                    <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem sugestões fechadas</MudText>
-                    <MudText Color="Color.Secondary">
-                        Cada sugestão é avaliada automaticamente contra o preço real e fecha quando toca no take profit, no stop loss ou ao fim do prazo (5 dias no swing, 3 horas no intraday).
-                        Há @(_record?.OpenCount ?? 0) em curso; as estatísticas aparecem aqui à medida que fecharem.
-                    </MudText>
-                </MudPaper>
-            }
-            else
-            {
-                <MudGrid Spacing="3" Class="mb-4">
-                    @foreach ((string label, string value, Color color) in Kpis())
+        <MudTabPanel Text="Desempenho">
+            <MudTabs Rounded="true" TabPanelsClass="pt-3">
+                <MudTabPanel Text="Track record">
+                    @if (_loading)
                     {
-                        <MudItem xs="6" md="4" lg="2">
-                            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                                <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
-                                <MudText Typo="Typo.h5" Color="color">@value</MudText>
-                            </MudPaper>
-                        </MudItem>
+                        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="160px" Class="mb-4" />
+                        <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="260px" />
                     }
-                </MudGrid>
-
-                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                    <MudText Typo="Typo.subtitle1" Class="mb-2">R acumulado</MudText>
-                    <CumulativeCurve Points="@_record.Curve.Select(c => c.CumulativeR).ToList()" />
-                </MudPaper>
-
-                <MudGrid Spacing="4">
-                    <MudItem xs="12" md="6">
-                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                            <MudText Typo="Typo.subtitle1" Class="mb-1">Acerto por sinal</MudText>
-                            <MudText Typo="Typo.caption" Class="symbol-name mb-2">Com 20 ou mais sugestões, o sinal que está muito acima ou abaixo da média sugere aumentar ou reduzir o seu peso (Configurações → Scoring).</MudText>
-                            @foreach (AccuracyStat stat in _record.BySignal)
-                            {
-                                <div class="d-flex align-center py-1">
-                                    <MudText Typo="Typo.body2">@stat.Label</MudText>
-                                    <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
-                                    <MudSpacer />
-                                    <MudText Typo="Typo.caption" Class="symbol-name mr-3">@SignalHint(stat)</MudText>
-                                    <MudText Typo="Typo.caption" Class="symbol-name mr-3">@stat.AverageR.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) R</MudText>
-                                    <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
-                                </div>
-                            }
-                        </MudPaper>
-                    </MudItem>
-                    @if (_record.Calibration.Count > 0)
+                    else if (_record is null || _record.ClosedCount == 0)
                     {
-                        <MudItem xs="12">
-                            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                                <MudText Typo="Typo.subtitle1" Class="mb-1">A certeza corresponde ao acerto real?</MudText>
-                                <MudText Typo="Typo.caption" Class="symbol-name mb-2">Se uma sugestão diz 70% de certeza, cerca de 70% das sugestões dessa faixa deviam terminar com lucro.</MudText>
-                                <MudSimpleTable Dense="true" Elevation="0">
-                                    <thead>
-                                        <tr><th>Certeza indicada</th><th>Sugestões</th><th>Certeza média</th><th>Acerto real</th><th>R médio</th><th></th></tr>
-                                    </thead>
-                                    <tbody>
-                                        @foreach (CalibrationBucket bucket in _record.Calibration)
-                                        {
-                                            <tr>
-                                                <td>@bucket.Label</td>
-                                                <td>@bucket.Count</td>
-                                                <td>@((bucket.AverageConfidence * 100).ToString("0", CultureInfo.InvariantCulture))%</td>
-                                                <td>@((bucket.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</td>
-                                                <td>@bucket.AverageR.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</td>
-                                                <td>@CalibrationVerdict(bucket)</td>
-                                            </tr>
-                                        }
-                                    </tbody>
-                                </MudSimpleTable>
-                            </MudPaper>
-                        </MudItem>
-                    }
-                    <MudItem xs="12" md="6">
-                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                            <MudText Typo="Typo.subtitle1" Class="mb-2">Acerto por fonte</MudText>
-                            @foreach (AccuracyStat stat in _record.BySource.Take(12))
-                            {
-                                <div class="d-flex align-center py-1">
-                                    <MudText Typo="Typo.body2">@stat.Label</MudText>
-                                    <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
-                                    <MudSpacer />
-                                    <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
-                                </div>
-                            }
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">Ainda sem sugestões fechadas</MudText>
+                            <MudText Color="Color.Secondary">
+                                Cada sugestão é avaliada automaticamente contra o preço real e fecha quando toca no take profit, no stop loss ou ao fim do prazo (5 dias no swing, 3 horas no intraday).
+                                Há @(_record?.OpenCount ?? 0) em curso; as estatísticas aparecem aqui à medida que fecharem.
+                            </MudText>
                         </MudPaper>
-                    </MudItem>
-                </MudGrid>
+                    }
+                    else
+                    {
+                        <MudGrid Spacing="3" Class="mb-4">
+                            @foreach ((string label, string value, Color color) in Kpis())
+                            {
+                                <MudItem xs="6" md="4" lg="2">
+                                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                                        <MudText Typo="Typo.caption" Class="symbol-name">@label</MudText>
+                                        <MudText Typo="Typo.h5" Color="color">@value</MudText>
+                                    </MudPaper>
+                                </MudItem>
+                            }
+                        </MudGrid>
 
-                <MudPaper Elevation="0" Outlined="true" Class="mt-4">
-                    <MudTable Items="_closed" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
-                        <HeaderContent>
-                            <MudTh>Ativo</MudTh>
-                            <MudTh>Direção</MudTh>
-                            <MudTh>Resultado</MudTh>
-                            <MudTh Style="text-align:right">R</MudTh>
-                            <MudTh>Fechada</MudTh>
-                        </HeaderContent>
-                        <RowTemplate>
-                            <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
-                            <MudTd>@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
-                            <MudTd>@StatusLabel(context.Status)</MudTd>
-                            <MudTd Style="text-align:right">
-                                <MudText Typo="Typo.body2" Color="@(context.RMultiple >= 0 ? Color.Success : Color.Error)">
-                                    @(context.RMultiple >= 0 ? "+" : string.Empty)@context.RMultiple?.ToString("0.00", CultureInfo.InvariantCulture)
-                                </MudText>
-                            </MudTd>
-                            <MudTd>@(context.ClosedAt is { } closed ? TimeAgo(closed) : "—")</MudTd>
-                        </RowTemplate>
-                    </MudTable>
-                </MudPaper>
-            }
-        </MudTabPanel>
-        <MudTabPanel Text="Fiabilidade">
-            <ModelReliabilityPanel />
-        </MudTabPanel>
-        <MudTabPanel Text="Backtest">
-            <MudToggleGroup T="string" @bind-Value="_backtestKind" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary" Class="mb-4">
-                <MudToggleItem Value="@("swing")" Text="Swing (diário)" />
-                <MudToggleItem Value="@("intraday")" Text="Intraday (5 min)" />
-            </MudToggleGroup>
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-2">R acumulado</MudText>
+                            <CumulativeCurve Points="@_record.Curve.Select(c => c.CumulativeR).ToList()" />
+                        </MudPaper>
 
-            @if (_backtestKind == "intraday")
-            {
-                <IntradayBacktestPanel />
-            }
-            else
-            {
-                <BacktestPanel />
-            }
+                        <MudGrid Spacing="4">
+                            <MudItem xs="12" md="6">
+                                <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle1" Class="mb-1">Acerto por sinal</MudText>
+                                    <MudText Typo="Typo.caption" Class="symbol-name mb-2">Com 20 ou mais sugestões, o sinal que está muito acima ou abaixo da média sugere aumentar ou reduzir o seu peso (Configurações → Scoring).</MudText>
+                                    @foreach (AccuracyStat stat in _record.BySignal)
+                                    {
+                                        <div class="d-flex align-center py-1">
+                                            <MudText Typo="Typo.body2">@stat.Label</MudText>
+                                            <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
+                                            <MudSpacer />
+                                            <MudText Typo="Typo.caption" Class="symbol-name mr-3">@SignalHint(stat)</MudText>
+                                            <MudText Typo="Typo.caption" Class="symbol-name mr-3">@stat.AverageR.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture) R</MudText>
+                                            <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                        </div>
+                                    }
+                                </MudPaper>
+                            </MudItem>
+                            @if (_record.Calibration.Count > 0)
+                            {
+                                <MudItem xs="12">
+                                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                                        <MudText Typo="Typo.subtitle1" Class="mb-1">A certeza corresponde ao acerto real?</MudText>
+                                        <MudText Typo="Typo.caption" Class="symbol-name mb-2">Se uma sugestão diz 70% de certeza, cerca de 70% das sugestões dessa faixa deviam terminar com lucro.</MudText>
+                                        <MudSimpleTable Dense="true" Elevation="0">
+                                            <thead>
+                                                <tr><th>Certeza indicada</th><th>Sugestões</th><th>Certeza média</th><th>Acerto real</th><th>R médio</th><th></th></tr>
+                                            </thead>
+                                            <tbody>
+                                                @foreach (CalibrationBucket bucket in _record.Calibration)
+                                                {
+                                                    <tr>
+                                                        <td>@bucket.Label</td>
+                                                        <td>@bucket.Count</td>
+                                                        <td>@((bucket.AverageConfidence * 100).ToString("0", CultureInfo.InvariantCulture))%</td>
+                                                        <td>@((bucket.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</td>
+                                                        <td>@bucket.AverageR.ToString("+0.00;-0.00;0.00", CultureInfo.InvariantCulture)</td>
+                                                        <td>@CalibrationVerdict(bucket)</td>
+                                                    </tr>
+                                                }
+                                            </tbody>
+                                        </MudSimpleTable>
+                                    </MudPaper>
+                                </MudItem>
+                            }
+                            <MudItem xs="12" md="6">
+                                <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                                    <MudText Typo="Typo.subtitle1" Class="mb-2">Acerto por fonte</MudText>
+                                    @foreach (AccuracyStat stat in _record.BySource.Take(12))
+                                    {
+                                        <div class="d-flex align-center py-1">
+                                            <MudText Typo="Typo.body2">@stat.Label</MudText>
+                                            <MudText Typo="Typo.caption" Class="symbol-name ml-2">@stat.Count</MudText>
+                                            <MudSpacer />
+                                            <MudText Typo="Typo.body2">@((stat.WinRate * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                        </div>
+                                    }
+                                </MudPaper>
+                            </MudItem>
+                        </MudGrid>
+
+                        <MudPaper Elevation="0" Outlined="true" Class="mt-4">
+                            <MudTable Items="_closed" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                                <HeaderContent>
+                                    <MudTh>Ativo</MudTh>
+                                    <MudTh>Direção</MudTh>
+                                    <MudTh>Resultado</MudTh>
+                                    <MudTh Style="text-align:right">R</MudTh>
+                                    <MudTh>Fechada</MudTh>
+                                </HeaderContent>
+                                <RowTemplate>
+                                    <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
+                                    <MudTd>@(context.Direction == TradeDirection.Buy ? "Compra" : "Venda")</MudTd>
+                                    <MudTd>@StatusLabel(context.Status)</MudTd>
+                                    <MudTd Style="text-align:right">
+                                        <MudText Typo="Typo.body2" Color="@(context.RMultiple >= 0 ? Color.Success : Color.Error)">
+                                            @(context.RMultiple >= 0 ? "+" : string.Empty)@context.RMultiple?.ToString("0.00", CultureInfo.InvariantCulture)
+                                        </MudText>
+                                    </MudTd>
+                                    <MudTd>@(context.ClosedAt is { } closed ? TimeAgo(closed) : "—")</MudTd>
+                                </RowTemplate>
+                            </MudTable>
+                        </MudPaper>
+                    }
+                </MudTabPanel>
+                <MudTabPanel Text="Fiabilidade">
+                    <ModelReliabilityPanel />
+                </MudTabPanel>
+                <MudTabPanel Text="Backtest">
+                    <MudToggleGroup T="string" @bind-Value="_backtestKind" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary" Class="mb-4">
+                        <MudToggleItem Value="@("swing")" Text="Swing (diário)" />
+                        <MudToggleItem Value="@("intraday")" Text="Intraday (5 min)" />
+                    </MudToggleGroup>
+
+                    @if (_backtestKind == "intraday")
+                    {
+                        <IntradayBacktestPanel />
+                    }
+                    else
+                    {
+                        <BacktestPanel />
+                    }
+                </MudTabPanel>
+            </MudTabs>
         </MudTabPanel>
     </MudTabs>
 </MudContainer>

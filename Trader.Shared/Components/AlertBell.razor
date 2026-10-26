@@ -1,4 +1,5 @@
 @using Microsoft.AspNetCore.SignalR.Client
+@using Trader.Core.Alerts
 @implements IAsyncDisposable
 @inject TraderApiClient Api
 @inject AuthSession Session
@@ -11,19 +12,35 @@
         <div class="alert-list">
             @if (_items.Count == 0)
             {
-                <MudText Typo="Typo.body2" Class="symbol-name pa-4">Sem alertas. Aparecem aqui as sugestões novas e os stops/alvos atingidos.</MudText>
+                <MudText Typo="Typo.body2" Class="symbol-name pa-4">Sem alertas. Aqui aparecem os stops e alvos das tuas trades, os teus alertas de preço e um resumo do mercado.</MudText>
             }
-            else
+
+            @if (Own.Count > 0)
             {
-                @foreach (AlertDto alert in _items)
+                <MudText Typo="Typo.overline" Class="px-4 pt-2 symbol-name">As minhas trades e alertas</MudText>
+                @foreach (AlertDto alert in Own.Take(8))
                 {
                     <MudMenuItem OnClick="@(() => Open(alert))">
                         <div class="d-flex align-center" style="gap:12px">
-                            <MudIcon Icon="@IconFor(alert.Kind)" Color="@ColorFor(alert.Kind)" Size="Size.Small" />
+                            <MudIcon Icon="@IconFor(alert.Kind)" Color="@ColorFor(alert.Kind)" />
                             <div>
-                                <MudText Typo="Typo.body2" Style="@(alert.Unread ? "font-weight:600" : null)">@alert.Title</MudText>
-                                <MudText Typo="Typo.caption" Class="symbol-name">@alert.Message · @alert.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")</MudText>
+                                <MudText Typo="Typo.body2" Style="@(alert.Unread ? "font-weight:700" : "font-weight:500")">@alert.Title</MudText>
+                                <MudText Typo="Typo.caption" Class="symbol-name">@alert.CreatedAt.ToLocalTime().ToString("dd/MM HH:mm")@(IsTrade(alert.Kind) ? " · " + alert.Message : string.Empty)</MudText>
                             </div>
+                        </div>
+                    </MudMenuItem>
+                }
+            }
+
+            @if (MarketSummary.Count > 0)
+            {
+                <MudText Typo="Typo.overline" Class="px-4 pt-2 symbol-name">Mercado</MudText>
+                @foreach ((string text, string link, AlertKind kind) in MarketSummary)
+                {
+                    <MudMenuItem OnClick="@(() => Navigation.NavigateTo(link))">
+                        <div class="d-flex align-center" style="gap:12px">
+                            <MudIcon Icon="@IconFor(kind)" Color="Color.Default" Size="Size.Small" />
+                            <MudText Typo="Typo.body2">@text</MudText>
                         </div>
                     </MudMenuItem>
                 }
@@ -37,6 +54,36 @@
     private HubConnection? _hub;
     private List<AlertDto> _items = [];
     private int _unread;
+
+    private List<AlertDto> Own => _items.Where(a => NtfyRouting.IsOwn(a.Kind)).ToList();
+
+    private List<(string Text, string Link, AlertKind Kind)> MarketSummary
+    {
+        get
+        {
+            List<AlertDto> market = _items.Where(a => !NtfyRouting.IsOwn(a.Kind)).ToList();
+            List<(string, string, AlertKind)> lines = [];
+
+            AddCount(lines, market.Count(a => a.Kind == AlertKind.NewSuggestion), "sugestão nova", "sugestões novas", "/prediction", AlertKind.NewSuggestion);
+            AddCount(lines, market.Count(a => a.Kind is AlertKind.TakeProfit or AlertKind.StopLoss or AlertKind.Expired), "sugestão fechada", "sugestões fechadas", "/prediction", AlertKind.TakeProfit);
+            AddCount(lines, market.Count(a => a.Kind == AlertKind.Radar), "movimento no radar", "movimentos no radar", "/prediction?tab=radar", AlertKind.Radar);
+            AddCount(lines, market.Count(a => a.Kind == AlertKind.Halt), "suspensão de negociação", "suspensões de negociação", "/session", AlertKind.Halt);
+            AddCount(lines, market.Count(a => a.Kind == AlertKind.Calendar), "evento no calendário", "eventos no calendário", "/calendar", AlertKind.Calendar);
+            AddCount(lines, market.Count(a => a.Kind == AlertKind.DailySummary), "resumo do dia", "resumos do dia", "/", AlertKind.DailySummary);
+
+            return lines;
+        }
+    }
+
+    private static void AddCount(List<(string, string, AlertKind)> lines, int count, string singular, string plural, string link, AlertKind kind)
+    {
+        if (count > 0)
+        {
+            lines.Add(($"{count} {(count == 1 ? singular : plural)}", link, kind));
+        }
+    }
+
+    private static bool IsTrade(AlertKind kind) => kind is AlertKind.TradeStopLoss or AlertKind.TradeTakeProfit;
 
     protected override async Task OnAfterRenderAsync(bool firstRender)
     {
@@ -56,6 +103,12 @@
             AlertFeed feed = await Api.GetAlertsAsync();
             _items = feed.Items.ToList();
             _unread = feed.UnreadCount;
+
+            foreach (AlertDto alert in _items.Where(i => i.Unread && IsTrade(i.Kind)).Take(3))
+            {
+                ShowTradeResult(alert);
+            }
+
             StateHasChanged();
         }
         catch (HttpRequestException)
@@ -82,13 +135,18 @@
 
     private Task OnAlertsRaisedAsync(List<AlertDto> raised) => InvokeAsync(() =>
     {
-        _items = raised.Concat(_items).Take(30).ToList();
+        _items = raised.Concat(_items).Take(60).ToList();
         _unread += raised.Count;
 
-        foreach (AlertDto alert in raised.Take(3))
+        foreach (AlertDto alert in raised.Where(a => IsTrade(a.Kind)))
+        {
+            ShowTradeResult(alert);
+        }
+
+        foreach (AlertDto alert in raised.Where(a => a.Kind is AlertKind.PriceTarget or AlertKind.Rule).Take(3))
         {
             AlertDto target = alert;
-            Snackbar.Add($"{alert.Title} — {alert.Message}", SeverityFor(alert.Kind), config =>
+            Snackbar.Add($"{alert.Title} — {alert.Message}", Severity.Warning, config =>
             {
                 config.OnClick = _ =>
                 {
@@ -98,8 +156,50 @@
             });
         }
 
+        int market = raised.Count(a => !NtfyRouting.IsOwn(a.Kind));
+
+        if (market > 0)
+        {
+            Snackbar.Add(market == 1 ? "1 novidade no mercado (ver na campainha)" : $"{market} novidades no mercado (ver na campainha)", Severity.Normal, config =>
+            {
+                config.VisibleStateDuration = 3000;
+                config.ShowCloseIcon = true;
+            });
+        }
+
         StateHasChanged();
     });
+
+    private void ShowTradeResult(AlertDto alert)
+    {
+        bool stop = alert.Kind == AlertKind.TradeStopLoss;
+
+        Snackbar.Add(
+            builder =>
+            {
+                builder.OpenElement(0, "div");
+                builder.AddAttribute(1, "style", "font-size:1.05rem;font-weight:700");
+                builder.AddContent(2, alert.Title);
+                builder.CloseElement();
+                builder.OpenElement(3, "div");
+                builder.AddAttribute(4, "style", "font-size:.8rem;opacity:.9;margin-top:2px");
+                builder.AddContent(5, alert.Message);
+                builder.CloseElement();
+            },
+            stop ? Severity.Error : Severity.Success,
+            config =>
+            {
+                config.RequireInteraction = true;
+                config.SnackbarVariant = Variant.Filled;
+                config.Action = "Ver trade";
+                config.ActionColor = Color.Inherit;
+                config.OnClick = _ =>
+                {
+                    Open(alert);
+                    return Task.CompletedTask;
+                };
+            });
+    }
 
     private void Open(AlertDto alert) => Navigation.NavigateTo(AlertLinks.For(alert), forceLoad: false);
 
@@ -142,15 +242,6 @@
         AlertKind.DailySummary => Color.Primary,
         AlertKind.Expired => Color.Default,
         _ => Color.Primary
-    };
-
-    private static Severity SeverityFor(AlertKind kind) => kind switch
-    {
-        AlertKind.TakeProfit or AlertKind.TradeTakeProfit => Severity.Success,
-        AlertKind.StopLoss or AlertKind.TradeStopLoss => Severity.Error,
-        AlertKind.PriceTarget or AlertKind.Calendar => Severity.Warning,
-        AlertKind.Expired => Severity.Normal,
-        _ => Severity.Info
     };
 
     public async ValueTask DisposeAsync()

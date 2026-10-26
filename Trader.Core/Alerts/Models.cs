@@ -44,7 +44,7 @@ public sealed record AlertDto(long Id, AlertKind Kind, string Symbol, string Tit
 
 public sealed record AlertFeed(IReadOnlyList<AlertDto> Items, int UnreadCount);
 
-public sealed record NtfySettings(string Server, string Topic, string PublicUrl = "")
+public sealed record NtfySettings(string Server, string Topic, string PublicUrl = "", bool PushMarketAlerts = false)
 {
     public const string DefaultServer = "https://ntfy.sh";
 

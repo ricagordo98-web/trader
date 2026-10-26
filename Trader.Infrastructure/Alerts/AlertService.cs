@@ -33,9 +33,10 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
         {
             UserPreferences? own = group.Key is null ? null : await preferences.GetAsync(group.Key, cancellationToken);
             NtfySettings target = ntfy with { Topic = NtfyRouting.ResolveTopic(ntfy, own) };
+            bool marketAllowed = own is null ? ntfy.PushMarketAlerts : own.PushMarketAlerts;
             List<AlertDto> dtos = group
                 .Select(a => (Alert: a, Dto: ToDto(a, true)))
-                .Where(x => NtfyRouting.ShouldPush(x.Dto, x.Alert.Quiet, own, hour))
+                .Where(x => NtfyRouting.ShouldPush(x.Dto, x.Alert.Quiet, own, hour, marketAllowed))
                 .Select(x => x.Dto)
                 .ToList();
 
@@ -66,7 +67,7 @@ public sealed class AlertService(TraderDbContext dbContext, IAlertNotifier notif
 
     public async Task<IReadOnlyList<string>> SaveNtfyAsync(NtfySettings settings, CancellationToken cancellationToken)
     {
-        NtfySettings clean = new(settings.Server.Trim().TrimEnd('/'), settings.Topic.Trim(), settings.PublicUrl.Trim().TrimEnd('/'));
+        NtfySettings clean = new(settings.Server.Trim().TrimEnd('/'), settings.Topic.Trim(), settings.PublicUrl.Trim().TrimEnd('/'), settings.PushMarketAlerts);
         IReadOnlyList<string> errors = NtfySettingsValidator.Validate(clean);
 
         if (errors.Count > 0)

@@ -9,7 +9,8 @@ public sealed record UserPreferences(
     int? QuietToHour = null,
     Trader.Core.Backtesting.CostModel? Costs = null,
     string? NtfyTopic = null,
-    IReadOnlyList<string>? Favorites = null)
+    IReadOnlyList<string>? Favorites = null,
+    bool PushMarketAlerts = false)
 {
     public static readonly UserPreferences Default = new(BrokerCatalog.Other, null, [], true);
 

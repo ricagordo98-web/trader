@@ -7,9 +7,11 @@ public static class NtfyRouting
     public static string ResolveTopic(NtfySettings global, UserPreferences? preferences) =>
         preferences?.NtfyTopic is { Length: > 0 } own ? own : global.Topic;
 
-    public static bool ShouldPush(AlertDto alert, bool quietFlag, UserPreferences? preferences, int hour)
+    public static bool IsOwn(AlertKind kind) => kind is AlertKind.TradeStopLoss or AlertKind.TradeTakeProfit or AlertKind.PriceTarget or AlertKind.Rule;
+
+    public static bool ShouldPush(AlertDto alert, bool quietFlag, UserPreferences? preferences, int hour, bool marketAllowed)
     {
-        if (quietFlag)
+        if (quietFlag || (!IsOwn(alert.Kind) && !marketAllowed))
         {
             return false;
         }

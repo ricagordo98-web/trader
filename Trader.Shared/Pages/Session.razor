@@ -86,7 +86,7 @@
                 <MudText Typo="Typo.subtitle1" Class="mb-2">As minhas trades abertas</MudText>
                 @if (_trades.Count == 0)
                 {
-                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem trades abertas no diário.</MudText>
+                    <MudText Typo="Typo.body2" Color="Color.Secondary">Sem trades abertas na carteira.</MudText>
                 }
 
                 @foreach (JournalTradeDto trade in _trades)

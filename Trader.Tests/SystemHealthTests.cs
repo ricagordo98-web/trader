@@ -1,6 +1,7 @@
 using FluentAssertions;
 using Trader.Core.Alerts;
 using Trader.Core.Health;
+using Trader.Core.Journal;
 using Trader.Core.Models;
 
 namespace Trader.Tests;
@@ -76,10 +77,31 @@ public class NtfyRoutingTests
     {
         UserPreferences quiet = UserPreferences.Default with { QuietFromHour = 22, QuietToHour = 7 };
 
-        NtfyRouting.ShouldPush(Alert(AlertKind.NewSuggestion), false, quiet, 23).Should().BeFalse();
-        NtfyRouting.ShouldPush(Alert(AlertKind.TradeStopLoss), false, quiet, 23).Should().BeTrue();
-        NtfyRouting.ShouldPush(Alert(AlertKind.NewSuggestion), false, quiet, 12).Should().BeTrue();
-        NtfyRouting.ShouldPush(Alert(AlertKind.TradeStopLoss), true, quiet, 12).Should().BeFalse();
+        NtfyRouting.ShouldPush(Alert(AlertKind.PriceTarget), false, quiet, 23, true).Should().BeFalse();
+        NtfyRouting.ShouldPush(Alert(AlertKind.TradeStopLoss), false, quiet, 23, false).Should().BeTrue();
+        NtfyRouting.ShouldPush(Alert(AlertKind.PriceTarget), false, quiet, 12, false).Should().BeTrue();
+        NtfyRouting.ShouldPush(Alert(AlertKind.TradeStopLoss), true, quiet, 12, true).Should().BeFalse();
+    }
+
+    [Fact]
+    public void ShouldPush_MarketAlertsOnlyWhenAllowed()
+    {
+        NtfyRouting.ShouldPush(Alert(AlertKind.NewSuggestion), false, null, 12, false).Should().BeFalse();
+        NtfyRouting.ShouldPush(Alert(AlertKind.Radar), false, null, 12, true).Should().BeTrue();
+        NtfyRouting.ShouldPush(Alert(AlertKind.TradeTakeProfit), false, null, 12, false).Should().BeTrue();
+        NtfyRouting.ShouldPush(Alert(AlertKind.Rule), false, null, 12, false).Should().BeTrue();
+    }
+
+    [Fact]
+    public void ForTradeLevel_ShowsTheResultInTheTitle()
+    {
+        JournalTrade trade = new() { Id = 7, UserId = "u", Symbol = "AMZN", Direction = TradeDirection.Buy, EntryPrice = 100, Quantity = 10, StopLoss = 95, TakeProfit = 110, FxRate = 0.9 };
+
+        Alert stop = AlertFactory.ForTradeLevel(trade, TradeLevel.StopLoss, 95, DateTimeOffset.UtcNow, "EUR");
+        Alert target = AlertFactory.ForTradeLevel(trade, TradeLevel.TakeProfit, 110, DateTimeOffset.UtcNow, "EUR");
+
+        stop.Title.Should().Be("AMZN · Stop loss · -45,00 € (-1,0 R)");
+        target.Title.Should().Be("AMZN · Take profit · +90,00 € (+2,0 R)");
     }
 
     [Fact]

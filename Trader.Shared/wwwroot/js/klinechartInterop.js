@@ -284,7 +284,8 @@ export function create(id, container, dotnet, dark, showVolume) {
 
     charts.set(id, state);
     if (showVolume) {
-        chart.createIndicator('VOL', false, { id: 'vol_pane', height: 90 });
+        chart.createIndicator({ name: 'VOL', paneId: 'vol_pane' }, false);
+        chart.setPaneOptions({ id: 'vol_pane', height: 90 });
         state.indicators.set('VOL', 'vol_pane');
     }
 }
@@ -387,7 +388,7 @@ function applyIndicatorConfig(state, name) {
     }));
 
     try {
-        state.chart.overrideIndicator({ name, calcParams: config.calcParams.length > 0 ? config.calcParams : undefined, styles: { lines } }, paneId);
+        state.chart.overrideIndicator({ name, paneId, calcParams: config.calcParams.length > 0 ? config.calcParams : undefined, styles: { lines } });
     } catch (error) {
         console.warn('Indicator configuration failed', error);
     }
@@ -559,9 +560,12 @@ export function toggleIndicator(id, name, mainPane) {
         state.chart.removeIndicator({ paneId: state.indicators.get(name), name });
         state.indicators.delete(name);
     } else {
-        const paneId = state.chart.createIndicator(name, mainPane, mainPane ? { id: 'candle_pane' } : undefined);
-        state.indicators.set(name, mainPane ? 'candle_pane' : paneId);
-        applyIndicatorConfig(state, name);
+        const paneId = mainPane ? 'candle_pane' : `pane_${name}`;
+
+        if (state.chart.createIndicator({ name, paneId }, mainPane)) {
+            state.indicators.set(name, paneId);
+            applyIndicatorConfig(state, name);
+        }
     }
 
     return Array.from(state.indicators.keys());
@@ -733,7 +737,7 @@ export function setCompare(id, label, candles) {
         values[typeof c.time === 'number' ? c.time : Date.parse(c.time)] = c.close;
     }
 
-    state.chart.createIndicator({ name: 'COMPARE', shortName: label, extendData: { values }, paneId: 'candle_pane' }, true, { id: 'candle_pane' });
+    state.chart.createIndicator({ name: 'COMPARE', shortName: label, extendData: { values }, paneId: 'candle_pane' }, true);
     state.compareActive = true;
 }
 

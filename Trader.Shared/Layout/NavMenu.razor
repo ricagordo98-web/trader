@@ -1,13 +1,21 @@
-<MudNavMenu Class="pt-2">
-    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Newspaper">Notícias</MudNavLink>
+<MudNavMenu Class="pt-1">
+    <div class="nav-section">Hoje</div>
     <MudNavLink Href="/session" Icon="@Icons.Material.Filled.Today">Sessão</MudNavLink>
-    <MudNavLink Href="/trading" Icon="@Icons.Material.Filled.CandlestickChart">Trading</MudNavLink>
-    <MudNavLink Href="/charts" Icon="@Icons.Material.Filled.GridView">Gráficos</MudNavLink>
-    <MudNavLink Href="/market" Icon="@Icons.Material.Filled.Dashboard">Mercado</MudNavLink>
-    <MudNavLink Href="/prediction" Icon="@Icons.Material.Filled.AutoGraph">Predição</MudNavLink>
+    <MudNavLink Href="/" Match="NavLinkMatch.All" Icon="@Icons.Material.Filled.Newspaper">Notícias</MudNavLink>
     <MudNavLink Href="/calendar" Icon="@Icons.Material.Filled.Event">Calendário</MudNavLink>
-    <MudNavLink Href="/journal" Icon="@Icons.Material.Filled.MenuBook">Diário</MudNavLink>
+
+    <div class="nav-section">Mercados</div>
+    <MudNavLink Href="/trading" Icon="@Icons.Material.Filled.CandlestickChart">Ativos</MudNavLink>
+    <MudNavLink Href="/charts" Icon="@Icons.Material.Filled.GridView">Gráficos</MudNavLink>
+    <MudNavLink Href="/market" Icon="@Icons.Material.Filled.Dashboard">Mapa do mercado</MudNavLink>
+
+    <div class="nav-section">Ideias</div>
+    <MudNavLink Href="/prediction" Icon="@Icons.Material.Filled.AutoGraph">Predição</MudNavLink>
+
+    <div class="nav-section">Operações</div>
+    <MudNavLink Href="/journal" Icon="@Icons.Material.Filled.AccountBalanceWallet">Carteira</MudNavLink>
     <MudNavLink Href="/simulator" Icon="@Icons.Material.Filled.School">Simulador</MudNavLink>
+
     <MudDivider Class="my-2" />
     <MudNavLink Href="/settings" Icon="@Icons.Material.Filled.Settings">Configurações</MudNavLink>
     <MudNavLink Href="/help" Icon="@Icons.Material.Filled.HelpOutline">Ajuda</MudNavLink>

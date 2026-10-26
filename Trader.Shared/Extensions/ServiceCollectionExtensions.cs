@@ -10,7 +10,14 @@ public static class ServiceCollectionExtensions
 {
     public static IServiceCollection AddTraderShared(this IServiceCollection services)
     {
-        services.AddMudServices();
+        services.AddMudServices(config =>
+        {
+            config.SnackbarConfiguration.ShowTransitionDuration = 120;
+            config.SnackbarConfiguration.HideTransitionDuration = 0;
+            config.SnackbarConfiguration.VisibleStateDuration = 6000;
+            config.SnackbarConfiguration.MaxDisplayedSnackbars = 4;
+            config.SnackbarConfiguration.PreventDuplicates = true;
+        });
         services.AddScoped<ThemeState>();
         services.AddScoped<TraderApiClient>();
         services.AddScoped<SymbolDirectory>();

@@ -142,7 +142,7 @@ public class NtfyIntegrationTests
         await using AsyncServiceScope services = overridden.Services.CreateAsyncScope();
         IAlertService alerts = services.ServiceProvider.GetRequiredService<IAlertService>();
 
-        Func<Task> act = () => alerts.RaiseAsync([new Alert { Kind = AlertKind.NewSuggestion, Symbol = "AAPL", Title = "t", Message = "m", CreatedAt = DateTimeOffset.UtcNow }], CancellationToken.None);
+        Func<Task> act = () => alerts.RaiseAsync([new Alert { Kind = AlertKind.PriceTarget, Symbol = "AAPL", Title = "t", Message = "m", CreatedAt = DateTimeOffset.UtcNow }], CancellationToken.None);
 
         await act.Should().NotThrowAsync();
         await publisher.Received(1).PublishAsync(Arg.Is<NtfySettings>(s => s.Topic == "trader-abc123xyz"), Arg.Any<IReadOnlyList<AlertDto>>(), Arg.Any<CancellationToken>());

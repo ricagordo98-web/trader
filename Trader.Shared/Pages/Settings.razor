@@ -49,7 +49,6 @@
                 </div>
             </MudPaper>
         </MudTabPanel>
-
         <MudTabPanel Text="Perfil">
             <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
                 <MudText Typo="Typo.subtitle1" Class="mb-2">A tua corretora</MudText>
@@ -60,7 +59,7 @@
                     }
                 </MudSelect>
                 <MudText Typo="Typo.caption" Class="symbol-name mt-2">
-                    Usada nas notas de fonte dos preços e como plataforma por omissão no diário. A Trading 212 só disponibiliza API para contas Invest e ISA, não para CFD, por isso a ligação automática à conta não está disponível.
+                    Usada nas notas de fonte dos preços e como plataforma por omissão na carteira. A Trading 212 só disponibiliza API para contas Invest e ISA, não para CFD, por isso a ligação automática à conta não está disponível.
                 </MudText>
             </MudPaper>
             <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
@@ -102,6 +101,8 @@
                     <MudTextField T="string" @bind-Value="_myTopic" Label="O meu tópico ntfy (opcional, só para ti)" Variant="Variant.Outlined" Margin="Margin.Dense" MaxLength="64" Style="max-width:380px" />
                     <MudButton Variant="Variant.Text" OnClick="@(() => SaveProfileAsync(_profile with { NtfyTopic = string.IsNullOrWhiteSpace(_myTopic) ? null : _myTopic.Trim() }))">Guardar</MudButton>
                 </div>
+                <MudSwitch T="bool" Value="_profile.PushMarketAlerts" ValueChanged="@((bool on) => SaveProfileAsync(_profile with { PushMarketAlerts = on }))" Color="Color.Primary" Class="mt-2"
+                           Label="Enviar também novidades do mercado para o telemóvel" />
                 <MudText Typo="Typo.caption" Class="symbol-name mt-1">
                     Se definires um tópico teu, os teus alertas (trades, regras, preços) vão para ele em vez do tópico partilhado. Na app ntfy do Android, subscreve-o e os botões de ação aparecem na notificação.
                 </MudText>
@@ -118,160 +119,6 @@
                 }
             </MudPaper>
         </MudTabPanel>
-
-        <MudTabPanel Text="Regras de alerta">
-            <AlertRulesPanel />
-        </MudTabPanel>
-
-        <MudTabPanel Text="Conta">
-            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                <div class="d-flex align-center flex-wrap gap-3">
-                    <div>
-                        <MudText Typo="Typo.caption" Class="symbol-name">Sessão iniciada como</MudText>
-                        <MudText Typo="Typo.subtitle1">@Session.Email</MudText>
-                    </div>
-                    <MudSpacer />
-                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Logout" OnClick="Session.LogoutAsync">Terminar sessão</MudButton>
-                </div>
-            </MudPaper>
-
-            <MudGrid Spacing="4">
-                <MudItem xs="12" md="6">
-                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                        <MudText Typo="Typo.subtitle1" Class="mb-3">Alterar palavra-passe</MudText>
-                        <MudTextField T="string" @bind-Value="_oldPassword" Label="Palavra-passe atual" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
-                        <MudTextField T="string" @bind-Value="_newPassword" Label="Nova palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true"
-                                      HelperText="Mínimo de 8 caracteres, com maiúscula, minúscula, número e símbolo." />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrEmpty(_oldPassword) || string.IsNullOrEmpty(_newPassword))" OnClick="ChangePasswordAsync">Guardar</MudButton>
-                    </MudPaper>
-                </MudItem>
-                <MudItem xs="12" md="6">
-                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                        <MudText Typo="Typo.subtitle1" Class="mb-1">Criar novo utilizador</MudText>
-                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">Só quem tem sessão iniciada pode criar contas. Não existe registo público.</MudText>
-                        <MudTextField T="string" @bind-Value="_userEmail" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
-                        <MudTextField T="string" @bind-Value="_userPassword" Label="Palavra-passe inicial" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_userEmail) || string.IsNullOrEmpty(_userPassword))" OnClick="CreateUserAsync">Criar conta</MudButton>
-                    </MudPaper>
-                </MudItem>
-
-                @if (ServerEndpoint.IsConfigurable)
-                {
-                    <MudItem xs="12">
-                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                            <MudText Typo="Typo.subtitle1" Class="mb-1">Servidor</MudText>
-                            <MudText Typo="Typo.caption" Class="symbol-name mb-3">Endereço do servidor Trader a que esta app se liga. A alteração aplica-se depois de reiniciares a app.</MudText>
-                            <div class="d-flex flex-wrap gap-3 align-center">
-                                <MudTextField T="string" @bind-Value="_serverUrl" Label="URL" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" Immediate="true" />
-                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveServerUrl">Guardar</MudButton>
-                            </div>
-                        </MudPaper>
-                    </MudItem>
-                }
-            </MudGrid>
-        </MudTabPanel>
-
-        <MudTabPanel Text="Watchlist">
-            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                <MudText Typo="Typo.subtitle1" Class="mb-1">Adicionar instrumento</MudText>
-                <MudText Typo="Typo.caption" Class="symbol-name mb-3">Usa o símbolo do Yahoo Finance (ex.: AMD, GC=F para o ouro, EURUSD=X para forex). O símbolo é validado antes de ser guardado.</MudText>
-                <MudGrid Spacing="2" Class="align-center">
-                    <MudItem xs="12" sm="3"><MudTextField T="string" @bind-Value="_newSymbol" Label="Símbolo" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
-                    <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_newName" Label="Nome" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
-                    <MudItem xs="6" sm="2">
-                        <MudSelect T="AssetClass" @bind-Value="_newClass" Label="Tipo" Variant="Variant.Outlined" Margin="Margin.Dense">
-                            <MudSelectItem Value="AssetClass.Stock">Ação</MudSelectItem>
-                            <MudSelectItem Value="AssetClass.Commodity">Mercadoria</MudSelectItem>
-                            <MudSelectItem Value="AssetClass.Etf">ETF</MudSelectItem>
-                            <MudSelectItem Value="AssetClass.Forex">Forex</MudSelectItem>
-                            <MudSelectItem Value="AssetClass.Crypto">Cripto</MudSelectItem>
-                            <MudSelectItem Value="AssetClass.Index">Índice</MudSelectItem>
-                        </MudSelect>
-                    </MudItem>
-                    <MudItem xs="6" sm="1"><MudTextField T="string" @bind-Value="_newCurrency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
-                    <MudItem xs="12" sm="2">
-                        <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newSymbol) || string.IsNullOrWhiteSpace(_newName))" OnClick="AddInstrumentAsync">Adicionar</MudButton>
-                    </MudItem>
-                </MudGrid>
-                @if (_watchlistError is not null)
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_watchlistError</MudAlert>
-                }
-            </MudPaper>
-
-            <MudPaper Elevation="0" Outlined="true">
-                <MudTable Items="_watchlist" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
-                    <HeaderContent>
-                        <MudTh>Símbolo</MudTh>
-                        <MudTh>Nome</MudTh>
-                        <MudTh>Tipo</MudTh>
-                        <MudTh>Moeda</MudTh>
-                        <MudTh></MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
-                        <MudTd>@context.Name</MudTd>
-                        <MudTd>@ClassLabel(context.AssetClass)</MudTd>
-                        <MudTd>@context.Currency</MudTd>
-                        <MudTd Style="text-align:right">
-                            <MudTooltip Text="Remover da watchlist">
-                                <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Disabled="_busy" aria-label="@($"Remover {context.Symbol}")" OnClick="@(() => RemoveInstrumentAsync(context))" />
-                            </MudTooltip>
-                        </MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-        </MudTabPanel>
-
-        <MudTabPanel Text="Fontes">
-            <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-3">
-                <MudText Typo="Typo.subtitle1" Class="mb-2">Estado do sistema</MudText>
-                @foreach (HealthItem item in _health)
-                {
-                    <div class="d-flex align-center mb-1">
-                        <MudIcon Icon="@HealthIcon(item.Level)" Color="@HealthColor(item.Level)" Size="Size.Small" Class="mr-2" />
-                        <MudText Typo="Typo.body2"><b>@item.Name</b> · @item.Detail</MudText>
-                    </div>
-                }
-            </MudPaper>
-            <MudPaper Elevation="0" Outlined="true">
-                <MudTable Items="_sources" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
-                    <HeaderContent>
-                        <MudTh>Fonte</MudTh>
-                        <MudTh>Estado</MudTh>
-                        <MudTh>Intervalo</MudTh>
-                        <MudTh>Última recolha</MudTh>
-                        <MudTh Style="text-align:right">Obtidos / novos</MudTh>
-                    </HeaderContent>
-                    <RowTemplate>
-                        <MudTd>@context.Name</MudTd>
-                        <MudTd>
-                            @if (!context.Enabled)
-                            {
-                                <MudTooltip Text="@context.DisabledReason"><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Desligada</MudChip></MudTooltip>
-                            }
-                            else if (context.LastError is not null)
-                            {
-                                <MudTooltip Text="@context.LastError"><MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Atenção</MudChip></MudTooltip>
-                            }
-                            else if (context.LastRun is null)
-                            {
-                                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">A aguardar</MudChip>
-                            }
-                            else
-                            {
-                                <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Ativa</MudChip>
-                            }
-                        </MudTd>
-                        <MudTd>@(context.Enabled ? $"{context.IntervalMinutes} min" : "—")</MudTd>
-                        <MudTd>@(context.LastRun is { } run ? run.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "—")</MudTd>
-                        <MudTd Style="text-align:right">@(context.LastRun is null ? "—" : $"{context.LastFetched} / {context.LastAdded}")</MudTd>
-                    </RowTemplate>
-                </MudTable>
-            </MudPaper>
-            <MudText Typo="Typo.caption" Class="symbol-name mt-2">As chaves e credenciais das fontes configuram-se no servidor (ver README). Aqui só se mostra o estado.</MudText>
-        </MudTabPanel>
-
         <MudTabPanel Text="Notificações">
             @if (_ntfyTopic is not null)
             {
@@ -286,6 +133,10 @@
                         <MudItem xs="12" md="6"><MudTextField T="string" @bind-Value="_ntfyServer" Label="Servidor" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                         <MudItem xs="12"><MudTextField T="string" @bind-Value="_ntfyPublicUrl" Label="Endereço público da app (opcional)" Variant="Variant.Outlined" Margin="Margin.Dense" Placeholder="https://trader.exemplo.com"
                                                        HelperText="Com este endereço, tocar na notificação abre a app no sítio certo (e aparece o botão Abrir no Trader). Tem de ser acessível a partir do telemóvel." /></MudItem>
+                        <MudItem xs="12">
+                            <MudSwitch T="bool" @bind-Value="_ntfyPushMarket" Color="Color.Primary" Label="Enviar também novidades do mercado (sugestões, radar, calendário, resumo) para o tópico partilhado" />
+                            <MudText Typo="Typo.caption" Class="symbol-name">Desligado por omissão: só chegam ao telemóvel os stops e alvos das tuas trades, os alertas de preço e as tuas regras.</MudText>
+                        </MudItem>
                     </MudGrid>
                 </MudPaper>
                 @if (_ntfyError is not null)
@@ -305,7 +156,7 @@
             <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-4">
                 <MudText Typo="Typo.subtitle1" Class="mb-1">Alertas de preço</MudText>
                 <MudText Typo="Typo.caption" Class="symbol-name mb-3">
-                    Avisa-te quando um ativo cruza o preço que definires. Os stops e alvos das trades abertas no Diário avisam automaticamente.
+                    Avisa-te quando um ativo cruza o preço que definires. Os stops e alvos das trades abertas na Carteira avisam automaticamente.
                 </MudText>
                 <MudGrid Spacing="2" Class="mb-2">
                     <MudItem xs="12" sm="4">
@@ -357,79 +208,230 @@
                     </MudSimpleTable>
                 }
             </MudPaper>
+            <MudDivider Class="my-4" />
+            <MudText Typo="Typo.h6" Class="mb-2">Regras de alerta</MudText>
+            <AlertRulesPanel />
         </MudTabPanel>
-
-        <MudTabPanel Text="Sistema">
-            <MudPaper Elevation="0" Outlined="true" Class="pa-4">
-                <MudText Typo="Typo.subtitle1" Class="mb-1">Backups da base de dados</MudText>
-                <MudText Typo="Typo.caption" Class="symbol-name mb-3">
-                    O servidor guarda uma cópia por dia (as últimas 14) na pasta backups, ao lado da base de dados. Para restaurar, para o servidor e substitui o trader.db por uma destas cópias.
-                </MudText>
-                @if (_backupError is not null)
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_backupError</MudAlert>
-                }
-                <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="CreateBackupAsync" Class="mb-3">Fazer backup agora</MudButton>
-                @if (_backups.Count == 0)
-                {
-                    <MudText Typo="Typo.body2" Class="symbol-name">Ainda não há backups.</MudText>
-                }
-                else
-                {
-                    <MudSimpleTable Dense="true" Elevation="0">
-                        <tbody>
-                            @foreach (BackupInfo backup in _backups)
-                            {
-                                <tr>
-                                    <td>@backup.Name</td>
-                                    <td>@backup.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
-                                    <td style="text-align:right">@((backup.SizeBytes / 1024.0 / 1024.0).ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))) MB</td>
-                                </tr>
-                            }
-                        </tbody>
-                    </MudSimpleTable>
-                }
-            </MudPaper>
-        </MudTabPanel>
-
-        <MudTabPanel Text="Scoring">
-            @if (_scoring is not null)
-            {
-                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                    <MudText Typo="Typo.subtitle1" Class="mb-1">Pesos dos sinais</MudText>
-                    <MudText Typo="Typo.caption" Class="symbol-name mb-3">Quanto cada sinal conta na pontuação. Alterações aplicam-se ao próximo cálculo (a cada 15 minutos ou em "Recalcular agora").</MudText>
-                    <MudGrid Spacing="3">
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SentimentWeight" Label="Sentimento" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BuzzWeight" Label="Volume de menções" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TrendWeight" Label="Tendência" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MomentumWeight" Label="Momentum" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BollingerWeight" Label="Bollinger" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                    </MudGrid>
-                </MudPaper>
-                <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
-                    <MudText Typo="Typo.subtitle1" Class="mb-3">Critérios para emitir uma sugestão</MudText>
-                    <MudGrid Spacing="3">
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.ConfidenceThreshold" Label="Certeza mínima (0,5–0,95)" Min="0.5" Max="0.95" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.MinAgreeingSignals" Label="Sinais concordantes (mín.)" Min="2" Max="5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MinRiskReward" Label="R:R mínimo" Min="1" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SlAtrMultiple" Label="Stop loss (× ATR)" Min="0.5" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TpAtrMultiple" Label="Take profit (× ATR)" Min="0.5" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                        <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.ExpiryDays" Label="Validade (dias)" Min="1" Max="30" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
-                    </MudGrid>
-                </MudPaper>
-                @if (_scoringError is not null)
-                {
-                    <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_scoringError</MudAlert>
-                }
-                <div class="d-flex gap-3">
-                    <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveScoringAsync">Guardar</MudButton>
-                    <MudButton Variant="Variant.Outlined" Disabled="_busy" OnClick="ResetScoringAsync">Repor valores por omissão</MudButton>
+        <MudTabPanel Text="Conta">
+            <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                <div class="d-flex align-center flex-wrap gap-3">
+                    <div>
+                        <MudText Typo="Typo.caption" Class="symbol-name">Sessão iniciada como</MudText>
+                        <MudText Typo="Typo.subtitle1">@Session.Email</MudText>
+                    </div>
+                    <MudSpacer />
+                    <MudButton Variant="Variant.Outlined" StartIcon="@Icons.Material.Filled.Logout" OnClick="Session.LogoutAsync">Terminar sessão</MudButton>
                 </div>
-            }
-            else
-            {
-                <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
-            }
+            </MudPaper>
+
+            <MudGrid Spacing="4">
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-3">Alterar palavra-passe</MudText>
+                        <MudTextField T="string" @bind-Value="_oldPassword" Label="Palavra-passe atual" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudTextField T="string" @bind-Value="_newPassword" Label="Nova palavra-passe" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true"
+                                      HelperText="Mínimo de 8 caracteres, com maiúscula, minúscula, número e símbolo." />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrEmpty(_oldPassword) || string.IsNullOrEmpty(_newPassword))" OnClick="ChangePasswordAsync">Guardar</MudButton>
+                    </MudPaper>
+                </MudItem>
+                <MudItem xs="12" md="6">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Criar novo utilizador</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">Só quem tem sessão iniciada pode criar contas. Não existe registo público.</MudText>
+                        <MudTextField T="string" @bind-Value="_userEmail" Label="Email" InputType="InputType.Email" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudTextField T="string" @bind-Value="_userPassword" Label="Palavra-passe inicial" InputType="InputType.Password" Variant="Variant.Outlined" Margin="Margin.Dense" Class="mb-3" Immediate="true" />
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="@(_busy || string.IsNullOrWhiteSpace(_userEmail) || string.IsNullOrEmpty(_userPassword))" OnClick="CreateUserAsync">Criar conta</MudButton>
+                    </MudPaper>
+                </MudItem>
+
+                @if (ServerEndpoint.IsConfigurable)
+                {
+                    <MudItem xs="12">
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">Servidor</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name mb-3">Endereço do servidor Trader a que esta app se liga. A alteração aplica-se depois de reiniciares a app.</MudText>
+                            <div class="d-flex flex-wrap gap-3 align-center">
+                                <MudTextField T="string" @bind-Value="_serverUrl" Label="URL" Variant="Variant.Outlined" Margin="Margin.Dense" Class="flex-grow-1" Immediate="true" />
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" OnClick="SaveServerUrl">Guardar</MudButton>
+                            </div>
+                        </MudPaper>
+                    </MudItem>
+                }
+            </MudGrid>
+        </MudTabPanel>
+        <MudTabPanel Text="Dados e sistema">
+            <MudTabs Rounded="true" TabPanelsClass="pt-3">
+                <MudTabPanel Text="Watchlist">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Adicionar instrumento</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">Usa o símbolo do Yahoo Finance (ex.: AMD, GC=F para o ouro, EURUSD=X para forex). O símbolo é validado antes de ser guardado.</MudText>
+                        <MudGrid Spacing="2" Class="align-center">
+                            <MudItem xs="12" sm="3"><MudTextField T="string" @bind-Value="_newSymbol" Label="Símbolo" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                            <MudItem xs="12" sm="4"><MudTextField T="string" @bind-Value="_newName" Label="Nome" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                            <MudItem xs="6" sm="2">
+                                <MudSelect T="AssetClass" @bind-Value="_newClass" Label="Tipo" Variant="Variant.Outlined" Margin="Margin.Dense">
+                                    <MudSelectItem Value="AssetClass.Stock">Ação</MudSelectItem>
+                                    <MudSelectItem Value="AssetClass.Commodity">Mercadoria</MudSelectItem>
+                                    <MudSelectItem Value="AssetClass.Etf">ETF</MudSelectItem>
+                                    <MudSelectItem Value="AssetClass.Forex">Forex</MudSelectItem>
+                                    <MudSelectItem Value="AssetClass.Crypto">Cripto</MudSelectItem>
+                                    <MudSelectItem Value="AssetClass.Index">Índice</MudSelectItem>
+                                </MudSelect>
+                            </MudItem>
+                            <MudItem xs="6" sm="1"><MudTextField T="string" @bind-Value="_newCurrency" Label="Moeda" Variant="Variant.Outlined" Margin="Margin.Dense" Immediate="true" /></MudItem>
+                            <MudItem xs="12" sm="2">
+                                <MudButton Variant="Variant.Filled" Color="Color.Primary" FullWidth="true" Disabled="@(_busy || string.IsNullOrWhiteSpace(_newSymbol) || string.IsNullOrWhiteSpace(_newName))" OnClick="AddInstrumentAsync">Adicionar</MudButton>
+                            </MudItem>
+                        </MudGrid>
+                        @if (_watchlistError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mt-3">@_watchlistError</MudAlert>
+                        }
+                    </MudPaper>
+
+                    <MudPaper Elevation="0" Outlined="true">
+                        <MudTable Items="_watchlist" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                            <HeaderContent>
+                                <MudTh>Símbolo</MudTh>
+                                <MudTh>Nome</MudTh>
+                                <MudTh>Tipo</MudTh>
+                                <MudTh>Moeda</MudTh>
+                                <MudTh></MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
+                                <MudTd>@context.Name</MudTd>
+                                <MudTd>@ClassLabel(context.AssetClass)</MudTd>
+                                <MudTd>@context.Currency</MudTd>
+                                <MudTd Style="text-align:right">
+                                    <MudTooltip Text="Remover da watchlist">
+                                        <MudIconButton Icon="@Icons.Material.Filled.DeleteOutline" Size="Size.Small" Disabled="_busy" aria-label="@($"Remover {context.Symbol}")" OnClick="@(() => RemoveInstrumentAsync(context))" />
+                                    </MudTooltip>
+                                </MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                </MudTabPanel>
+                <MudTabPanel Text="Fontes">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-3 mb-3">
+                        <MudText Typo="Typo.subtitle1" Class="mb-2">Estado do sistema</MudText>
+                        @foreach (HealthItem item in _health)
+                        {
+                            <div class="d-flex align-center mb-1">
+                                <MudIcon Icon="@HealthIcon(item.Level)" Color="@HealthColor(item.Level)" Size="Size.Small" Class="mr-2" />
+                                <MudText Typo="Typo.body2"><b>@item.Name</b> · @item.Detail</MudText>
+                            </div>
+                        }
+                    </MudPaper>
+                    <MudPaper Elevation="0" Outlined="true">
+                        <MudTable Items="_sources" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                            <HeaderContent>
+                                <MudTh>Fonte</MudTh>
+                                <MudTh>Estado</MudTh>
+                                <MudTh>Intervalo</MudTh>
+                                <MudTh>Última recolha</MudTh>
+                                <MudTh Style="text-align:right">Obtidos / novos</MudTh>
+                            </HeaderContent>
+                            <RowTemplate>
+                                <MudTd>@context.Name</MudTd>
+                                <MudTd>
+                                    @if (!context.Enabled)
+                                    {
+                                        <MudTooltip Text="@context.DisabledReason"><MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">Desligada</MudChip></MudTooltip>
+                                    }
+                                    else if (context.LastError is not null)
+                                    {
+                                        <MudTooltip Text="@context.LastError"><MudChip T="string" Size="Size.Small" Color="Color.Warning" Variant="Variant.Outlined">Atenção</MudChip></MudTooltip>
+                                    }
+                                    else if (context.LastRun is null)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined">A aguardar</MudChip>
+                                    }
+                                    else
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Color="Color.Success" Variant="Variant.Outlined">Ativa</MudChip>
+                                    }
+                                </MudTd>
+                                <MudTd>@(context.Enabled ? $"{context.IntervalMinutes} min" : "—")</MudTd>
+                                <MudTd>@(context.LastRun is { } run ? run.ToLocalTime().ToString("HH:mm:ss", CultureInfo.InvariantCulture) : "—")</MudTd>
+                                <MudTd Style="text-align:right">@(context.LastRun is null ? "—" : $"{context.LastFetched} / {context.LastAdded}")</MudTd>
+                            </RowTemplate>
+                        </MudTable>
+                    </MudPaper>
+                    <MudText Typo="Typo.caption" Class="symbol-name mt-2">As chaves e credenciais das fontes configuram-se no servidor (ver README). Aqui só se mostra o estado.</MudText>
+                </MudTabPanel>
+                <MudTabPanel Text="Sistema">
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Backups da base de dados</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                            O servidor guarda uma cópia por dia (as últimas 14) na pasta backups, ao lado da base de dados. Para restaurar, para o servidor e substitui o trader.db por uma destas cópias.
+                        </MudText>
+                        @if (_backupError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_backupError</MudAlert>
+                        }
+                        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="CreateBackupAsync" Class="mb-3">Fazer backup agora</MudButton>
+                        @if (_backups.Count == 0)
+                        {
+                            <MudText Typo="Typo.body2" Class="symbol-name">Ainda não há backups.</MudText>
+                        }
+                        else
+                        {
+                            <MudSimpleTable Dense="true" Elevation="0">
+                                <tbody>
+                                    @foreach (BackupInfo backup in _backups)
+                                    {
+                                        <tr>
+                                            <td>@backup.Name</td>
+                                            <td>@backup.CreatedAt.ToLocalTime().ToString("dd/MM/yyyy HH:mm")</td>
+                                            <td style="text-align:right">@((backup.SizeBytes / 1024.0 / 1024.0).ToString("0.0", System.Globalization.CultureInfo.GetCultureInfo("pt-PT"))) MB</td>
+                                        </tr>
+                                    }
+                                </tbody>
+                            </MudSimpleTable>
+                        }
+                    </MudPaper>
+                </MudTabPanel>
+                <MudTabPanel Text="Scoring">
+                    @if (_scoring is not null)
+                    {
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">Pesos dos sinais</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name mb-3">Quanto cada sinal conta na pontuação. Alterações aplicam-se ao próximo cálculo (a cada 15 minutos ou em "Recalcular agora").</MudText>
+                            <MudGrid Spacing="3">
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SentimentWeight" Label="Sentimento" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BuzzWeight" Label="Volume de menções" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TrendWeight" Label="Tendência" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MomentumWeight" Label="Momentum" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BollingerWeight" Label="Bollinger" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-3">Critérios para emitir uma sugestão</MudText>
+                            <MudGrid Spacing="3">
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.ConfidenceThreshold" Label="Certeza mínima (0,5–0,95)" Min="0.5" Max="0.95" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.MinAgreeingSignals" Label="Sinais concordantes (mín.)" Min="2" Max="5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MinRiskReward" Label="R:R mínimo" Min="1" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.SlAtrMultiple" Label="Stop loss (× ATR)" Min="0.5" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TpAtrMultiple" Label="Take profit (× ATR)" Min="0.5" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.ExpiryDays" Label="Validade (dias)" Min="1" Max="30" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                        @if (_scoringError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_scoringError</MudAlert>
+                        }
+                        <div class="d-flex gap-3">
+                            <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveScoringAsync">Guardar</MudButton>
+                            <MudButton Variant="Variant.Outlined" Disabled="_busy" OnClick="ResetScoringAsync">Repor valores por omissão</MudButton>
+                        </div>
+                    }
+                    else
+                    {
+                        <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+                    }
+                </MudTabPanel>
+            </MudTabs>
         </MudTabPanel>
     </MudTabs>
     <MudText Typo="Typo.caption" Class="symbol-name mt-4"><MudLink Href="/about">Sobre a app, fontes e créditos</MudLink></MudText>
@@ -459,6 +461,7 @@
     private ScoringOptions? _scoring;
     private string? _ntfyTopic;
     private string _ntfyPublicUrl = string.Empty;
+    private bool _ntfyPushMarket;
     private string _myTopic = string.Empty;
     private string _ntfyServer = NtfySettings.DefaultServer;
     private string? _ntfyError;
@@ -512,6 +515,7 @@
             _ntfyTopic = ntfy.Topic;
             _ntfyServer = ntfy.Server;
             _ntfyPublicUrl = ntfy.PublicUrl;
+            _ntfyPushMarket = ntfy.PushMarketAlerts;
             _backups = await Api.GetBackupsAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
             _profile = await Api.GetProfileAsync(_cts.Token);
@@ -626,7 +630,7 @@
     private async Task SaveNtfyAsync()
     {
         _busy = true;
-        _ntfyError = await Api.SaveNtfyAsync(new NtfySettings(_ntfyServer, _ntfyTopic ?? string.Empty, _ntfyPublicUrl), _cts.Token);
+        _ntfyError = await Api.SaveNtfyAsync(new NtfySettings(_ntfyServer, _ntfyTopic ?? string.Empty, _ntfyPublicUrl, _ntfyPushMarket), _cts.Token);
         _busy = false;
 
         if (_ntfyError is null)

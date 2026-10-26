@@ -74,17 +74,52 @@ public static class AlertFactory
         ];
     }
 
-    public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now) => new()
+    public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now, string currency = "")
     {
-        UserId = trade.UserId,
-        Kind = level == TradeLevel.StopLoss ? AlertKind.TradeStopLoss : AlertKind.TradeTakeProfit,
-        Symbol = trade.Symbol,
-        Title = $"{(level == TradeLevel.StopLoss ? "Stop loss" : "Take profit")} atingido na tua trade: {trade.Symbol}",
-        Message = string.Create(CultureInfo.InvariantCulture, $"Preço {price:0.#####} · entrada {trade.EntryPrice:0.#####} · nível {(level == TradeLevel.StopLoss ? trade.StopLoss : trade.TakeProfit):0.#####}"),
-        SuggestionId = trade.SuggestionId ?? 0,
-        TradeId = trade.Id,
-        CreatedAt = now
-    };
+        string label = level == TradeLevel.StopLoss ? "Stop loss" : "Take profit";
+        TradeOutcome outcome = JournalCalculator.Compute(new JournalTrade
+        {
+            Direction = trade.Direction,
+            EntryPrice = trade.EntryPrice,
+            Quantity = trade.Quantity,
+            StopLoss = trade.StopLoss,
+            FxRate = trade.FxRate,
+            Fees = trade.Fees,
+            Status = TradeStatus.Closed,
+            ExitPrice = price
+        });
+
+        string result = outcome.NetPnl is { } pnl
+            ? $" · {MoneyText(pnl, currency)}{(outcome.RMultiple is { } r ? $" ({r.ToString("+0.0;-0.0;0.0", PtCulture)} R)" : string.Empty)}"
+            : string.Empty;
+
+        return new Alert
+        {
+            UserId = trade.UserId,
+            Kind = level == TradeLevel.StopLoss ? AlertKind.TradeStopLoss : AlertKind.TradeTakeProfit,
+            Symbol = trade.Symbol,
+            Title = $"{trade.Symbol} · {label}{result}",
+            Message = string.Create(CultureInfo.InvariantCulture, $"{(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")} a {trade.EntryPrice:0.#####}, preço agora {price:0.#####}. Ainda tens de fechar a trade na corretora e aqui."),
+            SuggestionId = trade.SuggestionId ?? 0,
+            TradeId = trade.Id,
+            CreatedAt = now
+        };
+    }
+
+    private static readonly CultureInfo PtCulture = CultureInfo.GetCultureInfo("pt-PT");
+
+    private static string MoneyText(double value, string currency)
+    {
+        string symbol = currency.ToUpperInvariant() switch
+        {
+            "EUR" => "€",
+            "USD" => "$",
+            "GBP" => "£",
+            var other => other
+        };
+
+        return $"{value.ToString("+#,0.00;-#,0.00;0.00", PtCulture)} {symbol}".TrimEnd();
+    }
 
     public static Alert ForPriceAlert(PriceAlert alert, double price, DateTimeOffset now) => new()
     {

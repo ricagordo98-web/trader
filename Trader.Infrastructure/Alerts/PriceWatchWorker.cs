@@ -56,6 +56,8 @@ public sealed class PriceWatchWorker(IServiceScopeFactory scopeFactory, ILogger<
             Dictionary<string, double?> prices = await LoadPricesAsync(marketData, trades.Select(t => t.Symbol).Concat(priceAlerts.Select(a => a.Symbol)), cancellationToken);
             DateTimeOffset now = DateTimeOffset.UtcNow;
             List<Alert> raised = [];
+            IJournalService journal = scope.ServiceProvider.GetRequiredService<IJournalService>();
+            Dictionary<string, string> currencies = [];
 
             foreach (JournalTrade trade in trades)
             {
@@ -73,7 +75,13 @@ public sealed class PriceWatchWorker(IServiceScopeFactory scopeFactory, ILogger<
                     trade.TakeProfitAlerted = true;
                 }
 
-                raised.Add(AlertFactory.ForTradeLevel(trade, level, price, now));
+                if (!currencies.TryGetValue(trade.UserId, out string? currency))
+                {
+                    currency = (await journal.GetAccountAsync(trade.UserId, cancellationToken)).Currency;
+                    currencies[trade.UserId] = currency;
+                }
+
+                raised.Add(AlertFactory.ForTradeLevel(trade, level, price, now, currency));
             }
 
             foreach (PriceAlert alert in priceAlerts)

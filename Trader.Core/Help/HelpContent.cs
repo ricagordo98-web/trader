@@ -18,8 +18,8 @@ public static class HelpContent
         new("Trading", "Cotações por tipo de ativo. Clica numa linha para abrir o gráfico completo e no balão para ver porque o ativo se mexeu.", "candlestick_chart", "/trading"),
         new("Gráficos", "Monta o teu painel: adiciona gráficos por tipo de ativo, arrasta-os, redimensiona-os e guarda a disposição.", "dashboard", "/charts"),
         new("Predição", "Sugestões de compra e venda com certeza, stop loss e take profit, mais o Radar de movimentos anormais, o track record e o backtest.", "insights", "/prediction"),
-        new("Diário", "Calcula quanto arriscar em cada operação e regista as tuas trades para veres o teu desempenho real.", "menu_book", "/journal"),
-        new("Alertas", "A campainha mostra alertas de sugestões, stops e alvos das tuas trades, preços e radar. Clicar leva-te ao sítio certo.", "notifications", null),
+        new("Carteira", "Calcula quanto arriscar em cada operação e regista as tuas trades para veres o teu desempenho real.", "menu_book", "/journal"),
+        new("Alertas", "A campainha mostra primeiro as tuas trades e alertas (com o resultado quando um stop ou alvo é atingido) e depois um resumo do mercado. Clicar leva-te ao sítio certo.", "notifications", null),
         new("Ajuda", "Quando um termo não for claro, passa o rato sobre ele ou abre o glossário. Podes repetir este guia quando quiseres.", "help", "/help")
     ];
 
@@ -34,9 +34,9 @@ public static class HelpContent
         new("Posso ligar a Trading 212?", "A Trading 212 só oferece API para contas Invest e ISA, não para CFD. Podes registar as trades no diário ou importá-las por ficheiro CSV."),
         new("A app executa ordens?", "Não. É só informação e apoio à decisão. Nada aqui é aconselhamento financeiro."),
         new("Porque é que não vejo um ativo?", "Em Configurações, no Perfil, podes esconder classes de ativos. Se o ativo não está na watchlist, adiciona-o em Configurações → Watchlist."),
-        new("Como recebo alertas no telemóvel?", "Instala a app ntfy, subscreve o teu tópico e configura-o em Configurações → Notificações. Com o endereço público do servidor definido, tocar na notificação abre a app no sítio certo."),
+        new("Como recebo alertas no telemóvel?", "Instala a app ntfy, subscreve o teu tópico e configura-o em Configurações → Notificações. Por omissão só recebes o que é teu (stops e alvos das trades, alertas de preço e regras); as novidades do mercado são opcionais. Com o endereço público do servidor definido, tocar na notificação abre a app no sítio certo."),
         new("Posso ter notificações só para mim?", "Sim. Em Configurações → Perfil define o teu próprio tópico ntfy: os teus alertas vão para ele. No Android, com o endereço público definido, a notificação traz o botão Abrir no Trader. No horário silencioso só os stops atingidos passam."),
-        new("Para que servem os limites diários?", "Em Diário → Calculadora podes definir perda máxima diária e número máximo de trades. Ao atingi-los aparece um aviso no Diário e na Sessão. É um travão para o dia mau, não bloqueia nada."),
+        new("Para que servem os limites diários?", "Em Carteira → Calculadora podes definir perda máxima diária e número máximo de trades. Ao atingi-los aparece um aviso no Diário e na Sessão. É um travão para o dia mau, não bloqueia nada."),
         new("O que mostra a análise do diário?", "Resultado por hora, dia da semana, ativo, setup e estado emocional, mais a curva de capital e o drawdown. Só tira conclusões de horas com pelo menos 3 trades."),
         new("Há widgets ou atalhos no telemóvel?", "Não há widgets nativos. Marca ativos com a estrela em Trading e usa o separador Favoritos como lista rápida; podes fixar a app no ecrã inicial.")
     ];
