@@ -119,6 +119,27 @@ public class NtfyIntegrationTests
     }
 
     [Fact]
+    public async Task IntradaySettings_SaveGetAndReset_ApplyToTheLiveOptions()
+    {
+        await using TraderFactory factory = new();
+        HttpClient client = await SignIn(factory.CreateClient());
+        Trader.Core.Intraday.IntradayOptions edited = (await client.GetFromJsonAsync<Trader.Core.Intraday.IntradayOptions>("/api/settings/intraday"))!;
+        edited.SlAtrMultiple = 4;
+        edited.RequireMarketAlignment = true;
+
+        (await client.PutAsJsonAsync("/api/settings/intraday", edited)).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        Trader.Core.Intraday.IntradayOptions saved = (await client.GetFromJsonAsync<Trader.Core.Intraday.IntradayOptions>("/api/settings/intraday"))!;
+        saved.SlAtrMultiple.Should().Be(4);
+        saved.RequireMarketAlignment.Should().BeTrue();
+
+        edited.MinRiskReward = 0.2;
+        (await client.PutAsJsonAsync("/api/settings/intraday", edited)).StatusCode.Should().Be(HttpStatusCode.BadRequest);
+
+        (await client.DeleteAsync("/api/settings/intraday")).StatusCode.Should().Be(HttpStatusCode.NoContent);
+        (await client.GetFromJsonAsync<Trader.Core.Intraday.IntradayOptions>("/api/settings/intraday"))!.SlAtrMultiple.Should().Be(new Trader.Core.Intraday.IntradayOptions().SlAtrMultiple);
+    }
+
+    [Fact]
     public async Task SendTest_WithoutTopic_ReturnsBadRequest()
     {
         await using TraderFactory factory = new();

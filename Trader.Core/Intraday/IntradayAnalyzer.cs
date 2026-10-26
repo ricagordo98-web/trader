@@ -78,7 +78,8 @@ public static class IntradayAnalyzer
             RecentMove(session, atr),
             sessionStart,
             last.Time,
-            session);
+            session,
+            usesSessionLevels && previous is { Count: > 1 } ? sessionStart + (previous[^1].Time - previous[0].Time) : null);
     }
 
     private static double Atr(List<List<Candle>> days)

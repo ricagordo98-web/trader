@@ -10,16 +10,22 @@ public static class SuggestionEndpoints
     {
         RouteGroupBuilder group = app.MapGroup("/api/suggestions").RequireAuthorization();
 
-        group.MapGet("/", async (string? symbol, bool? open, int? limit, SuggestionHorizon? horizon, bool? native, ISuggestionService service, IInstrumentService instruments, IDisplayCurrency display, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
+        group.MapGet("/", async (string? symbol, bool? open, int? limit, SuggestionHorizon? horizon, bool? native, bool? shadow, ISuggestionService service, IInstrumentService instruments, IDisplayCurrency display, ClaimsPrincipal user, IUserPreferences prefs, CancellationToken cancellationToken) =>
         {
-            IReadOnlyList<SuggestionDto> suggestions = await service.GetAsync(symbol, open, limit ?? 100, horizon, cancellationToken);
+            UserPreferences profile = await prefs.GetAsync(UserDisplay.UserId(user), cancellationToken);
+            IReadOnlyList<SuggestionDto> suggestions = await service.GetAsync(symbol, open, limit ?? 100, horizon, cancellationToken, shadow ?? profile.ShowShadowSuggestions);
+
+            if (profile.MinDisplayedConfidence > 0)
+            {
+                suggestions = suggestions.Where(s => s.IsShadow || (s.CalibratedConfidence ?? s.Confidence) >= profile.MinDisplayedConfidence).ToList();
+            }
 
             if (native == true)
             {
                 return Results.Ok(suggestions);
             }
 
-            HashSet<string>? allowed = await UserDisplay.AllowedSymbolsAsync(await prefs.GetAsync(UserDisplay.UserId(user), cancellationToken), instruments, cancellationToken);
+            HashSet<string>? allowed = await UserDisplay.AllowedSymbolsAsync(profile, instruments, cancellationToken);
 
             if (allowed is not null)
             {

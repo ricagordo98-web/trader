@@ -1,0 +1,114 @@
+@implements IDisposable
+@inject TraderApiClient Api
+@inject ISnackbar Snackbar
+
+@if (_options is null)
+{
+    <MudProgressLinear Indeterminate="true" Color="Color.Primary" />
+}
+else
+{
+    <MudText Typo="Typo.h6" Class="mb-1">Regras das sugestões de curto prazo (intraday)</MudText>
+    <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
+        Aplicam-se ao próximo ciclo (a cada 90 segundos). Nada é descartado: o que falha uma regra fica gravado como "só registo" (sombra), é avaliado como as outras e conta para a calibração e para a Fiabilidade.
+    </MudText>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Stops e alvos</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">Em múltiplos do ATR de 5 minutos. Stops muito curtos são apanhados pelo ruído do mercado.</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.SlAtrMultiple" Label="Stop loss (× ATR)" Min="0.5" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.TpAtrMultiple" Label="Take profit (× ATR)" Min="0.5" Max="20" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MinRiskReward" Label="R:R mínimo" Min="1" Max="6" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MinStopAtrMultiple" Label="Stop mínimo (× ATR)" Min="0" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Não perseguir o preço</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">Evita entrar depois de um movimento já esticado. 0 desliga a regra.</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MaxRecentMoveAtr" Label="Movimento recente máx. (× ATR)" Min="0" Max="20" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MaxDayMovePercent" Label="Movimento no dia máx. (%)" Min="0" Max="50" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_options.AvoidFirstMinutes" Label="Evitar primeiros (min)" Min="0" Max="120" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_options.AvoidLastMinutes" Label="Evitar últimos (min)" Min="0" Max="120" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Contexto de mercado e eventos</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+            O sentido do mercado geral (S&amp;P 500, DAX, Bitcoin...) entra sempre como um sinal do modelo. Podes ainda exigir que a sugestão vá a favor dele e evitar as horas à volta de eventos macro importantes.
+        </MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MarketWeight" Label="Peso do mercado no modelo" Min="0" Max="5" Step="0.25" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MarketAlignmentFloorPercent" Label="Mercado relevante a partir de (%)" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.AvoidMacroHours" Label="Evitar macro (± horas)" Min="0" Max="12" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudSwitch T="bool" @bind-Value="_options.RequireMarketAlignment" Color="Color.Primary" Label="Exigir a favor do mercado" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Critérios gerais e gravação</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.ConfidenceThreshold" Label="Certeza mínima (0,5–0,95)" Min="0.5" Max="0.95" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_options.MaxOpenSuggestions" Label="Máx. sugestões abertas" Min="1" Max="30" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.ShadowMinConfidence" Label="Certeza mínima para gravar sombra" Min="0.3" Max="0.9" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="int" @bind-Value="_options.MaxShadowPerCycle" Label="Máx. sombras por ciclo" Min="0" Max="100" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12"><MudSwitch T="bool" @bind-Value="_options.RecordShadow" Color="Color.Primary" Label="Gravar também as sugestões que falham as regras (recomendado)" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Dense="true" Class="mb-3">@_error</MudAlert>
+    }
+
+    <div class="d-flex gap-3">
+        <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_busy" OnClick="SaveAsync">Guardar regras</MudButton>
+        <MudButton Variant="Variant.Outlined" Disabled="_busy" OnClick="ResetAsync">Repor valores por omissão</MudButton>
+    </div>
+}
+
+@code {
+    private readonly CancellationTokenSource _cts = new();
+    private Trader.Core.Intraday.IntradayOptions? _options;
+    private string? _error;
+    private bool _busy;
+
+    protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível carregar as regras.";
+        }
+    }
+
+    private async Task SaveAsync()
+    {
+        _busy = true;
+        _error = await Api.SaveIntradaySettingsAsync(_options!, _cts.Token);
+        _busy = false;
+
+        if (_error is null)
+        {
+            Snackbar.Add("Regras guardadas. Aplicam-se ao próximo ciclo.", Severity.Success);
+        }
+    }
+
+    private async Task ResetAsync()
+    {
+        _busy = true;
+        await Api.ResetIntradaySettingsAsync(_cts.Token);
+        _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+        _error = null;
+        _busy = false;
+        Snackbar.Add("Valores por omissão repostos.", Severity.Success);
+    }
+
+    public void Dispose() => _cts.Cancel();
+}

@@ -5,6 +5,7 @@ using Microsoft.Extensions.Logging.Abstractions;
 using NSubstitute;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
+using Trader.Core.Explain;
 using Trader.Core.Intraday;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
@@ -284,7 +285,7 @@ public class IntradaySuggestionServiceTests : IAsyncLifetime
     }
 
     private SuggestionService CreateService() =>
-        new(_dbContext, _marketData, Substitute.For<IScoringSettings>(), _alerts, IntradayFixtures.Options, new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()), NullLogger<SuggestionService>.Instance);
+        new(_dbContext, _marketData, Substitute.For<IScoringSettings>(), _alerts, IntradayFixtures.Options, Substitute.For<ICalendarService>(), new Microsoft.Extensions.Caching.Memory.MemoryCache(new Microsoft.Extensions.Caching.Memory.MemoryCacheOptions()), NullLogger<SuggestionService>.Instance);
 
     private static IntradayContext RallyContext() =>
         IntradayFixtures.Context(IntradayFixtures.Rally(out DateTimeOffset now), now);
@@ -361,5 +362,98 @@ public class IntradaySuggestionServiceTests : IAsyncLifetime
         (await service.GetAsync(null, true, 50, SuggestionHorizon.Intraday, CancellationToken.None)).Should().ContainSingle().Which.Symbol.Should().Be("TEST");
         (await service.GetAsync(null, true, 50, SuggestionHorizon.Swing, CancellationToken.None)).Should().ContainSingle().Which.Symbol.Should().Be("SWING");
         (await service.GetAsync(null, true, 50, null, CancellationToken.None)).Should().HaveCount(2);
+    }
+}
+
+public class IntradayRulesTests
+{
+    private static IntradayContext Rally(IntradayOptions options, Func<IntradayContext, IntradayContext>? change = null)
+    {
+        IntradayContext context = IntradayFixtures.Context(IntradayFixtures.Rally(out DateTimeOffset now), now);
+        return change is null ? context : change(context);
+    }
+
+    private static SentimentSnapshot NoNews() => new(0, 0, null, []);
+
+    [Fact]
+    public void Assess_RuleFailure_IsRecordedAsShadowWithTheReason()
+    {
+        IntradayOptions options = new();
+        options.RecordShadow = true;
+        options.ShadowMinConfidence = 0.3;
+        IntradayEngine engine = new(options);
+        IntradayContext context = Rally(options, c => c with { MacroEvent = "Inflação (CPI, EUA)" });
+
+        SuggestionDraft? draft = engine.Assess(context, NoNews());
+
+        draft.Should().NotBeNull();
+        draft!.IsShadow.Should().BeTrue();
+        draft.Reasons.Should().Contain(r => r.Contains("evento macro"));
+        engine.Evaluate(context, NoNews()).Should().BeNull();
+    }
+
+    [Fact]
+    public void Assess_WithShadowRecordingOff_DropsRuleFailures()
+    {
+        IntradayOptions options = new();
+        options.RecordShadow = false;
+        IntradayEngine engine = new(options);
+
+        engine.Assess(Rally(options, c => c with { MacroEvent = "Inflação (CPI, EUA)" }), NoNews()).Should().BeNull();
+    }
+
+    [Fact]
+    public void Assess_FlagsTheFirstAndLastMinutesOfTheSession()
+    {
+        IntradayOptions options = new();
+        options.RecordShadow = true;
+        options.ShadowMinConfidence = 0.3;
+        options.AvoidFirstMinutes = 15;
+        options.AvoidLastMinutes = 30;
+        IntradayEngine engine = new(options);
+
+        SuggestionDraft? early = engine.Assess(Rally(options, c => c with { SessionEnd = c.SessionStart.AddHours(6.5) }), NoNews());
+        SuggestionDraft? late = engine.Assess(Rally(options, c => c with { SessionEnd = c.LastCandleTime.AddMinutes(10) }), NoNews());
+
+        late!.Reasons.Should().Contain(r => r.Contains("últimos"));
+        (early is null || !early.Reasons.Any(r => r.Contains("últimos"))).Should().BeTrue();
+    }
+
+    [Fact]
+    public void Levels_NeverPlaceTheVwapStopCloserThanTheMinimum()
+    {
+        IntradayOptions options = new();
+        options.MinStopAtrMultiple = 2.0;
+        IntradayEngine engine = new(options);
+        IntradayContext context = Rally(options);
+
+        (double stop, _) = engine.ComputeLevels(context, TradeDirection.Buy);
+
+        (context.Price - stop).Should().BeGreaterThanOrEqualTo(options.MinStopAtrMultiple * context.Atr - 1e-9);
+    }
+
+    [Fact]
+    public void Explanations_NoLongerQuoteTheRawConfidence()
+    {
+        ExplanationText.WithoutConfidence("Compra intradiária sugerida com 85% de certeza: preço acima do VWAP.")
+            .Should().Be("Compra intradiária sugerida: preço acima do VWAP.");
+    }
+
+    [Fact]
+    public void ReliabilityWithShadow_ComparesShownAndHiddenAndGroupsByReason()
+    {
+        DateTimeOffset start = new(2026, 10, 1, 9, 0, 0, TimeSpan.Zero);
+        SuggestionDto Make(double r, bool shadow, string reason = "") =>
+            new(1, "A", "A", TradeDirection.Buy, 0.7, 100, 98, 104, 2, "x", start, start.AddDays(1), r > 0 ? SuggestionStatus.HitTakeProfit : SuggestionStatus.HitStopLoss, start.AddHours(2), 100, r, [], [], IsShadow: shadow, ShadowReason: reason);
+
+        List<SuggestionDto> items = [Make(2, false), Make(-1, false), Make(-1, true, "movimento esticado; contra o sentido do mercado"), Make(-1, true, "movimento esticado"), Make(2, true, "contra o sentido do mercado")];
+
+        ModelReliabilityReport report = ModelReliability.CalculateWithShadow(items);
+
+        report.Closed.Should().Be(2);
+        report.Shadow!.Shown!.Count.Should().Be(2);
+        report.Shadow.Hidden!.Count.Should().Be(3);
+        report.Shadow.ByReason.Single(r => r.Name == "movimento esticado").Count.Should().Be(2);
+        report.Shadow.ByReason.Single(r => r.Name == "contra o sentido do mercado").Count.Should().Be(2);
     }
 }

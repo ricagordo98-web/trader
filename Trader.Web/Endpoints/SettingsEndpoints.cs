@@ -72,6 +72,24 @@ public static class SettingsEndpoints
             return Results.NoContent();
         });
 
+        group.MapGet("/settings/intraday", async (IIntradaySettings settings, CancellationToken cancellationToken) =>
+            Results.Ok(await settings.GetAsync(cancellationToken)));
+
+        group.MapPut("/settings/intraday", async ([Microsoft.AspNetCore.Mvc.FromBody] Trader.Core.Intraday.IntradayOptions options, IIntradaySettings settings, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyList<string> errors = await settings.SaveAsync(options, cancellationToken);
+
+            return errors.Count == 0
+                ? Results.NoContent()
+                : Results.Problem(title: string.Join(" ", errors), statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapDelete("/settings/intraday", async (IIntradaySettings settings, CancellationToken cancellationToken) =>
+        {
+            await settings.ResetAsync(cancellationToken);
+            return Results.NoContent();
+        });
+
         group.MapDelete("/settings/scoring", async (IScoringSettings settings, CancellationToken cancellationToken) =>
         {
             await settings.ResetAsync(cancellationToken);

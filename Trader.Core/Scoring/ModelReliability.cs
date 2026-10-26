@@ -41,7 +41,10 @@ public sealed record ModelReliabilityReport(
     IReadOnlyList<ReliabilityStat> ByDirection,
     IReadOnlyList<ReliabilityStat> ByConfidence,
     IReadOnlyList<ReliabilityStat> BySentiment,
-    ReliabilityVerdict Verdict);
+    ReliabilityVerdict Verdict,
+    ShadowAnalysis? Shadow = null);
+
+public sealed record ShadowAnalysis(ReliabilityStat? Shown, ReliabilityStat? Hidden, IReadOnlyList<ReliabilityStat> ByReason);
 
 public static class ModelReliability
 {
@@ -105,6 +108,28 @@ public static class ModelReliability
             Group(done, s => ConfidenceBand(s.Confidence)).OrderBy(g => g.Name, StringComparer.Ordinal).ToList(),
             SentimentGroups(done),
             verdict);
+    }
+
+    public static ModelReliabilityReport CalculateWithShadow(IReadOnlyList<SuggestionDto> closed)
+    {
+        List<SuggestionDto> shown = closed.Where(s => !s.IsShadow).ToList();
+        List<SuggestionDto> hidden = closed.Where(s => s.IsShadow && s.RMultiple is not null).ToList();
+
+        ReliabilityStat? Stat(string name, List<SuggestionDto> items) => items.Count == 0
+            ? null
+            : new ReliabilityStat(name, items.Count, items.Count(s => s.RMultiple > 0), items.Count(s => s.RMultiple > 0) / (double)items.Count, Wilson(items.Count(s => s.RMultiple > 0), items.Count), items.Average(s => s.RMultiple!.Value));
+
+        List<ReliabilityStat> byReason = hidden
+            .SelectMany(s => s.ShadowReason.Split("; ", StringSplitOptions.RemoveEmptyEntries).Select(reason => (Reason: reason, Item: s)))
+            .GroupBy(x => x.Reason)
+            .Select(g => Stat(g.Key, g.Select(x => x.Item).ToList())!)
+            .OrderByDescending(g => g.Count)
+            .ToList();
+
+        return Calculate(shown) with
+        {
+            Shadow = new ShadowAnalysis(Stat("Mostradas", shown.Where(s => s.RMultiple is not null).ToList()), Stat("Só registo (sombra)", hidden), byReason)
+        };
     }
 
     public static Interval Wilson(int successes, int total)

@@ -10,7 +10,9 @@ public sealed record UserPreferences(
     Trader.Core.Backtesting.CostModel? Costs = null,
     string? NtfyTopic = null,
     IReadOnlyList<string>? Favorites = null,
-    bool PushMarketAlerts = false)
+    bool PushMarketAlerts = false,
+    bool ShowShadowSuggestions = false,
+    double MinDisplayedConfidence = 0)
 {
     public static readonly UserPreferences Default = new(BrokerCatalog.Other, null, [], true);
 
@@ -77,6 +79,11 @@ public static class UserPreferencesValidator
         if (preferences.Favorites is { } favorites && (favorites.Count > MaxFavorites || favorites.Any(f => string.IsNullOrWhiteSpace(f) || f.Length > 32)))
         {
             errors.Add($"Os favoritos têm de ser símbolos válidos (máx. {MaxFavorites}).");
+        }
+
+        if (preferences.MinDisplayedConfidence is < 0 or > 0.95)
+        {
+            errors.Add("A certeza mínima a mostrar tem de estar entre 0% e 95%.");
         }
 
         if (preferences.Costs is { } costs && !CostsInRange(costs))

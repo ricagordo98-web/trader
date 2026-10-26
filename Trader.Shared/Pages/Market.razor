@@ -108,7 +108,7 @@
                                         @if (row.Suggestion is { } suggestion)
                                         {
                                             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="@(suggestion.Direction == TradeDirection.Buy ? Color.Success : Color.Error)" Class="ma-0">
-                                                @(suggestion.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER") @((suggestion.Confidence * 100).ToString("0", CultureInfo.InvariantCulture))%
+                                                @(suggestion.Direction == TradeDirection.Buy ? "COMPRAR" : "VENDER") @(((suggestion.CalibratedConfidence ?? suggestion.Confidence) * 100).ToString("0", CultureInfo.InvariantCulture))%
                                             </MudChip>
                                         }
                                     </td>

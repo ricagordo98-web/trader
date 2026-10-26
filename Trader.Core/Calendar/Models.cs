@@ -9,7 +9,7 @@ public enum CalendarKind
     Macro
 }
 
-public sealed record CalendarEvent(DateOnly Date, CalendarKind Kind, string? Symbol, string Title, string Detail);
+public sealed record CalendarEvent(DateOnly Date, CalendarKind Kind, string? Symbol, string Title, string Detail, double? EpsEstimate = null, double? RevenueEstimate = null, string Period = "");
 
 public sealed record CalendarFeed(IReadOnlyList<CalendarEvent> Events, IReadOnlyList<string> Notes);
 

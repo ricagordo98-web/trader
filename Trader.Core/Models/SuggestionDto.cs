@@ -28,7 +28,9 @@ public sealed record SuggestionDto(
     SuggestionHorizon Horizon = SuggestionHorizon.Swing,
     double DisplayFactor = 1,
     double? CalibratedConfidence = null,
-    int CalibrationSamples = 0);
+    int CalibrationSamples = 0,
+    bool IsShadow = false,
+    string ShadowReason = "");
 
 public sealed record CurvePoint(DateTimeOffset Time, double CumulativeR);
 

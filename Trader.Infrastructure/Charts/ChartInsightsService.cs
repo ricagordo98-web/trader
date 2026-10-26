@@ -53,7 +53,7 @@ public sealed class ChartInsightsService(
 
         List<Suggestion> suggestions = await dbContext.Suggestions
             .AsNoTracking()
-            .Where(s => s.Symbol == symbol && s.CreatedAt >= start && s.CreatedAt <= end)
+            .Where(s => !s.IsShadow && s.Symbol == symbol && s.CreatedAt >= start && s.CreatedAt <= end)
             .ToListAsync(cancellationToken);
 
         events.AddRange(suggestions.Select(s => new ChartEventDto(

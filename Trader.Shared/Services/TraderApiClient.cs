@@ -268,9 +268,14 @@ public sealed class TraderApiClient(HttpClient httpClient)
     public async Task<IReadOnlyList<SentimentSummary>> GetSentimentSummaryAsync(int hours = 24, CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<SentimentSummary>>($"api/news/sentiment?hours={hours}", cancellationToken) ?? [];
 
-    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null, bool native = false)
+    public async Task<IReadOnlyList<SuggestionDto>> GetSuggestionsAsync(string? symbol, bool? open, int limit = 100, CancellationToken cancellationToken = default, SuggestionHorizon? horizon = null, bool native = false, bool? shadow = null)
     {
         List<string> parameters = [$"limit={limit}"];
+
+        if (shadow is { } includeShadow)
+        {
+            parameters.Add($"shadow={includeShadow.ToString().ToLowerInvariant()}");
+        }
 
         if (!string.IsNullOrWhiteSpace(symbol))
         {
@@ -361,6 +366,21 @@ public sealed class TraderApiClient(HttpClient httpClient)
 
     public async Task<SentimentStudyResult> GetSentimentStudyAsync(CancellationToken cancellationToken = default) =>
         (await httpClient.GetFromJsonAsync<SentimentStudyResult>("api/suggestions/reliability/sentiment", cancellationToken))!;
+
+    public async Task<Trader.Core.Intraday.IntradayOptions> GetIntradaySettingsAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<Trader.Core.Intraday.IntradayOptions>("api/settings/intraday", cancellationToken))!;
+
+    public async Task<string?> SaveIntradaySettingsAsync(Trader.Core.Intraday.IntradayOptions options, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/settings/intraday", options, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task ResetIntradaySettingsAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync("api/settings/intraday", cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
 
     public async Task<IReadOnlyList<HealthItem>> GetHealthAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<HealthItem>>("api/system/health", cancellationToken) ?? [];

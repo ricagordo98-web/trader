@@ -252,12 +252,21 @@ public sealed partial class CalendarService(
                 parts.Add(when);
             }
 
+            double? epsEstimate = null;
+
             if (row.TryGetProperty("epsEstimate", out JsonElement eps) && eps.ValueKind == JsonValueKind.Number)
             {
-                parts.Add($"EPS esperado {eps.GetDouble().ToString("0.00", CultureInfo.GetCultureInfo("pt-PT"))}");
+                epsEstimate = eps.GetDouble();
+                parts.Add($"EPS esperado {epsEstimate.Value.ToString("0.00", CultureInfo.GetCultureInfo("pt-PT"))}");
             }
 
-            events.Add(new CalendarEvent(date, CalendarKind.Earnings, symbol.ToUpperInvariant(), $"Resultados de {symbol.ToUpperInvariant()}", string.Join(" · ", parts)));
+            double? revenueEstimate = row.TryGetProperty("revenueEstimate", out JsonElement revenue) && revenue.ValueKind == JsonValueKind.Number ? revenue.GetDouble() : null;
+            string period = row.TryGetProperty("quarter", out JsonElement quarter) && quarter.ValueKind == JsonValueKind.Number
+                && row.TryGetProperty("year", out JsonElement year) && year.ValueKind == JsonValueKind.Number
+                    ? $"T{quarter.GetInt32()} {year.GetInt32()}"
+                    : string.Empty;
+
+            events.Add(new CalendarEvent(date, CalendarKind.Earnings, symbol.ToUpperInvariant(), $"Resultados de {symbol.ToUpperInvariant()}", string.Join(" · ", parts), epsEstimate, revenueEstimate, period));
         }
 
         return events;

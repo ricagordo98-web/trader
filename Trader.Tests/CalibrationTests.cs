@@ -79,6 +79,7 @@ public class SuggestionCalibrationServiceTests : IAsyncLifetime
         Substitute.For<IScoringSettings>(),
         Substitute.For<IAlertService>(),
         new Trader.Core.Intraday.IntradayOptions(),
+        Substitute.For<ICalendarService>(),
         new MemoryCache(new MemoryCacheOptions()),
         NullLogger<SuggestionService>.Instance);
 

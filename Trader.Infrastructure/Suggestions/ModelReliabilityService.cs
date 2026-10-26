@@ -25,7 +25,7 @@ public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDa
         }
 
         List<Suggestion> closed = await query.ToListAsync(cancellationToken);
-        return ModelReliability.Calculate(closed.Select(SuggestionService.ToDto).ToList());
+        return ModelReliability.CalculateWithShadow(closed.Select(SuggestionService.ToDto).ToList());
     }
 
     public async Task<SentimentStudyResult> GetSentimentStudyAsync(CancellationToken cancellationToken)

@@ -18,8 +18,11 @@ public sealed class ScoringOptions
     public double SentimentScale { get; set; } = 0.5;
     public double SentimentHalfLifeHours { get; set; } = 12;
 
-    public double SlAtrMultiple { get; set; } = 1.5;
-    public double TpAtrMultiple { get; set; } = 2.5;
-    public double MinRiskReward { get; set; } = 1.5;
+    public double SlAtrMultiple { get; set; } = 2.0;
+    public double TpAtrMultiple { get; set; } = 4.0;
+    public double MinRiskReward { get; set; } = 1.8;
     public int ExpiryDays { get; set; } = 5;
+
+    public bool RecordShadow { get; set; } = true;
+    public double ShadowMinConfidence { get; set; } = 0.45;
 }

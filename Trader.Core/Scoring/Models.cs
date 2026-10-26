@@ -49,4 +49,10 @@ public sealed record SuggestionDraft(
     double RiskReward,
     IReadOnlyList<SignalResult> Signals,
     IReadOnlyList<EvidenceArticle> Articles,
-    string Explanation);
+    string Explanation,
+    IReadOnlyList<string>? Blockers = null)
+{
+    public IReadOnlyList<string> Reasons => Blockers ?? [];
+
+    public bool IsShadow => Reasons.Count > 0;
+}

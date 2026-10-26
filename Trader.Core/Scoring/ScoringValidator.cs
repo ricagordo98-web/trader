@@ -38,6 +38,11 @@ public static class ScoringValidator
             errors.Add("Os múltiplos de ATR para SL (0,5–5) e TP (0,5–10) estão fora do intervalo.");
         }
 
+        if (o.ShadowMinConfidence is < 0.3 or > 0.9)
+        {
+            errors.Add("A certeza mínima das sugestões em sombra tem de estar entre 30% e 90%.");
+        }
+
         if (o.MinRiskReward is < 1 or > 5)
         {
             errors.Add("O R:R mínimo tem de estar entre 1 e 5.");

@@ -264,3 +264,7 @@ a.news-title:hover { color: var(--mud-palette-primary); }
 
 .nav-section { padding: 14px 20px 4px; font-size: .68rem; font-weight: 700; letter-spacing: .09em; text-transform: uppercase; color: var(--mud-palette-text-secondary); opacity: .85; }
 .mud-snackbar { border-radius: 12px; box-shadow: 0 10px 30px -8px rgba(0,0,0,.5); }
+
+.calendar-high { border-color: color-mix(in srgb, var(--mud-palette-error) 55%, transparent); box-shadow: inset 3px 0 0 var(--mud-palette-error); }
+.calendar-mine { background: color-mix(in srgb, var(--mud-palette-warning) 10%, transparent); }
+.mud-simple-table th { white-space: nowrap; }

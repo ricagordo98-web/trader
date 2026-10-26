@@ -911,6 +911,9 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .HasColumnType("TEXT")
                         .HasDefaultValue("Swing");
 
+                    b.Property<bool>("IsShadow")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -924,6 +927,11 @@ namespace Trader.Infrastructure.Persistence.Migrations
 
                     b.Property<double>("Score")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("ShadowReason")
+                        .IsRequired()
+                        .HasMaxLength(200)
+                        .HasColumnType("TEXT");
 
                     b.Property<string>("Status")
                         .IsRequired()

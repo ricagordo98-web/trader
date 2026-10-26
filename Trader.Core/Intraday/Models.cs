@@ -59,7 +59,10 @@ public sealed record IntradayContext(
     double RecentMove,
     DateTimeOffset SessionStart,
     DateTimeOffset LastCandleTime,
-    IReadOnlyList<Candle> SessionCandles);
+    IReadOnlyList<Candle> SessionCandles,
+    DateTimeOffset? SessionEnd = null,
+    double? MarketChangePercent = null,
+    string? MacroEvent = null);
 
 public sealed class IntradayOptions
 {
@@ -78,9 +81,10 @@ public sealed class IntradayOptions
     public double BurstAtrMultiple { get; set; } = 2.5;
     public double BreakoutAtrBuffer { get; set; } = 0.1;
 
-    public double SlAtrMultiple { get; set; } = 1.5;
-    public double TpAtrMultiple { get; set; } = 2.5;
-    public double MinRiskReward { get; set; } = 1.5;
+    public double SlAtrMultiple { get; set; } = 3.0;
+    public double TpAtrMultiple { get; set; } = 5.4;
+    public double MinRiskReward { get; set; } = 1.8;
+    public double MinStopAtrMultiple { get; set; } = 2.0;
     public double ConfidenceThreshold { get; set; } = 0.7;
     public double ConfidenceSteepness { get; set; } = 2.5;
     public double MaxConfidence { get; set; } = 0.85;
@@ -96,4 +100,18 @@ public sealed class IntradayOptions
     public double CatalystMinSentiment { get; set; } = 0.4;
     public int ExpiryHours { get; set; } = 3;
     public int StaleAfterMinutes { get; set; } = 25;
+
+    public int AvoidFirstMinutes { get; set; } = 15;
+    public int AvoidLastMinutes { get; set; } = 30;
+    public double MaxRecentMoveAtr { get; set; } = 4.5;
+    public double MaxDayMovePercent { get; set; } = 8;
+
+    public double MarketWeight { get; set; } = 0.75;
+    public bool RequireMarketAlignment { get; set; }
+    public double MarketAlignmentFloorPercent { get; set; } = 0.3;
+    public double AvoidMacroHours { get; set; } = 2;
+
+    public bool RecordShadow { get; set; } = true;
+    public double ShadowMinConfidence { get; set; } = 0.5;
+    public int MaxShadowPerCycle { get; set; } = 15;
 }

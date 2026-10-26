@@ -72,6 +72,12 @@ public sealed class IntradayEngine(IntradayOptions options)
 
     public SuggestionDraft? Evaluate(IntradayContext context, SentimentSnapshot sentiment)
     {
+        SuggestionDraft? draft = Assess(context, sentiment);
+        return draft is { IsShadow: false } ? draft : null;
+    }
+
+    public SuggestionDraft? Assess(IntradayContext context, SentimentSnapshot sentiment)
+    {
         if (context.Atr <= 0 || context.Price <= 0 || context.RelativeVolume is { } rvol && rvol < options.MinRelativeVolume)
         {
             return null;
@@ -100,23 +106,14 @@ public sealed class IntradayEngine(IntradayOptions options)
             return null;
         }
 
-        if (Math.Sign(context.RecentMove) != sign || Math.Abs(context.RecentMove) < options.MinEntryMove)
-        {
-            return null;
-        }
-
         double confidence = Math.Min(options.MaxConfidence, Sigmoid(options.ConfidenceSteepness * Math.Abs(score)) * agreeing.Count / signals.Count);
-
-        if (confidence < options.ConfidenceThreshold)
-        {
-            return null;
-        }
-
         (double stopLoss, double takeProfit) = ComputeLevels(context, direction);
         double risk = Math.Abs(context.Price - stopLoss);
         double riskReward = risk > 0 ? Math.Abs(takeProfit - context.Price) / risk : 0;
 
-        if (riskReward < options.MinRiskReward)
+        List<string> blockers = Blockers(context, sign, confidence, riskReward);
+
+        if (blockers.Count > 0 && (!options.RecordShadow || confidence < options.ShadowMinConfidence))
         {
             return null;
         }
@@ -139,7 +136,66 @@ public sealed class IntradayEngine(IntradayOptions options)
             riskReward,
             signals,
             articles,
-            BuildExplanation(direction, confidence, agreeing, signals.Count));
+            BuildExplanation(direction, agreeing, signals.Count),
+            blockers);
+    }
+
+    private List<string> Blockers(IntradayContext context, int sign, double confidence, double riskReward)
+    {
+        List<string> blockers = [];
+
+        if (confidence < options.ConfidenceThreshold)
+        {
+            blockers.Add("certeza abaixo do mínimo");
+        }
+
+        if (riskReward < options.MinRiskReward)
+        {
+            blockers.Add("R:R abaixo do mínimo");
+        }
+
+        if (Math.Sign(context.RecentMove) != sign || Math.Abs(context.RecentMove) < options.MinEntryMove)
+        {
+            blockers.Add("sem movimento recente a favor");
+        }
+
+        if (options.MaxRecentMoveAtr > 0 && Math.Abs(context.RecentMove) > options.MaxRecentMoveAtr && Math.Sign(context.RecentMove) == sign)
+        {
+            blockers.Add("movimento esticado (a perseguir o preço)");
+        }
+
+        if (options.MaxDayMovePercent > 0 && context.PreviousDayClose is > 0 and var previousClose
+            && Math.Sign(context.Price - previousClose) == sign
+            && Math.Abs(context.Price - previousClose) / previousClose * 100 > options.MaxDayMovePercent)
+        {
+            blockers.Add($"já se moveu mais de {options.MaxDayMovePercent.ToString("0.#", CultureInfo.InvariantCulture)}% no dia");
+        }
+
+        if (context.SessionEnd is { } end)
+        {
+            if (options.AvoidFirstMinutes > 0 && (context.LastCandleTime - context.SessionStart).TotalMinutes < options.AvoidFirstMinutes)
+            {
+                blockers.Add($"primeiros {options.AvoidFirstMinutes} min da sessão");
+            }
+
+            if (options.AvoidLastMinutes > 0 && (end - context.LastCandleTime).TotalMinutes < options.AvoidLastMinutes)
+            {
+                blockers.Add($"últimos {options.AvoidLastMinutes} min da sessão");
+            }
+        }
+
+        if (options.RequireMarketAlignment && context.MarketChangePercent is { } market
+            && Math.Abs(market) >= options.MarketAlignmentFloorPercent && Math.Sign(market) != sign)
+        {
+            blockers.Add("contra o sentido do mercado");
+        }
+
+        if (options.AvoidMacroHours > 0 && context.MacroEvent is { Length: > 0 } macro)
+        {
+            blockers.Add($"evento macro próximo ({macro})");
+        }
+
+        return blockers;
     }
 
     public (double StopLoss, double TakeProfit) ComputeLevels(IntradayContext context, TradeDirection direction)
@@ -154,7 +210,12 @@ public sealed class IntradayEngine(IntradayOptions options)
 
             if (distance is >= 0.5 and <= 2.2)
             {
-                stopLoss = vwap - sign * 0.2 * context.Atr;
+                double vwapStop = vwap - sign * 0.2 * context.Atr;
+
+                if (Math.Abs(context.Price - vwapStop) >= options.MinStopAtrMultiple * context.Atr)
+                {
+                    stopLoss = vwapStop;
+                }
             }
         }
 
@@ -222,6 +283,16 @@ public sealed class IntradayEngine(IntradayOptions options)
         if (CatalystSignal(context, sentiment) is { } catalyst)
         {
             signals.Add(catalyst);
+        }
+
+        if (context.MarketChangePercent is { } market && options.MarketWeight > 0)
+        {
+            signals.Add(new SignalResult(
+                "market",
+                "Mercado geral",
+                Clamp(market / 1.0),
+                options.MarketWeight,
+                $"o mercado de referência está {Format(market, "+0.0;-0.0")}% hoje"));
         }
 
         return signals;
@@ -339,13 +410,12 @@ public sealed class IntradayEngine(IntradayOptions options)
     private static double BreakoutStrength(IntradayContext context, double distance) =>
         Clamp(0.3 + 0.05 * distance / context.Atr + 0.1 * Math.Max(0, (context.RelativeVolume ?? 1) - 1), 0, 1);
 
-    private static string BuildExplanation(TradeDirection direction, double confidence, List<SignalResult> agreeing, int total)
+    private static string BuildExplanation(TradeDirection direction, List<SignalResult> agreeing, int total)
     {
         string verb = direction == TradeDirection.Buy ? "Compra" : "Venda";
         string reasons = string.Join("; ", agreeing.OrderByDescending(s => s.Weight * Math.Abs(s.Value)).Select(s => s.Detail));
-        int percent = (int)Math.Round(confidence * 100);
 
-        return $"{verb} intradiária sugerida com {percent}% de certeza: {reasons}. {agreeing.Count} de {total} sinais concordam.";
+        return $"{verb} intradiária sugerida: {reasons}. {agreeing.Count} de {total} sinais concordam.";
     }
 
     private static double Sigmoid(double x) => 1 / (1 + Math.Exp(-x));

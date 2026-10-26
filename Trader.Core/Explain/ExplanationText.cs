@@ -72,6 +72,9 @@ public static class ExplanationText
         return $"Face aos ativos correlacionados (média {Percent(average)}), {(difference > 0 ? "subiu mais" : "desceu mais")} {Math.Abs(difference).ToString("0.0#", Pt)} pontos percentuais.";
     }
 
+    public static string WithoutConfidence(string explanation) =>
+        System.Text.RegularExpressions.Regex.Replace(explanation, @" com \d+% de certeza", string.Empty);
+
     public static string? OneLiner(MoveExplanation explanation)
     {
         MoveAnalysis analysis = explanation.Analysis;

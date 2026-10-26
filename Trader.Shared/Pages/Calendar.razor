@@ -1,4 +1,6 @@
 @page "/calendar"
+@using System.Globalization
+@implements IDisposable
 @inject TraderApiClient Api
 
 <PageTitle>Calendário · Trader</PageTitle>
@@ -12,6 +14,7 @@
             <MudToggleItem Value="@("earnings")" Text="Resultados" />
             <MudToggleItem Value="@("macro")" Text="Macro" />
         </MudToggleGroup>
+        <MudSwitch T="bool" @bind-Value="_onlyMine" Color="Color.Primary" Label="Só os meus ativos" />
         <MudSelect T="int" Value="_days" ValueChanged="SetDaysAsync" Dense="true" Variant="Variant.Outlined" Margin="Margin.Dense" Style="max-width:150px" Label="Período">
             <MudSelectItem T="int" Value="7">7 dias</MudSelectItem>
             <MudSelectItem T="int" Value="14">14 dias</MudSelectItem>
@@ -19,7 +22,8 @@
         </MudSelect>
     </div>
     <MudText Typo="Typo.body2" Class="symbol-name mb-4">
-        Resultados das empresas da tua watchlist e datas importantes de inflação, emprego e juros. Evita abrir posições mesmo antes de um evento destes: o preço costuma dar saltos.
+        Datas em que o preço costuma dar saltos. Os eventos <b>macro</b> mexem com o mercado todo; os <b>resultados</b> mexem com uma empresa.
+        Os ativos onde tens trade aberta, sugestão ativa ou favorito aparecem destacados. Evita abrir posições mesmo antes de um evento importante.
     </MudText>
 
     @if (_error is not null)
@@ -34,61 +38,213 @@
 
     @if (_loading)
     {
+        <MudSkeleton Height="90px" Class="mb-2" />
         <MudSkeleton Height="60px" Class="mb-2" />
         <MudSkeleton Height="60px" Class="mb-2" />
-    }
-    else if (Visible.Count == 0)
-    {
-        <MudPaper Elevation="0" Outlined="true" Class="pa-6">
-            <MudText Color="Color.Secondary">Sem eventos neste período.</MudText>
-        </MudPaper>
     }
     else
     {
-        @foreach (IGrouping<DateOnly, CalendarEvent> day in Visible.GroupBy(e => e.Date))
+        <MudGrid Spacing="3" Class="mb-2">
+            <MudItem xs="12" md="4">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                    <MudText Typo="Typo.caption" Class="symbol-name">Próximo evento macro importante</MudText>
+                    @if (NextMacro is { } next)
+                    {
+                        <MudText Typo="Typo.subtitle1">@next.Title</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name">@MacroWhen(next)</MudText>
+                    }
+                    else
+                    {
+                        <MudText Typo="Typo.body2" Class="symbol-name">Nenhum no período.</MudText>
+                    }
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="4">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                    <MudText Typo="Typo.caption" Class="symbol-name">Resultados de empresas</MudText>
+                    <MudText Typo="Typo.h5">@_events.Count(e => e.Kind == CalendarKind.Earnings)</MudText>
+                    <MudText Typo="Typo.caption" Class="symbol-name">da tua watchlist neste período</MudText>
+                </MudPaper>
+            </MudItem>
+            <MudItem xs="6" md="4">
+                <MudPaper Elevation="0" Outlined="true" Class="pa-4 h-100">
+                    <MudText Typo="Typo.caption" Class="symbol-name">Com exposição tua</MudText>
+                    <MudText Typo="Typo.h5" Color="@(MineCount > 0 ? Color.Warning : Color.Default)">@MineCount</MudText>
+                    <MudText Typo="Typo.caption" Class="symbol-name">trades abertas, sugestões ou favoritos com resultados</MudText>
+                </MudPaper>
+            </MudItem>
+        </MudGrid>
+
+        @if (Visible.Count == 0)
         {
-            <MudText Typo="Typo.subtitle1" Class="mt-4 mb-2 cap-first">@CalendarAlerts.DayLabel(day.Key, _today)</MudText>
-            <MudPaper Elevation="0" Outlined="true">
-                @foreach (CalendarEvent item in day)
-                {
-                    <div class="d-flex align-center gap-3 pa-3 calendar-row">
-                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@(item.Kind == CalendarKind.Earnings ? Color.Info : Color.Warning)" Class="ma-0 tag-chip">
-                            @(item.Kind == CalendarKind.Earnings ? "Resultados" : "Macro")
-                        </MudChip>
-                        @if (item.Symbol is { Length: > 0 } symbol && item.Title.Contains(symbol, StringComparison.Ordinal))
-                        {
-                            int at = item.Title.IndexOf(symbol, StringComparison.Ordinal);
-                            <MudText Typo="Typo.body1">@item.Title[..at]<SymbolLabel Symbol="@symbol" ShowName="true" />@item.Title[(at + symbol.Length)..]</MudText>
-                        }
-                        else
-                        {
-                            <MudText Typo="Typo.body1">@item.Title</MudText>
-                        }
-                        <MudSpacer />
-                        <MudText Typo="Typo.caption" Class="symbol-name">@item.Detail</MudText>
-                    </div>
-                }
+            <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                <MudText Color="Color.Secondary">@(_onlyMine ? "Nenhum dos teus ativos tem eventos neste período." : "Sem eventos neste período.")</MudText>
             </MudPaper>
         }
+
+        @foreach (IGrouping<DateOnly, CalendarEvent> day in Visible.GroupBy(e => e.Date))
+        {
+            List<CalendarEvent> macro = day.Where(e => e.Kind == CalendarKind.Macro).ToList();
+            List<CalendarEvent> earnings = day.Where(e => e.Kind == CalendarKind.Earnings)
+                .OrderByDescending(e => ExposureOf(e).Any)
+                .ThenBy(e => e.Symbol)
+                .ToList();
+
+            <div class="d-flex align-baseline gap-3 mt-5 mb-2">
+                <MudText Typo="Typo.subtitle1" Class="cap-first">@CalendarAlerts.DayLabel(day.Key, _today)</MudText>
+                <MudText Typo="Typo.caption" Class="symbol-name">@DaySummary(macro.Count, earnings.Count)</MudText>
+            </div>
+
+            @foreach (CalendarEvent item in macro)
+            {
+                MacroInfo? info = MacroKnowledge.Find(item.Title);
+                DateTimeOffset? at = CalendarTimes.TimeFor(item);
+
+                <MudPaper Elevation="0" Outlined="true" Class="@("pa-4 mb-2 " + (info?.Importance == EventImportance.High ? "calendar-high" : string.Empty))">
+                    <div class="d-flex align-center flex-wrap gap-2 mb-1">
+                        <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="ma-0 tag-chip">Macro</MudChip>
+                        <MudText Typo="Typo.subtitle1">@item.Title</MudText>
+                        @if (info is not null)
+                        {
+                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="@ImportanceColor(info.Importance)" Class="ma-0 tag-chip">Importância @ImportanceLabel(info.Importance)</MudChip>
+                        }
+                        <MudSpacer />
+                        @if (at is { } time)
+                        {
+                            <MudText Typo="Typo.body2" Class="symbol-name">às @time.ToLocalTime().ToString("HH:mm") (hora local)</MudText>
+                        }
+                    </div>
+                    @if (info is not null)
+                    {
+                        <MudText Typo="Typo.body2">@info.What</MudText>
+                        <MudExpansionPanels Elevation="0" Class="mt-1">
+                            <MudExpansionPanel Text="Porque importa e como o mercado costuma reagir" Dense="true">
+                                <MudText Typo="Typo.body2" Class="mb-2"><b>Porque importa:</b> @info.Why</MudText>
+                                <MudText Typo="Typo.body2"><b>Reação típica:</b> @info.Reaction</MudText>
+                                <MudText Typo="Typo.caption" Class="symbol-name d-block mt-2">É uma tendência geral, não uma garantia: o que move o preço é a surpresa face ao esperado.</MudText>
+                            </MudExpansionPanel>
+                        </MudExpansionPanels>
+                    }
+                </MudPaper>
+            }
+
+            @if (earnings.Count > 0)
+            {
+                <MudPaper Elevation="0" Outlined="true">
+                    <MudSimpleTable Dense="true" Elevation="0" Hover="true">
+                        <thead>
+                            <tr>
+                                <th>Empresa</th>
+                                <th>Quando</th>
+                                <th>EPS esperado</th>
+                                <th>Receita esperada</th>
+                                <th>Preço</th>
+                                <th>Mexe por dia</th>
+                                <th>Para ti</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+                            @foreach (CalendarEvent item in earnings)
+                            {
+                                Exposure exposure = ExposureOf(item);
+                                InstrumentQuote? quote = QuoteOf(item.Symbol);
+                                double? typical = quote is null ? null : CalendarInsights.TypicalDailyMovePercent(quote.Sparkline);
+                                DateTimeOffset? at = CalendarTimes.TimeFor(item);
+
+                                <tr class="@(exposure.Any ? "calendar-mine" : string.Empty)">
+                                    <td>
+                                        <SymbolLabel Symbol="@(item.Symbol ?? string.Empty)" ShowName="true" />
+                                        @if (item.Period.Length > 0)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="symbol-name">@item.Period</MudText>
+                                        }
+                                    </td>
+                                    <td>
+                                        @CalendarInsights.SessionLabel(item)
+                                        @if (at is { } time)
+                                        {
+                                            <MudText Typo="Typo.caption" Class="symbol-name">por volta das @time.ToLocalTime().ToString("HH:mm")</MudText>
+                                        }
+                                    </td>
+                                    <td>@(item.EpsEstimate is { } eps ? eps.ToString("0.00", Pt) : "—")</td>
+                                    <td>@(item.RevenueEstimate is { } revenue ? CalendarInsights.BigMoney(revenue) : "—")</td>
+                                    <td>
+                                        @if (quote?.Price is { } price)
+                                        {
+                                            @price.ToString("#,0.00", Pt)
+                                            @if (quote.ChangePercent is { } change)
+                                            {
+                                                <MudText Typo="Typo.caption" Color="@(change >= 0 ? Color.Success : Color.Error)">@change.ToString("+0.0;-0.0;0.0", Pt)% hoje</MudText>
+                                            }
+                                        }
+                                        else
+                                        {
+                                            <span>—</span>
+                                        }
+                                    </td>
+                                    <td>@(typical is { } move ? $"±{move.ToString("0.0", Pt)}%" : "—")</td>
+                                    <td>
+                                        @if (exposure.HasTrade)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Warning" Class="ma-0 tag-chip">Trade aberta (@(exposure.TradeDirection == TradeDirection.Buy ? "compra" : "venda"))</MudChip>
+                                        }
+                                        @if (exposure.HasSuggestion)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Info" Class="ma-0 tag-chip">Sugestão ativa</MudChip>
+                                        }
+                                        @if (exposure.IsFavorite)
+                                        {
+                                            <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default" Class="ma-0 tag-chip">Favorito</MudChip>
+                                        }
+                                    </td>
+                                </tr>
+                            }
+                        </tbody>
+                    </MudSimpleTable>
+                </MudPaper>
+            }
+        }
+
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mt-4">
+            "Mexe por dia" é o movimento diário típico do último mês (desvio-padrão): serve de comparação, porque nos resultados o salto costuma ser várias vezes maior.
+            EPS é o lucro por ação e a "receita esperada" é a média das previsões dos analistas (Finnhub). Se a empresa ficar abaixo ou acima, é essa surpresa que move o preço.
+        </MudText>
     }
 </MudContainer>
 
 @code {
+    private static readonly CultureInfo Pt = CultureInfo.GetCultureInfo("pt-PT");
+
     private readonly CancellationTokenSource _cts = new();
     private IReadOnlyList<CalendarEvent> _events = [];
     private IReadOnlyList<string> _notes = [];
-    private DateOnly _today = DateOnly.FromDateTime(DateTime.UtcNow);
+    private IReadOnlyDictionary<string, InstrumentQuote> _quotes = new Dictionary<string, InstrumentQuote>();
+    private IReadOnlyList<JournalTradeDto> _trades = [];
+    private IReadOnlyList<SuggestionDto> _suggestions = [];
+    private IReadOnlyList<string> _favorites = [];
+    private DateOnly _today = DateOnly.FromDateTime(DateTime.Now);
     private string _filter = "all";
+    private bool _onlyMine;
     private int _days = 14;
     private string? _error;
     private bool _loading = true;
 
-    private IReadOnlyList<CalendarEvent> Visible => _filter switch
-    {
-        "earnings" => _events.Where(e => e.Kind == CalendarKind.Earnings).ToList(),
-        "macro" => _events.Where(e => e.Kind == CalendarKind.Macro).ToList(),
-        _ => _events
-    };
+    private IReadOnlyList<CalendarEvent> Visible => _events
+        .Where(e => _filter switch
+        {
+            "earnings" => e.Kind == CalendarKind.Earnings,
+            "macro" => e.Kind == CalendarKind.Macro,
+            _ => true
+        })
+        .Where(e => !_onlyMine || (e.Kind == CalendarKind.Earnings && ExposureOf(e).Any))
+        .ToList();
+
+    private CalendarEvent? NextMacro => _events
+        .Where(e => e.Kind == CalendarKind.Macro && e.Date >= _today && MacroKnowledge.Find(e.Title)?.Importance == EventImportance.High)
+        .OrderBy(e => e.Date)
+        .FirstOrDefault();
+
+    private int MineCount => _events.Count(e => e.Kind == CalendarKind.Earnings && ExposureOf(e).Any);
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -100,10 +256,39 @@
         return LoadAsync();
     }
 
+    private Exposure ExposureOf(CalendarEvent item) =>
+        item.Symbol is null ? Exposure.None : Exposure.For(item.Symbol, _trades, _suggestions, _favorites);
+
+    private InstrumentQuote? QuoteOf(string? symbol) => symbol is not null && _quotes.TryGetValue(symbol, out InstrumentQuote? quote) ? quote : null;
+
+    private string MacroWhen(CalendarEvent item)
+    {
+        string day = CalendarAlerts.DayLabel(item.Date, _today);
+        return CalendarTimes.TimeFor(item) is { } time ? $"{day}, às {time.ToLocalTime():HH:mm}" : day;
+    }
+
+    private static string DaySummary(int macro, int earnings) =>
+        string.Join(" · ", new[] { macro > 0 ? $"{macro} macro" : null, earnings > 0 ? $"{earnings} resultados" : null }.OfType<string>());
+
+    private static string ImportanceLabel(EventImportance importance) => importance switch
+    {
+        EventImportance.High => "alta",
+        EventImportance.Medium => "média",
+        _ => "baixa"
+    };
+
+    private static Color ImportanceColor(EventImportance importance) => importance switch
+    {
+        EventImportance.High => Color.Error,
+        EventImportance.Medium => Color.Warning,
+        _ => Color.Default
+    };
+
     private async Task LoadAsync()
     {
         _loading = true;
         _error = null;
+        _today = DateOnly.FromDateTime(DateTime.Now);
 
         try
         {
@@ -114,10 +299,25 @@
         catch (HttpRequestException)
         {
             _error = "Não foi possível obter o calendário. Verifica se o servidor está a correr.";
+            _loading = false;
+            return;
+        }
+
+        try
+        {
+            _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);
+            _trades = await Api.GetTradesAsync(TradeStatus.Open, _cts.Token);
+            _suggestions = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token);
+            _favorites = (await Api.GetProfileAsync(_cts.Token)).Favorites ?? [];
+        }
+        catch (HttpRequestException)
+        {
         }
         finally
         {
             _loading = false;
         }
     }
+
+    public void Dispose() => _cts.Cancel();
 }

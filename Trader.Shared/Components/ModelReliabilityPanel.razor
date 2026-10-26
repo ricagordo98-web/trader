@@ -90,6 +90,31 @@
             }
         </MudGrid>
     }
+
+    @if (report.Shadow is { } shadow && (shadow.Hidden is not null || shadow.ByReason.Count > 0))
+    {
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">As regras estão a ajudar? (mostradas contra só em registo)</MudText>
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+                As sugestões que falham uma regra ficam gravadas e são avaliadas como as outras. Se as de sombra acertam menos que as mostradas, a regra está a filtrar bem; se acertam igual ou mais, a regra está a deitar fora boas ideias.
+            </MudText>
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th></th><th>N</th><th>Acerto</th><th>Intervalo 95%</th><th>R médio</th></tr></thead>
+                <tbody>
+                    @foreach (ReliabilityStat stat in new[] { shadow.Shown, shadow.Hidden }.OfType<ReliabilityStat>().Concat(shadow.ByReason))
+                    {
+                        <tr>
+                            <td>@(shadow.ByReason.Contains(stat) ? "↳ " : string.Empty)@stat.Name</td>
+                            <td>@stat.Count</td>
+                            <td>@stat.WinRate.ToString("P0", Pt)</td>
+                            <td>@stat.WinRateCi.Low.ToString("P0", Pt) – @stat.WinRateCi.High.ToString("P0", Pt)</td>
+                            <td>@stat.AverageR.ToString("+0.00;-0.00;0.00", Pt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+        </MudPaper>
+    }
 }
 else if (_loading)
 {

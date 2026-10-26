@@ -11,6 +11,12 @@ public sealed class SuggestionEngine(ScoringOptions options)
 
     public SuggestionDraft? Evaluate(MarketSnapshot market, SentimentSnapshot sentiment)
     {
+        SuggestionDraft? draft = Assess(market, sentiment);
+        return draft is { IsShadow: false } ? draft : null;
+    }
+
+    public SuggestionDraft? Assess(MarketSnapshot market, SentimentSnapshot sentiment)
+    {
         if (market.Atr <= 0 || market.Price <= 0)
         {
             return null;
@@ -41,16 +47,23 @@ public sealed class SuggestionEngine(ScoringOptions options)
 
         double confidence = Sigmoid(options.ConfidenceSteepness * Math.Abs(score)) * agreeing.Count / signals.Count;
 
-        if (confidence < options.ConfidenceThreshold)
-        {
-            return null;
-        }
-
         (double stopLoss, double takeProfit) = ComputeLevels(market, direction);
         double risk = Math.Abs(market.Price - stopLoss);
         double riskReward = risk > 0 ? Math.Abs(takeProfit - market.Price) / risk : 0;
 
+        List<string> blockers = [];
+
+        if (confidence < options.ConfidenceThreshold)
+        {
+            blockers.Add("certeza abaixo do mínimo");
+        }
+
         if (riskReward < options.MinRiskReward)
+        {
+            blockers.Add("R:R abaixo do mínimo");
+        }
+
+        if (blockers.Count > 0 && (!options.RecordShadow || confidence < options.ShadowMinConfidence))
         {
             return null;
         }
@@ -73,7 +86,8 @@ public sealed class SuggestionEngine(ScoringOptions options)
             riskReward,
             signals,
             articles,
-            BuildExplanation(direction, confidence, agreeing, signals.Count));
+            BuildExplanation(direction, agreeing, signals.Count),
+            blockers);
     }
 
     private List<SignalResult> BuildSignals(MarketSnapshot market, SentimentSnapshot sentiment)
@@ -186,13 +200,12 @@ public sealed class SuggestionEngine(ScoringOptions options)
         return (stopLoss, takeProfit);
     }
 
-    private static string BuildExplanation(TradeDirection direction, double confidence, List<SignalResult> agreeing, int total)
+    private static string BuildExplanation(TradeDirection direction, List<SignalResult> agreeing, int total)
     {
         string verb = direction == TradeDirection.Buy ? "Compra" : "Venda";
         string reasons = string.Join("; ", agreeing.OrderByDescending(s => s.Weight * Math.Abs(s.Value)).Select(s => s.Detail));
-        int percent = (int)Math.Round(confidence * 100);
 
-        return $"{verb} sugerida com {percent}% de certeza: {reasons}. {agreeing.Count} de {total} sinais concordam.";
+        return $"{verb} sugerida: {reasons}. {agreeing.Count} de {total} sinais concordam.";
     }
 
     private static double Sigmoid(double x) => 1 / (1 + Math.Exp(-x));

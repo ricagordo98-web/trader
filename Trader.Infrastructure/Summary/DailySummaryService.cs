@@ -85,8 +85,8 @@ public sealed class DailySummaryService(
         IReadOnlyList<SentimentSummary> sentiment = await news.GetSentimentSummaryAsync(TimeSpan.FromHours(24), cancellationToken);
         CalendarFeed feed = await SafeAsync(() => calendar.GetAsync(3, cancellationToken), new CalendarFeed([], []));
 
-        List<Suggestion> created = await dbContext.Suggestions.AsNoTracking().Where(s => s.CreatedAt >= since).ToListAsync(cancellationToken);
-        List<Suggestion> closed = await dbContext.Suggestions.AsNoTracking().Where(s => s.ClosedAt != null && s.ClosedAt >= since).ToListAsync(cancellationToken);
+        List<Suggestion> created = await dbContext.Suggestions.AsNoTracking().Where(s => !s.IsShadow && s.CreatedAt >= since).ToListAsync(cancellationToken);
+        List<Suggestion> closed = await dbContext.Suggestions.AsNoTracking().Where(s => !s.IsShadow && s.ClosedAt != null && s.ClosedAt >= since).ToListAsync(cancellationToken);
 
         List<HeadlineItem> headlines = await LoadHeadlinesAsync(since, cancellationToken);
 
@@ -112,7 +112,7 @@ public sealed class DailySummaryService(
 
         IReadOnlyList<InstrumentQuote> quotes = await SafeAsync(() => marketData.GetQuotesAsync(null, cancellationToken), []);
         CalendarFeed feed = await SafeAsync(() => calendar.GetAsync(8, cancellationToken), new CalendarFeed([], []));
-        List<Suggestion> closed = await dbContext.Suggestions.AsNoTracking().Where(s => s.ClosedAt != null && s.ClosedAt >= since).ToListAsync(cancellationToken);
+        List<Suggestion> closed = await dbContext.Suggestions.AsNoTracking().Where(s => !s.IsShadow && s.ClosedAt != null && s.ClosedAt >= since).ToListAsync(cancellationToken);
         IReadOnlyList<JournalTradeDto> trades = (await journal.ListAsync(userId, TradeStatus.Closed, cancellationToken))
             .Where(t => t.ExitTime is { } exit && exit >= since)
             .ToList();

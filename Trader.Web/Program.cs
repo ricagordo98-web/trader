@@ -76,6 +76,7 @@ using (IServiceScope scope = app.Services.CreateScope())
 {
     TraderDbContext dbContext = scope.ServiceProvider.GetRequiredService<TraderDbContext>();
     await dbContext.Database.MigrateAsync();
+    await scope.ServiceProvider.GetRequiredService<IIntradaySettings>().LoadAsync(CancellationToken.None);
     await InstrumentCatalog.ApplyAsync(dbContext, scope.ServiceProvider.GetRequiredService<ILogger<Program>>(), CancellationToken.None);
 }
 

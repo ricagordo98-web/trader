@@ -111,6 +111,14 @@ Trading -> chart opens a workspace of draggable/resizable chart panels (`workspa
 - Imports: Trading 212 Invest history CSV is recognised; for CFD accounts export a sample and check the preview warnings.
 - Broker costs (round-trip % per asset class and overnight financing) are saved per user from the backtest panel and used as defaults in the swing/intraday backtests and in the calculator's cost estimate. The defaults are assumptions, not Trading 212 figures: edit them to match your account.
 
+## Suggestion quality (calibration, shadow records, rules)
+
+- **Honest confidence:** cards, the Market map and the gauge show the *historical hit rate* for that confidence band once enough suggestions have closed (`CalibratedConfidence`); before that they say "estimativa do modelo". The raw model number is still stored and shown in the tooltip.
+- **Nothing is discarded:** suggestions that fail a rule (confidence, R:R, no move in the direction, overextended move, first/last minutes of the session, against the market, macro event nearby) are saved with `IsShadow` and the reasons, evaluated against price like the others, and used for calibration, source weights and the Fiabilidade tab (comparison shown vs shadow, and by reason). Turn recording off, or change the thresholds, in Settings -> Dados e sistema -> Scoring (swing and intraday rules).
+- **Visibility is per user** (Settings -> Perfil -> "Que sugestões vejo"): show shadow records, and a minimum historical hit rate to display.
+- **Intraday rules** (`IntradayOptions`, persisted via `/api/settings/intraday` and applied live): wider ATR-based stops and targets (defaults 3.0 / 5.4 x ATR, min R:R 1.8, min stop 2 x ATR), "don't chase" limits, session window, market-direction signal (S&P 500, DAX, Bitcoin...) with an optional hard filter, and a macro-event window using the Calendar. Settings saved before this change keep their old values until reset.
+- The intraday backtest uses the live rules (session window, extension and stops); the market and macro rules have no historical data and are not backtested.
+
 ## System status
 
 Settings -> Fontes shows `GET /api/system/health`: Yahoo price freshness (quotes carry `AsOf`; the chart chip tooltip shows how old the last quote is), news sources with errors, whether Finnhub live data is configured and whether the local Ollama model answers. No paid data provider is wired in.

@@ -7,7 +7,7 @@ namespace Trader.Tests;
 
 public class SuggestionEngineTests
 {
-    private readonly SuggestionEngine _engine = new(new ScoringOptions());
+    private readonly SuggestionEngine _engine = new(new ScoringOptions { SlAtrMultiple = 1.5, TpAtrMultiple = 2.5, MinRiskReward = 1.5 });
 
     private static MarketSnapshot Bullish(double swingLow = 97.5, double swingHigh = 110) =>
         new("TEST", "Test", 100, 2, 98, 95, 90, 30, 0.5, 0.1, swingLow, swingHigh);

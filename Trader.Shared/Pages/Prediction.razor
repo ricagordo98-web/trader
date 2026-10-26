@@ -42,7 +42,11 @@
     }
 
     <MudTabs Rounded="true" ApplyEffectsToContainer="true" TabPanelsClass="pt-4" @bind-ActivePanelIndex="_tab">
-        <MudTabPanel Text="@($"Sugestões ({_open.Count})")">
+        <MudTabPanel Text="@($"Sugestões ({_open.Count(s => !s.IsShadow)})")">
+            <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                <MudSwitch T="bool" Value="_showShadow" ValueChanged="SetShowShadowAsync" Color="Color.Primary" Label="Mostrar também as que ficaram só em registo (sombra)" />
+                <MudText Typo="Typo.caption" Class="symbol-name">São gravadas e avaliadas como as outras, mas falharam alguma regra. Servem para a app aprender; não são sugestões para seguir.</MudText>
+            </div>
             @if (_loading)
             {
                 <MudGrid Spacing="4">
@@ -71,11 +75,17 @@
                         <MudPaper Elevation="0" Outlined="true" Class="@($"pa-4 h-100 suggestion-card{(suggestion.Id == Suggestion ? " focus-card" : string.Empty)}")" id="@($"suggestion-{suggestion.Id}")">
                             <div class="d-flex align-center gap-3">
                                 <div class="text-center">
-                                    <ConfidenceGauge Value="suggestion.Confidence" />
-                                    @if (suggestion.CalibratedConfidence is { } calibrated)
+                                    <ConfidenceGauge Value="@(suggestion.CalibratedConfidence ?? suggestion.Confidence)" />
+                                    @if (suggestion.CalibratedConfidence is not null)
                                     {
-                                        <MudTooltip Text="@($"Acerto histórico de sugestões com esta certeza do modelo ({suggestion.CalibrationSamples} sugestões fechadas). Calculado a partir do track record.")">
-                                            <MudText Typo="Typo.caption" Class="symbol-name">histórico ~@((calibrated * 100).ToString("0", CultureInfo.InvariantCulture))%</MudText>
+                                        <MudTooltip Text="@($"Acerto histórico de sugestões com esta certeza do modelo ({suggestion.CalibrationSamples} sugestões fechadas, incluindo as só em registo). O modelo indica {(suggestion.Confidence * 100).ToString("0", CultureInfo.InvariantCulture)}%, mas este é o acerto que se verificou na prática.")">
+                                            <MudText Typo="Typo.caption" Class="symbol-name">acerto histórico</MudText>
+                                        </MudTooltip>
+                                    }
+                                    else
+                                    {
+                                        <MudTooltip Text="Ainda não há sugestões fechadas suficientes para calibrar. Este valor é a estimativa do modelo, que costuma ser otimista.">
+                                            <MudText Typo="Typo.caption" Class="symbol-name">estimativa do modelo</MudText>
                                         </MudTooltip>
                                     }
                                 </div>
@@ -83,6 +93,12 @@
                                     <div class="d-flex align-center gap-2 flex-wrap">
                                         <MudText Typo="Typo.h6"><SymbolLabel Symbol="@suggestion.Symbol" Name="@suggestion.Name" /></MudText>
                                         <MudChip T="string" Size="Size.Small" Variant="Variant.Filled" Color="@(buy ? Color.Success : Color.Error)" Class="ma-0">@(buy ? "COMPRAR" : "VENDER")</MudChip>
+                                        @if (suggestion.IsShadow)
+                                        {
+                                            <MudTooltip Text="@($"Só em registo: {suggestion.ShadowReason}")">
+                                                <MudChip T="string" Size="Size.Small" Variant="Variant.Text" Color="Color.Default" Class="ma-0 tag-chip">SÓ REGISTO</MudChip>
+                                            </MudTooltip>
+                                        }
                                         @if (suggestion.Horizon == SuggestionHorizon.Intraday)
                                         {
                                             <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Info" Class="ma-0">INTRADAY</MudChip>
@@ -126,7 +142,7 @@
                                 </div>
                             </div>
 
-                            <MudText Typo="Typo.body2" Class="mt-3">@suggestion.Explanation</MudText>
+                            <MudText Typo="Typo.body2" Class="mt-3">@ExplanationText.WithoutConfidence(suggestion.Explanation)</MudText>
                             @if (_why.TryGetValue(suggestion.Symbol, out string? why))
                             {
                                 <MudText Typo="Typo.caption" Color="Color.Info" Class="d-block mt-1">@why</MudText>
@@ -593,13 +609,21 @@
         }
     }
 
+    private bool _showShadow;
+
+    private async Task SetShowShadowAsync(bool show)
+    {
+        _showShadow = show;
+        await LoadAsync();
+    }
+
     private async Task LoadAsync()
     {
         _error = null;
 
         try
         {
-            _open = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, Horizon);
+            _open = await Api.GetSuggestionsAsync(null, true, 100, _cts.Token, Horizon, shadow: _showShadow);
             _closed = await Api.GetSuggestionsAsync(null, false, 200, _cts.Token, Horizon);
             _record = await Api.GetTrackRecordAsync(_cts.Token, Horizon);
             _quotes = (await Api.GetInstrumentsAsync(_cts.Token)).ToDictionary(q => q.Symbol);

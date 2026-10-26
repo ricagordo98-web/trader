@@ -63,6 +63,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.Configure<ScoringOptions>(configuration.GetSection(ScoringOptions.SectionName));
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<IScoringSettings, ScoringSettings>();
+        services.AddScoped<IIntradaySettings, IntradaySettings>();
         services.AddScoped<IBacktestService, BacktestService>();
         services.AddScoped<IIntradayBacktestService, IntradayBacktestService>();
         services.AddScoped<IJournalService, JournalService>();

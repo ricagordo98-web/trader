@@ -2,6 +2,8 @@ using System.Net;
 using FluentAssertions;
 using Trader.Core.Alerts;
 using Trader.Core.Calendar;
+using Trader.Core.Journal;
+using Trader.Core.Models;
 using Trader.Infrastructure.Calendar;
 
 namespace Trader.Tests;
@@ -15,7 +17,7 @@ public class CalendarTests
     {
         const string json = """
             {"earningsCalendar":[
-              {"symbol":"AAPL","date":"2026-01-06","hour":"amc","epsEstimate":2.345},
+              {"symbol":"AAPL","date":"2026-01-06","hour":"amc","epsEstimate":2.345,"revenueEstimate":94500000000,"quarter":1,"year":2026},
               {"symbol":"ZZZZ","date":"2026-01-06","hour":"bmo"},
               {"symbol":"MSFT","date":"2026-01-07","hour":"bmo"}]}
             """;
@@ -23,7 +25,7 @@ public class CalendarTests
         IReadOnlyList<CalendarEvent> events = CalendarService.ParseEarnings(json, new HashSet<string>(StringComparer.OrdinalIgnoreCase) { "AAPL", "MSFT" });
 
         events.Should().HaveCount(2);
-        events[0].Should().Be(new CalendarEvent(new DateOnly(2026, 1, 6), CalendarKind.Earnings, "AAPL", "Resultados de AAPL", "depois do fecho · EPS esperado 2,35"));
+        events[0].Should().Be(new CalendarEvent(new DateOnly(2026, 1, 6), CalendarKind.Earnings, "AAPL", "Resultados de AAPL", "depois do fecho · EPS esperado 2,35", 2.345, 94500000000, "T1 2026"));
         events[1].Detail.Should().Be("antes da abertura");
     }
 
@@ -71,5 +73,55 @@ public class CalendarTests
         await using TraderFactory factory = new();
 
         (await factory.CreateClient().GetAsync("/api/calendar")).StatusCode.Should().Be(HttpStatusCode.Unauthorized);
+    }
+}
+
+public class CalendarInsightsTests
+{
+    private static JournalTradeDto Trade(string symbol, TradeDirection direction) =>
+        new(1, symbol, symbol, direction, DateTimeOffset.UtcNow, 100, 1, null, null, 1, 0, string.Empty, string.Empty, null, TradeStatus.Open, null, null, null, null, null, null, null);
+
+    [Fact]
+    public void MacroKnowledge_FindsTheRightExplanation()
+    {
+        MacroKnowledge.Find("Inflação (CPI, EUA)")!.Importance.Should().Be(EventImportance.High);
+        MacroKnowledge.Find("Vendas a retalho (EUA)")!.Importance.Should().Be(EventImportance.Medium);
+        MacroKnowledge.Find("Decisão de juros da Fed (FOMC)")!.What.Should().Contain("Reserva Federal");
+        MacroKnowledge.Find("Algo desconhecido").Should().BeNull();
+    }
+
+    [Fact]
+    public void Exposure_RecognisesTradesAndFavorites()
+    {
+        Exposure exposure = Exposure.For("vz", [Trade("VZ", TradeDirection.Sell)], [], ["AAPL"]);
+
+        exposure.HasTrade.Should().BeTrue();
+        exposure.TradeDirection.Should().Be(TradeDirection.Sell);
+        Exposure.For("AAPL", [], [], ["aapl"]).IsFavorite.Should().BeTrue();
+        Exposure.For("MSFT", [], [], []).Any.Should().BeFalse();
+    }
+
+    [Fact]
+    public void Importance_RaisesEarningsWhereTheUserIsExposed()
+    {
+        CalendarEvent earnings = new(new DateOnly(2026, 10, 28), CalendarKind.Earnings, "VZ", "Resultados de VZ", string.Empty);
+
+        CalendarInsights.ImportanceOf(earnings, new Exposure(true, TradeDirection.Buy, false, false)).Should().Be(EventImportance.High);
+        CalendarInsights.ImportanceOf(earnings, new Exposure(false, null, false, true)).Should().Be(EventImportance.Medium);
+        CalendarInsights.ImportanceOf(earnings, Exposure.None).Should().Be(EventImportance.Low);
+    }
+
+    [Fact]
+    public void TypicalDailyMove_IsTheStandardDeviationOfDailyChanges()
+    {
+        CalendarInsights.TypicalDailyMovePercent([100, 101, 100, 101, 100, 101, 100]).Should().BeApproximately(1.09, 0.02);
+        CalendarInsights.TypicalDailyMovePercent([100, 101]).Should().BeNull();
+    }
+
+    [Fact]
+    public void Formatting_UsesReadableUnits()
+    {
+        CalendarInsights.BigMoney(94_500_000_000).Should().Be("94,5 mil M");
+        CalendarInsights.BigMoney(350_000_000).Should().Be("350 M");
     }
 }

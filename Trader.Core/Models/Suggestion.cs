@@ -41,4 +41,6 @@ public sealed class Suggestion
     public DateTimeOffset? ClosedAt { get; set; }
     public double? ExitPrice { get; set; }
     public double? RMultiple { get; set; }
+    public bool IsShadow { get; set; }
+    public string ShadowReason { get; set; } = string.Empty;
 }

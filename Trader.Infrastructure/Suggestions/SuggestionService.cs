@@ -4,9 +4,11 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
+using Trader.Core.Calendar;
 using Trader.Core.Intraday;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
+using Trader.Infrastructure.Explain;
 using Trader.Infrastructure.Persistence;
 
 namespace Trader.Infrastructure.Suggestions;
@@ -17,6 +19,7 @@ public sealed class SuggestionService(
     IScoringSettings scoringSettings,
     IAlertService alerts,
     IntradayOptions intradayOptions,
+    ICalendarService calendar,
     IMemoryCache cache,
     ILogger<SuggestionService> logger) : ISuggestionService
 {
@@ -40,25 +43,27 @@ public sealed class SuggestionService(
         DateTimeOffset cooldownStart = now - IntradayCooldown;
 
         HashSet<string> blocked = (await dbContext.Suggestions
-            .Where(s => s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Where(s => !s.IsShadow && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
             .Select(s => s.Symbol)
             .ToListAsync(cancellationToken)).ToHashSet();
 
-        int slots = intradayOptions.MaxOpenSuggestions
-            - await dbContext.Suggestions.CountAsync(x => x.Horizon == SuggestionHorizon.Intraday && x.Status == SuggestionStatus.Open, cancellationToken);
+        HashSet<(string Symbol, TradeDirection Direction)> openShadows = (await dbContext.Suggestions
+            .Where(s => s.IsShadow && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Select(s => new { s.Symbol, s.Direction })
+            .ToListAsync(cancellationToken)).Select(s => (s.Symbol, s.Direction)).ToHashSet();
 
-        if (slots <= 0)
-        {
-            return 0;
-        }
+        int slots = intradayOptions.MaxOpenSuggestions
+            - await dbContext.Suggestions.CountAsync(x => !x.IsShadow && x.Horizon == SuggestionHorizon.Intraday && x.Status == SuggestionStatus.Open, cancellationToken);
+
+        IReadOnlyList<IntradayContext> enriched = await EnrichAsync(contexts, now, cancellationToken);
 
         ScoringOptions newsScoring = new() { SentimentHalfLifeHours = intradayOptions.NewsHalfLifeHours };
         List<(SuggestionDraft Draft, IntradayContext Context)> drafts = [];
 
-        foreach (IntradayContext context in contexts.Where(c => !blocked.Contains(c.Symbol) && Math.Abs(c.RecentMove) >= intradayOptions.MinEntryMove))
+        foreach (IntradayContext context in enriched.Where(c => Math.Abs(c.RecentMove) >= intradayOptions.MinEntryMove))
         {
             SentimentSnapshot sentiment = await BuildSentimentAsync(context.Symbol, now, newsScoring, TimeSpan.FromHours(intradayOptions.NewsWindowHours), cancellationToken);
-            SuggestionDraft? draft = engine.Evaluate(context, sentiment);
+            SuggestionDraft? draft = engine.Assess(context, sentiment);
 
             if (draft is not null)
             {
@@ -66,15 +71,35 @@ public sealed class SuggestionService(
             }
         }
 
-        List<Suggestion> added = drafts
+        List<Suggestion> added = slots <= 0
+            ? []
+            : drafts
+                .Where(d => !d.Draft.IsShadow && !blocked.Contains(d.Draft.Symbol))
+                .OrderByDescending(d => d.Draft.Confidence)
+                .Take(Math.Min(slots, intradayOptions.MaxNewSuggestionsPerCycle))
+                .Select(d => ToEntity(d.Draft, now, now.AddHours(intradayOptions.ExpiryHours), SuggestionHorizon.Intraday))
+                .ToList();
+
+        HashSet<string> addedSymbols = added.Select(a => a.Symbol).ToHashSet();
+        List<Suggestion> shadows = drafts
+            .Where(d => d.Draft.IsShadow
+                && !blocked.Contains(d.Draft.Symbol)
+                && !addedSymbols.Contains(d.Draft.Symbol)
+                && !openShadows.Contains((d.Draft.Symbol, d.Draft.Direction)))
             .OrderByDescending(d => d.Draft.Confidence)
-            .Take(Math.Min(slots, intradayOptions.MaxNewSuggestionsPerCycle))
-            .Select(d => ToEntity(d.Draft, now, now.AddHours(intradayOptions.ExpiryHours), SuggestionHorizon.Intraday))
+            .Take(intradayOptions.RecordShadow ? intradayOptions.MaxShadowPerCycle : 0)
+            .Select(d => ToShadowEntity(d.Draft, now, now.AddHours(intradayOptions.ExpiryHours), SuggestionHorizon.Intraday, null))
             .ToList();
 
         dbContext.Suggestions.AddRange(added);
+        dbContext.Suggestions.AddRange(shadows);
         await dbContext.SaveChangesAsync(cancellationToken);
         await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
+
+        if (shadows.Count > 0)
+        {
+            logger.LogInformation("Intraday cycle recorded {Count} shadow suggestions", shadows.Count);
+        }
 
         if (added.Count > 0)
         {
@@ -84,9 +109,14 @@ public sealed class SuggestionService(
         return added.Count;
     }
 
-    public async Task<IReadOnlyList<SuggestionDto>> GetAsync(string? symbol, bool? open, int limit, SuggestionHorizon? horizon, CancellationToken cancellationToken)
+    public async Task<IReadOnlyList<SuggestionDto>> GetAsync(string? symbol, bool? open, int limit, SuggestionHorizon? horizon, CancellationToken cancellationToken, bool includeShadow = false)
     {
         IQueryable<Suggestion> query = dbContext.Suggestions.AsNoTracking();
+
+        if (!includeShadow)
+        {
+            query = query.Where(s => !s.IsShadow);
+        }
 
         if (horizon is not null)
         {
@@ -122,7 +152,7 @@ public sealed class SuggestionService(
 
     public async Task<TrackRecordDto> GetTrackRecordAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
     {
-        IQueryable<Suggestion> all = dbContext.Suggestions.AsNoTracking();
+        IQueryable<Suggestion> all = dbContext.Suggestions.AsNoTracking().Where(s => !s.IsShadow);
 
         if (horizon is not null)
         {
@@ -234,9 +264,15 @@ public sealed class SuggestionService(
         DateTimeOffset now = DateTimeOffset.UtcNow;
 
         HashSet<string> openSymbols = (await dbContext.Suggestions
-            .Where(s => s.Status == SuggestionStatus.Open && s.Horizon == SuggestionHorizon.Swing)
+            .Where(s => !s.IsShadow && s.Status == SuggestionStatus.Open && s.Horizon == SuggestionHorizon.Swing)
             .Select(s => s.Symbol)
             .ToListAsync(cancellationToken)).ToHashSet();
+
+        HashSet<(string Symbol, TradeDirection Direction)> openShadows = (await dbContext.Suggestions
+            .Where(s => s.IsShadow && s.Status == SuggestionStatus.Open && s.Horizon == SuggestionHorizon.Swing)
+            .Select(s => new { s.Symbol, s.Direction })
+            .ToListAsync(cancellationToken)).Select(s => (s.Symbol, s.Direction)).ToHashSet();
+        int shadowsRecorded = 0;
 
         List<Instrument> instruments = await dbContext.Instruments.AsNoTracking().OrderBy(i => i.SortOrder).ToListAsync(cancellationToken);
         int created = 0;
@@ -255,10 +291,22 @@ public sealed class SuggestionService(
                 }
 
                 SentimentSnapshot sentiment = await BuildSentimentAsync(instrument.Symbol, now, scoring, SwingNewsWindow, cancellationToken);
-                SuggestionDraft? draft = engine.Evaluate(market, sentiment);
+                SuggestionDraft? draft = engine.Assess(market, sentiment);
 
                 if (draft is null)
                 {
+                    continue;
+                }
+
+                if (draft.IsShadow)
+                {
+                    if (!openShadows.Contains((draft.Symbol, draft.Direction)))
+                    {
+                        dbContext.Suggestions.Add(ToShadowEntity(draft, now, now.AddDays(scoring.ExpiryDays), SuggestionHorizon.Swing, null));
+                        openShadows.Add((draft.Symbol, draft.Direction));
+                        shadowsRecorded++;
+                    }
+
                     continue;
                 }
 
@@ -275,7 +323,7 @@ public sealed class SuggestionService(
 
         await dbContext.SaveChangesAsync(cancellationToken);
         await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
-        logger.LogInformation("Suggestion cycle created {Count} suggestions", created);
+        logger.LogInformation("Suggestion cycle created {Count} suggestions and recorded {Shadows} shadow ones", created, shadowsRecorded);
         return created;
     }
 
@@ -316,6 +364,61 @@ public sealed class SuggestionService(
         Horizon = horizon
     };
 
+    private static Suggestion ToShadowEntity(SuggestionDraft draft, DateTimeOffset now, DateTimeOffset expiresAt, SuggestionHorizon horizon, string? extraReason)
+    {
+        Suggestion entity = ToEntity(draft, now, expiresAt, horizon);
+        entity.IsShadow = true;
+        entity.ShadowReason = string.Join("; ", draft.Reasons.Append(extraReason).OfType<string>());
+        return entity;
+    }
+
+    private async Task<IReadOnlyList<IntradayContext>> EnrichAsync(IReadOnlyList<IntradayContext> contexts, DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        Dictionary<string, double?> changes = [];
+
+        try
+        {
+            foreach (InstrumentQuote quote in await marketData.GetQuotesAsync(null, cancellationToken) ?? [])
+            {
+                changes[quote.Symbol] = quote.ChangePercent;
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Could not load benchmark moves: {Message}", ex.Message);
+        }
+
+        string? macro = null;
+
+        if (intradayOptions.AvoidMacroHours > 0)
+        {
+            try
+            {
+                CalendarFeed? feed = await calendar.GetAsync(2, cancellationToken);
+                TimeSpan window = TimeSpan.FromHours(intradayOptions.AvoidMacroHours);
+
+                macro = (feed?.Events ?? [])
+                    .Where(e => e.Kind == CalendarKind.Macro && MacroKnowledge.Find(e.Title)?.Importance == EventImportance.High)
+                    .Select(e => (Event: e, Time: CalendarTimes.TimeFor(e)))
+                    .Where(x => x.Time is { } time && Math.Abs((time - now).TotalHours) <= window.TotalHours)
+                    .Select(x => x.Event.Title)
+                    .FirstOrDefault();
+            }
+            catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+            {
+                logger.LogWarning("Could not check macro events: {Message}", ex.Message);
+            }
+        }
+
+        return contexts
+            .Select(c => c with
+            {
+                MarketChangePercent = BenchmarkSelector.For(c.Symbol, c.AssetClass) is { } benchmark && changes.TryGetValue(benchmark.Symbol, out double? change) ? change : null,
+                MacroEvent = macro
+            })
+            .ToList();
+    }
+
     internal static SuggestionDto ToDto(Suggestion s)
     {
         SuggestionEvidence evidence = JsonSerializer.Deserialize<SuggestionEvidence>(s.EvidenceJson, JsonOptions)
@@ -340,6 +443,8 @@ public sealed class SuggestionService(
             s.RMultiple,
             evidence.Signals,
             evidence.Articles,
-            s.Horizon);
+            s.Horizon,
+            IsShadow: s.IsShadow,
+            ShadowReason: s.ShadowReason);
     }
 }
