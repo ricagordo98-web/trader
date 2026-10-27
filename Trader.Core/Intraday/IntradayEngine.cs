@@ -200,6 +200,16 @@ public sealed class IntradayEngine(IntradayOptions options)
             blockers.Add($"volatilidade anormal ({ratio.ToString("0.0", CultureInfo.InvariantCulture)}× o normal)");
         }
 
+        if (options.MinAdx > 0 && context.Adx is { } adx && adx < options.MinAdx)
+        {
+            blockers.Add($"mercado lateral (ADX {adx.ToString("0", CultureInfo.InvariantCulture)})");
+        }
+
+        if (options.RequireDailyAlignment && context.DailyTrend is { } daily && Math.Abs(daily) >= 0.5 && Math.Sign(daily) != sign)
+        {
+            blockers.Add("contra a tendência diária");
+        }
+
         if (options.AvoidMacroHours > 0 && context.MacroEvent is { Length: > 0 } macro)
         {
             blockers.Add($"evento macro próximo ({macro})");

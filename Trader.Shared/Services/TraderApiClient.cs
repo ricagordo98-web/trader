@@ -392,6 +392,22 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return (await response.Content.ReadFromJsonAsync<WeightLearning>(cancellationToken))!;
     }
 
+    public async Task<MetaModelFit> GetMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<MetaModelFit>($"api/suggestions/reliability/meta?horizon={horizon}", cancellationToken))!;
+
+    public async Task<MetaModelFit> ApplyMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync($"api/suggestions/reliability/meta/apply?horizon={horizon}", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<MetaModelFit>(cancellationToken))!;
+    }
+
+    public async Task DisableMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync($"api/suggestions/reliability/meta?horizon={horizon}", cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<VariantSettings> GetVariantBAsync(CancellationToken cancellationToken = default) =>
         (await httpClient.GetFromJsonAsync<VariantSettings>("api/settings/intraday/variant-b", cancellationToken))!;
 

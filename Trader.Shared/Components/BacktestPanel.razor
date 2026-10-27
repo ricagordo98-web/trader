@@ -19,6 +19,9 @@
         <MudTooltip Text="Reconstrói o sentimento a partir das notícias que o servidor guardou. Só há dados desde que começou a recolher, por isso o teste cobre poucos dias.">
             <MudCheckBox T="bool" @bind-Value="_request.UseSentiment" Label="Incluir sentimento (período curto)" Disabled="_running" Color="Color.Primary" />
         </MudTooltip>
+        <MudTooltip Text="Aplica ao histórico os mesmos filtros do motor ao vivo: mercado lateral (ADX), tendência semanal, força relativa face ao mercado e VIX. Desliga para comparar com e sem filtros.">
+            <MudCheckBox T="bool" @bind-Value="_request.UseMarketContext" Label="Filtros de contexto de mercado" Disabled="_running" Color="Color.Primary" />
+        </MudTooltip>
         <MudButton Variant="Variant.Filled" Color="Color.Primary" Disabled="_running" OnClick="RunAsync" StartIcon="@Icons.Material.Filled.PlayArrow">
             @(_running ? "A simular…" : "Executar backtest")
         </MudButton>
@@ -196,6 +199,7 @@ else
             {
                 _request.Range = _result.Range;
                 _request.UseSentiment = _result.UsedSentiment;
+                _request.UseMarketContext = _result.UsedMarketContext;
                 _request.Costs = _result.Costs;
             }
 

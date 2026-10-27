@@ -36,6 +36,11 @@ public static class IntradayValidator
             errors.Add("O peso do mercado (0–5), o limiar de alinhamento (0–5%) e a janela macro (0–12 h) estão fora do intervalo.");
         }
 
+        if (o.MinAdx is < 0 or > 60 || o.WeakCellMinSamples is < 5 or > 200)
+        {
+            errors.Add("O ADX mínimo (0–60) e o mínimo de casos para desligar uma célula fraca (5–200) estão fora do intervalo.");
+        }
+
         if (o.MaxVix is < 0 or > 100 || o.MaxVolatilityRatio is < 0 or > 20)
         {
             errors.Add("O VIX máximo (0–100) e a volatilidade anormal máxima (0–20) estão fora do intervalo. 0 desliga.");

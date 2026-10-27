@@ -417,6 +417,19 @@
                                 <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.TrendWeight" Label="Tendência" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                                 <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MomentumWeight" Label="Momentum" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                                 <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.BollingerWeight" Label="Bollinger" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.RelativeStrengthWeight" Label="Força relativa" Min="0" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                            </MudGrid>
+                        </MudPaper>
+                        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">
+                            <MudText Typo="Typo.subtitle1" Class="mb-1">Filtros de contexto (swing)</MudText>
+                            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">O que falha um filtro não é descartado: fica gravado como "só registo" e avaliado como as outras. 0 desliga cada limite.</MudText>
+                            <MudGrid Spacing="3">
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MinAdx" Label="ADX mínimo (mercado lateral)" Min="0" Max="60" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="double" @bind-Value="_scoring.MaxVix" Label="VIX máximo" Min="0" Max="100" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.BlockEarningsWithinDays" Label="Dias antes de resultados" Min="0" Max="30" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+                                <MudItem xs="12" md="6"><MudSwitch T="bool" @bind-Value="_scoring.RequireWeeklyAlignment" Color="Color.Primary" Label="Exigir alinhamento com a tendência semanal" /></MudItem>
+                                <MudItem xs="12" md="6"><MudSwitch T="bool" @bind-Value="_scoring.AutoDisableWeakCells" Color="Color.Primary" Label="Desligar automaticamente tipos de ativo com resultado negativo comprovado" /></MudItem>
+                                <MudItem xs="6" md="4"><MudNumericField T="int" @bind-Value="_scoring.WeakCellMinSamples" Label="Casos independentes mínimos (5–200)" Min="5" Max="200" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
                             </MudGrid>
                         </MudPaper>
                         <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-4">

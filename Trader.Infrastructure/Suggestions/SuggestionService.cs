@@ -28,6 +28,7 @@ public sealed class SuggestionService(
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly TimeSpan IntradayCooldown = TimeSpan.FromHours(1);
     private static readonly TimeSpan CalibrationCacheDuration = TimeSpan.FromMinutes(30);
+    private static readonly TimeSpan DailyTrendCacheDuration = TimeSpan.FromHours(6);
     private static readonly TimeSpan SwingNewsWindow = TimeSpan.FromDays(30);
 
     public async Task<int> RefreshAsync(CancellationToken cancellationToken)
@@ -61,6 +62,9 @@ public sealed class SuggestionService(
 
         ScoringOptions newsScoring = new() { SentimentHalfLifeHours = intradayOptions.NewsHalfLifeHours };
         List<(SuggestionDraft Draft, IntradayContext Context)> drafts = [];
+        IReadOnlySet<string> weakCells = intradayOptions.AutoDisableWeakCells
+            ? await GetWeakCellsAsync(intradayOptions.WeakCellMinSamples, cancellationToken)
+            : new HashSet<string>();
 
         foreach (IntradayContext context in enriched.Where(c => Math.Abs(c.RecentMove) >= intradayOptions.MinEntryMove))
         {
@@ -69,7 +73,7 @@ public sealed class SuggestionService(
 
             if (draft is not null)
             {
-                drafts.Add((draft, context));
+                drafts.Add((GateWeakCell(draft, weakCells, WeakCells.Key(SuggestionHorizon.Intraday, context.AssetClass), WeakCells.HourKey(SuggestionHorizon.Intraday, context.AssetClass, now.UtcDateTime.Hour)), context));
             }
         }
 
@@ -198,11 +202,23 @@ public sealed class SuggestionService(
             }
         }
 
+        Dictionary<SuggestionHorizon, MetaModel?> metaModels = [];
+
+        foreach (SuggestionHorizon rowHorizon in rows.Select(r => r.Horizon).Distinct())
+        {
+            metaModels[rowHorizon] = await GetMetaModelAsync(rowHorizon, cancellationToken);
+        }
+
         return rows
             .Select(r =>
             {
                 AssetClass? rowClass = classes.TryGetValue(r.Symbol, out AssetClass found) ? found : null;
                 SuggestionDto dto = ToDto(r) with { Class = rowClass };
+
+                if (metaModels[r.Horizon] is { } meta)
+                {
+                    return dto with { CalibratedConfidence = meta.Predict(dto.Signals, dto.Direction), CalibrationSamples = meta.Samples };
+                }
 
                 return calibrations[(r.Horizon, rowClass)] is { } calibration
                     ? dto with { CalibratedConfidence = calibration.Apply(r.Confidence), CalibrationSamples = calibration.Samples }
@@ -370,17 +386,33 @@ public sealed class SuggestionService(
         int created = 0;
         List<Suggestion> added = [];
 
+        IReadOnlySet<string> weakCells = scoring.AutoDisableWeakCells
+            ? await GetWeakCellsAsync(scoring.WeakCellMinSamples, cancellationToken)
+            : new HashSet<string>();
+        double? vix = await GetVixAsync(cancellationToken);
+        IReadOnlyDictionary<string, int> earnings = await GetEarningsAsync(now, cancellationToken);
+        Dictionary<string, PriceLookup?> benchmarks = [];
+
         foreach (Instrument instrument in instruments.Where(i => !openSymbols.Contains(i.Symbol)))
         {
             try
             {
                 IReadOnlyList<Candle> candles = await marketData.GetCandlesAsync(instrument.Symbol, "1d", "1y", cancellationToken);
-                MarketSnapshot? market = IndicatorCalculator.Compute(instrument.Symbol, instrument.Name, candles);
+                IndicatorSeries series = IndicatorCalculator.ComputeSeries(instrument.Symbol, instrument.Name, candles);
+                MarketSnapshot? market = series.Snapshots.LastOrDefault();
 
                 if (market is null)
                 {
                     continue;
                 }
+
+                PriceLookup? benchmark = await GetBenchmarkAsync(instrument, benchmarks, cancellationToken);
+                market = market with
+                {
+                    RelativeStrength = benchmark is null ? null : ContextMetrics.RelativeStrength(series.Candles, series.Candles.Count - 1, benchmark),
+                    DaysToEarnings = earnings.TryGetValue(instrument.Symbol, out int days) ? days : null,
+                    Vix = vix
+                };
 
                 SentimentSnapshot sentiment = await BuildSentimentAsync(instrument.Symbol, now, scoring, SwingNewsWindow, cancellationToken);
                 SuggestionDraft? draft = engine.Assess(market, sentiment);
@@ -389,6 +421,8 @@ public sealed class SuggestionService(
                 {
                     continue;
                 }
+
+                draft = GateWeakCell(draft, weakCells, WeakCells.Key(SuggestionHorizon.Swing, instrument.AssetClass));
 
                 if (draft.IsShadow)
                 {
@@ -417,6 +451,151 @@ public sealed class SuggestionService(
         await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
         logger.LogInformation("Suggestion cycle created {Count} suggestions and recorded {Shadows} shadow ones", created, shadowsRecorded);
         return created;
+    }
+
+    private static SuggestionDraft GateWeakCell(SuggestionDraft draft, IReadOnlySet<string> weakCells, params string[] keys) =>
+        !draft.IsShadow && keys.Any(weakCells.Contains)
+            ? draft with { Blockers = ["célula com resultado negativo comprovado (tipo de ativo ou hora)"] }
+            : draft;
+
+    private async Task<IReadOnlySet<string>> GetWeakCellsAsync(int minIndependentCases, CancellationToken cancellationToken)
+    {
+        string key = $"weak-cells:{minIndependentCases}";
+
+        if (cache.TryGetValue(key, out IReadOnlySet<string>? cached) && cached is not null)
+        {
+            return cached;
+        }
+
+        List<Suggestion> closed = await dbContext.Suggestions
+            .AsNoTracking()
+            .Where(s => s.Variant == "A" && s.Status != SuggestionStatus.Open && s.RMultiple != null)
+            .ToListAsync(cancellationToken);
+
+        Dictionary<string, AssetClass> classes = await dbContext.Instruments.AsNoTracking().ToDictionaryAsync(i => i.Symbol, i => i.AssetClass, cancellationToken);
+        CostModel costs = new();
+        List<CellOutcome> outcomes = [];
+
+        foreach (Suggestion suggestion in closed.Where(s => classes.ContainsKey(s.Symbol)))
+        {
+            AssetClass assetClass = classes[suggestion.Symbol];
+            double netR = suggestion.RMultiple!.Value - SuggestionCosts.CostR(ToDto(suggestion), assetClass, costs);
+            DateOnly day = DateOnly.FromDateTime(suggestion.CreatedAt.UtcDateTime);
+
+            outcomes.Add(new CellOutcome(WeakCells.Key(suggestion.Horizon, assetClass), day, netR));
+
+            if (suggestion.Horizon == SuggestionHorizon.Intraday)
+            {
+                outcomes.Add(new CellOutcome(WeakCells.HourKey(suggestion.Horizon, assetClass, suggestion.CreatedAt.UtcDateTime.Hour), day, netR));
+            }
+        }
+
+        IReadOnlySet<string> weak = WeakCells.Find(outcomes, minIndependentCases);
+        cache.Set(key, weak, CalibrationCacheDuration);
+        return weak;
+    }
+
+    private async Task<double?> GetVixAsync(CancellationToken cancellationToken)
+    {
+        try
+        {
+            IReadOnlyList<Candle>? candles = await marketData.GetCandlesAsync("^VIX", "1d", "1mo", cancellationToken);
+            return candles is { Count: > 0 } ? candles[^1].Close : null;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Could not load VIX: {Message}", ex.Message);
+            return null;
+        }
+    }
+
+    private async Task<IReadOnlyDictionary<string, int>> GetEarningsAsync(DateTimeOffset now, CancellationToken cancellationToken)
+    {
+        try
+        {
+            CalendarFeed? feed = await calendar.GetAsync(14, cancellationToken);
+            DateOnly today = DateOnly.FromDateTime(now.UtcDateTime);
+
+            return (feed?.Events ?? [])
+                .Where(e => e.Kind == CalendarKind.Earnings && e.Symbol is not null && e.Date >= today)
+                .GroupBy(e => e.Symbol!)
+                .ToDictionary(g => g.Key, g => g.Min(e => e.Date.DayNumber) - today.DayNumber);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or TaskCanceledException && !cancellationToken.IsCancellationRequested)
+        {
+            logger.LogWarning("Could not load earnings dates: {Message}", ex.Message);
+            return new Dictionary<string, int>();
+        }
+    }
+
+    private async Task<PriceLookup?> GetBenchmarkAsync(Instrument instrument, Dictionary<string, PriceLookup?> loaded, CancellationToken cancellationToken)
+    {
+        if (BenchmarkSelector.For(instrument.Symbol, instrument.AssetClass) is not { } benchmark)
+        {
+            return null;
+        }
+
+        if (loaded.TryGetValue(benchmark.Symbol, out PriceLookup? existing))
+        {
+            return existing;
+        }
+
+        try
+        {
+            IReadOnlyList<Candle>? candles = await marketData.GetCandlesAsync(benchmark.Symbol, "1d", "1y", cancellationToken);
+            loaded[benchmark.Symbol] = candles is { Count: > 0 } ? new PriceLookup(candles) : null;
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Could not load benchmark {Symbol}: {Message}", benchmark.Symbol, ex.Message);
+            loaded[benchmark.Symbol] = null;
+        }
+
+        return loaded[benchmark.Symbol];
+    }
+
+    private async Task<double?> GetDailyTrendAsync(string symbol, CancellationToken cancellationToken)
+    {
+        string key = $"daily-trend:{symbol}";
+
+        if (cache.TryGetValue(key, out double? cached))
+        {
+            return cached;
+        }
+
+        double? trend = null;
+
+        try
+        {
+            IReadOnlyList<Candle>? candles = await marketData.GetCandlesAsync(symbol, "1d", "6mo", cancellationToken);
+
+            if (candles is { Count: > 0 } && IndicatorCalculator.Compute(symbol, symbol, candles) is { } snapshot)
+            {
+                trend = ContextMetrics.DailyTrend(snapshot);
+            }
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Could not load daily trend for {Symbol}: {Message}", symbol, ex.Message);
+        }
+
+        cache.Set(key, trend, DailyTrendCacheDuration);
+        return trend;
+    }
+
+    private async Task<MetaModel?> GetMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        string key = MetaModelStore.CacheKey(horizon);
+
+        if (cache.TryGetValue(key, out MetaModel? cached))
+        {
+            return cached;
+        }
+
+        AppSetting? setting = await dbContext.AppSettings.AsNoTracking().FirstOrDefaultAsync(s => s.Key == MetaModelStore.SettingKey(horizon), cancellationToken);
+        MetaModel? model = setting is null ? null : JsonSerializer.Deserialize<MetaModel>(setting.Value, JsonOptions);
+        cache.Set(key, model, CalibrationCacheDuration);
+        return model;
     }
 
     private async Task<SentimentSnapshot> BuildSentimentAsync(string symbol, DateTimeOffset now, ScoringOptions scoring, TimeSpan window, CancellationToken cancellationToken)
@@ -509,14 +688,22 @@ public sealed class SuggestionService(
             }
         }
 
-        return contexts
-            .Select(c => c with
+        List<IntradayContext> enriched = [];
+
+        foreach (IntradayContext c in contexts)
+        {
+            double? dailyTrend = Math.Abs(c.RecentMove) >= intradayOptions.MinEntryMove ? await GetDailyTrendAsync(c.Symbol, cancellationToken) : null;
+
+            enriched.Add(c with
             {
                 MarketChangePercent = BenchmarkSelector.For(c.Symbol, c.AssetClass) is { } benchmark && changes.TryGetValue(benchmark.Symbol, out double? change) ? change : null,
                 MacroEvent = macro,
-                Vix = vix
-            })
-            .ToList();
+                Vix = vix,
+                DailyTrend = dailyTrend
+            });
+        }
+
+        return enriched;
     }
 
     internal static SuggestionDto ToDto(Suggestion s)

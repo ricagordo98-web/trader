@@ -23,6 +23,16 @@ public sealed class ScoringOptions
     public double MinRiskReward { get; set; } = 1.8;
     public int ExpiryDays { get; set; } = 5;
 
+    public double RelativeStrengthWeight { get; set; } = 0.5;
+    public double RelativeStrengthScale { get; set; } = 5;
+    public double MinAdx { get; set; } = 18;
+    public bool RequireWeeklyAlignment { get; set; } = true;
+    public int BlockEarningsWithinDays { get; set; } = 5;
+    public double MaxVix { get; set; } = 30;
+
+    public bool AutoDisableWeakCells { get; set; } = true;
+    public int WeakCellMinSamples { get; set; } = 20;
+
     public bool RecordShadow { get; set; } = true;
     public double ShadowMinConfidence { get; set; } = 0.45;
 }

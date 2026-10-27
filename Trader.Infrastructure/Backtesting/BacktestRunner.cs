@@ -1,9 +1,12 @@
 using Trader.Core.Backtesting;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
+using Trader.Infrastructure.Explain;
 using Trader.Infrastructure.Suggestions;
 
 namespace Trader.Infrastructure.Backtesting;
+
+public sealed record BacktestMarketContext(IReadOnlyDictionary<string, IReadOnlyList<Candle>> Benchmarks, IReadOnlyList<Candle> Vix);
 
 public sealed record SymbolHistory(string Symbol, string Name, AssetClass AssetClass, IReadOnlyList<Candle> Candles);
 
@@ -29,9 +32,15 @@ public static class BacktestRunner
         ScoringOptions scoring,
         BacktestRequest request,
         DateTimeOffset generatedAt,
-        IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>? sentimentRows = null)
+        IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>? sentimentRows = null,
+        BacktestMarketContext? marketContext = null)
     {
         bool useSentiment = request.UseSentiment && sentimentRows is not null;
+        bool useContext = request.UseMarketContext && marketContext is not null;
+        Dictionary<string, PriceLookup> benchmarkLookups = useContext
+            ? marketContext!.Benchmarks.ToDictionary(b => b.Key, b => new PriceLookup(b.Value))
+            : [];
+        PriceLookup? vixLookup = useContext && marketContext!.Vix.Count > 0 ? new PriceLookup(marketContext.Vix) : null;
         DateTimeOffset sentimentFrom = DateTimeOffset.MaxValue;
         SuggestionEngine engine = new(scoring);
         List<BacktestTrade> strategy = [];
@@ -79,6 +88,20 @@ public static class BacktestRunner
                 }
 
                 MarketSnapshot? snapshot = series.Snapshots[i];
+
+                if (snapshot is not null)
+                {
+                    snapshot = useContext
+                        ? snapshot with
+                        {
+                            RelativeStrength = BenchmarkSelector.For(history.Symbol, history.AssetClass) is { } benchmark && benchmarkLookups.TryGetValue(benchmark.Symbol, out PriceLookup? lookup)
+                                ? ContextMetrics.RelativeStrength(candles, i, lookup)
+                                : null,
+                            Vix = vixLookup?.CloseAtOrBefore(candles[i].Time)
+                        }
+                        : snapshot with { Adx = null, WeeklyTrend = null };
+                }
+
                 SentimentSnapshot sentiment = rows is null ? NoSentiment : SentimentAt(rows, candles[i].Time, scoring);
                 SuggestionDraft? draft = snapshot is null ? null : engine.Evaluate(snapshot, sentiment);
 
@@ -136,8 +159,9 @@ public static class BacktestRunner
             Group(strategy, t => t.Symbol).OrderByDescending(g => g.Stats.TotalNetR).ToList(),
             BacktestStatistics.EquityCurve(strategy),
             BacktestStatistics.Evaluate(strategyStats, baselineStats, firstHalf, secondHalf),
-            BuildNotes(useSentiment, sentimentFrom, to),
-            useSentiment);
+            BuildNotes(useSentiment, sentimentFrom, to, useContext),
+            useSentiment,
+            useContext);
     }
 
     private const int SentimentWarmupDays = 3;
@@ -150,14 +174,21 @@ public static class BacktestRunner
         return SentimentAggregator.Build(rows.Where(r => r.PublishedAt <= asOf).ToList(), asOf, scoring);
     }
 
-    private static IReadOnlyList<string> BuildNotes(bool useSentiment, DateTimeOffset sentimentFrom, DateTimeOffset to) =>
-        useSentiment
+    private static IReadOnlyList<string> BuildNotes(bool useSentiment, DateTimeOffset sentimentFrom, DateTimeOffset to, bool useContext)
+    {
+        string contextNote = useContext
+            ? "Foram aplicados os filtros de contexto do motor ao vivo: mercado lateral (ADX), tendência semanal, força relativa face ao mercado e VIX. Os resultados trimestrais não existem no histórico, por isso esse filtro não foi testado."
+            : "Os filtros de contexto (ADX, tendência semanal, força relativa e VIX) estavam desligados neste teste.";
+
+        return useSentiment
             ?
             [
                 $"O sentimento foi reconstruído a partir das notícias que este servidor guardou, só para os dias entre {sentimentFrom:dd/MM/yyyy} e {to:dd/MM/yyyy}. É um histórico curto: poucas operações não provam nada, só indicam o rumo.",
+                contextNote,
                 .. CommonNotes
             ]
-            : [TechnicalOnlyNote, .. CommonNotes];
+            : [TechnicalOnlyNote, contextNote, .. CommonNotes];
+    }
 
     private static List<BacktestGroup> Group(IReadOnlyList<BacktestTrade> trades, Func<BacktestTrade, string> key) =>
         trades

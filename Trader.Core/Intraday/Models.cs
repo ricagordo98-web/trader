@@ -64,7 +64,9 @@ public sealed record IntradayContext(
     double? MarketChangePercent = null,
     string? MacroEvent = null,
     double? Vix = null,
-    double? VolatilityRatio = null);
+    double? VolatilityRatio = null,
+    double? Adx = null,
+    double? DailyTrend = null);
 
 public sealed class IntradayOptions
 {
@@ -115,6 +117,12 @@ public sealed class IntradayOptions
 
     public double MaxVix { get; set; } = 30;
     public double MaxVolatilityRatio { get; set; } = 2.5;
+
+    public double MinAdx { get; set; } = 15;
+    public bool RequireDailyAlignment { get; set; } = true;
+
+    public bool AutoDisableWeakCells { get; set; } = true;
+    public int WeakCellMinSamples { get; set; } = 20;
 
     public bool SmartExitEnabled { get; set; }
     public double PartialAtR { get; set; } = 1.0;

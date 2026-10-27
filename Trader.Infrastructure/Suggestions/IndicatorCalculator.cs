@@ -47,6 +47,8 @@ public static class IndicatorCalculator
         IReadOnlyList<MacdResult> macd = quotes.GetMacd(12, 26, 9).ToList();
         IReadOnlyList<BollingerBandsResult> bollinger = quotes.GetBollingerBands(20, 2).ToList();
         IReadOnlyList<AtrResult> atr = quotes.GetAtr(14).ToList();
+        IReadOnlyList<AdxResult> adx = quotes.GetAdx(14).ToList();
+        double?[] weekly = WeeklyTrends(quotes);
 
         List<MarketSnapshot?> snapshots = new(quotes.Count);
 
@@ -54,7 +56,7 @@ public static class IndicatorCalculator
         {
             snapshots.Add(i < MinCandles - 1
                 ? null
-                : BuildSnapshot(symbol, name, quotes, i, ema20[i].Ema, ema50[i].Ema, i >= LongEmaIndex ? ema200[i].Ema : null, rsi[i].Rsi, macd[i].Histogram, bollinger[i].PercentB, atr[i].Atr));
+                : BuildSnapshot(symbol, name, quotes, i, ema20[i].Ema, ema50[i].Ema, i >= LongEmaIndex ? ema200[i].Ema : null, rsi[i].Rsi, macd[i].Histogram, bollinger[i].PercentB, atr[i].Atr, adx[i].Adx, weekly[i]));
         }
 
         return new IndicatorSeries(daily, snapshots);
@@ -71,7 +73,9 @@ public static class IndicatorCalculator
         double? rsi,
         double? histogram,
         double? percentB,
-        double? atr)
+        double? atr,
+        double? adx,
+        double? weeklyTrend)
     {
         if (ema20 is null || ema50 is null || rsi is null || histogram is null || percentB is null || atr is null)
         {
@@ -100,6 +104,51 @@ public static class IndicatorCalculator
             histogram.Value,
             percentB.Value,
             (double)low,
-            (double)high);
+            (double)high,
+            adx,
+            weeklyTrend);
+    }
+
+    private static double?[] WeeklyTrends(List<Quote> quotes)
+    {
+        const int minWeeks = 20;
+        const double fast = 2.0 / 11;
+        const double slow = 2.0 / 21;
+
+        double?[] result = new double?[quotes.Count];
+        double? emaFast = null;
+        double? emaSlow = null;
+        int weeks = 0;
+        int? currentWeek = null;
+        double previousClose = 0;
+
+        for (int i = 0; i < quotes.Count; i++)
+        {
+            int week = System.Globalization.ISOWeek.GetYear(quotes[i].Date) * 100 + System.Globalization.ISOWeek.GetWeekOfYear(quotes[i].Date);
+
+            if (currentWeek != week)
+            {
+                if (currentWeek is not null)
+                {
+                    emaFast = emaFast is null ? previousClose : emaFast + fast * (previousClose - emaFast);
+                    emaSlow = emaSlow is null ? previousClose : emaSlow + slow * (previousClose - emaSlow);
+                    weeks++;
+                }
+
+                currentWeek = week;
+            }
+
+            double close = (double)quotes[i].Close;
+            previousClose = close;
+
+            if (weeks >= minWeeks && emaFast is { } f && emaSlow is { } s)
+            {
+                double partialFast = f + fast * (close - f);
+                double partialSlow = s + slow * (close - s);
+                result[i] = (Math.Sign(close - partialFast) + Math.Sign(partialFast - partialSlow)) / 2.0;
+            }
+        }
+
+        return result;
     }
 }

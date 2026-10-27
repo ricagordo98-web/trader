@@ -49,7 +49,9 @@ public sealed record ModelReliabilityReport(
     ExcursionAnalysis? Excursions = null,
     SmartExitComparison? SmartExit = null,
     double AverageGrossR = 0,
-    double AverageCostR = 0);
+    double AverageCostR = 0,
+    int IndependentCases = 0,
+    Interval? ClusteredAverageRCi = null);
 
 public sealed record ExcursionAnalysis(
     int Samples,
@@ -99,7 +101,13 @@ public static class ModelReliability
         double brier = done.Average(s => Math.Pow(s.Confidence - (R(s) > 0 ? 1 : 0), 2));
         double baselineBrier = baseRate * (1 - baseRate);
 
-        ReliabilityVerdict verdict = BuildVerdict(done.Count, winRate, breakEven, averageR, MeanCi(rs), brier, baselineBrier, done.Average(s => s.Confidence));
+        double[] clusterMeans = done
+            .GroupBy(s => (Day: s.CreatedAt.UtcDateTime.Date, s.Class, s.Direction))
+            .Select(g => g.Average(s => R(s)))
+            .ToArray();
+        Interval clustered = clusterMeans.Length >= 2 ? MeanCi(clusterMeans) : MeanCi(rs);
+
+        ReliabilityVerdict verdict = BuildVerdict(done.Count, winRate, breakEven, averageR, clustered, brier, baselineBrier, done.Average(s => s.Confidence), clusterMeans.Length);
 
         return new ModelReliabilityReport(
             done.Count,
@@ -125,7 +133,9 @@ public static class ModelReliability
             Group(done, s => s.Direction == TradeDirection.Buy ? "Compra" : "Venda"),
             Group(done, s => ConfidenceBand(s.Confidence)).OrderBy(g => g.Name, StringComparer.Ordinal).ToList(),
             SentimentGroups(done),
-            verdict);
+            verdict,
+            IndependentCases: clusterMeans.Length,
+            ClusteredAverageRCi: clustered);
     }
 
     public static double R(SuggestionDto s) => s.RMultiple!.Value - (s.CostR ?? 0);
@@ -299,7 +309,7 @@ public static class ModelReliability
         });
     }
 
-    private static ReliabilityVerdict BuildVerdict(int count, double winRate, double breakEven, double averageR, Interval averageRCi, double brier, double baselineBrier, double averageConfidence)
+    private static ReliabilityVerdict BuildVerdict(int count, double winRate, double breakEven, double averageR, Interval averageRCi, double brier, double baselineBrier, double averageConfidence, int independentCases)
     {
         List<string> reasons = [];
 
@@ -311,6 +321,11 @@ public static class ModelReliability
 
         reasons.Add($"{count} sugestões fechadas, acerto de {winRate * 100:0}% (ponto de equilíbrio {breakEven * 100:0}%).");
         reasons.Add($"R médio {averageR:+0.00;-0.00} (intervalo de confiança 95%: {averageRCi.Low:+0.00;-0.00} a {averageRCi.High:+0.00;-0.00}).");
+
+        if (independentCases < count)
+        {
+            reasons.Add($"As {count} sugestões equivalem a cerca de {independentCases} apostas independentes (as do mesmo dia, tipo de ativo e sentido contam como uma); o intervalo usa esse número.");
+        }
 
         if (averageConfidence - winRate > 0.1)
         {

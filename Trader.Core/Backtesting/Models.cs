@@ -33,6 +33,7 @@ public sealed class BacktestRequest
 {
     public string Range { get; set; } = "5y";
     public bool UseSentiment { get; set; }
+    public bool UseMarketContext { get; set; } = true;
     public CostModel Costs { get; set; } = new();
 }
 
@@ -86,4 +87,5 @@ public sealed record BacktestResult(
     IReadOnlyList<CurvePoint> Curve,
     BacktestVerdict Verdict,
     IReadOnlyList<string> Notes,
-    bool UsedSentiment = false);
+    bool UsedSentiment = false,
+    bool UsedMarketContext = false);

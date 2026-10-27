@@ -1,4 +1,5 @@
 using Trader.Core.Models;
+using Trader.Core.Scoring;
 
 namespace Trader.Core.Intraday;
 
@@ -80,7 +81,8 @@ public static class IntradayAnalyzer
             last.Time,
             session,
             usesSessionLevels && previous is { Count: > 1 } ? sessionStart + (previous[^1].Time - previous[0].Time) : null,
-            VolatilityRatio: VolatilityRatio(days, session));
+            VolatilityRatio: VolatilityRatio(days, session),
+            Adx: ContextMetrics.Adx(days.TakeLast(3).SelectMany(d => d).ToList()));
     }
 
     private static double? VolatilityRatio(List<List<Candle>> days, List<Candle> session)

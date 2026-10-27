@@ -14,7 +14,12 @@ public sealed record MarketSnapshot(
     double MacdHistogram,
     double PercentB,
     double SwingLow,
-    double SwingHigh);
+    double SwingHigh,
+    double? Adx = null,
+    double? WeeklyTrend = null,
+    double? RelativeStrength = null,
+    int? DaysToEarnings = null,
+    double? Vix = null);
 
 public sealed record SentimentSnapshot(
     double WeightedSentiment,

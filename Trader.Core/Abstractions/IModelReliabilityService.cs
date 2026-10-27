@@ -12,4 +12,10 @@ public interface IModelReliabilityService
     Task<WeightLearning> GetWeightLearningAsync(SuggestionHorizon horizon, CancellationToken cancellationToken);
 
     Task<WeightLearning> ApplyLearnedWeightsAsync(SuggestionHorizon horizon, CancellationToken cancellationToken);
+
+    Task<MetaModelFit> GetMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken);
+
+    Task<MetaModelFit> ApplyMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken);
+
+    Task DisableMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken);
 }

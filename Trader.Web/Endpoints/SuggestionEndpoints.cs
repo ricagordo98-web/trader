@@ -48,6 +48,18 @@ public static class SuggestionEndpoints
         group.MapPost("/reliability/weights/apply", async (SuggestionHorizon? horizon, IModelReliabilityService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.ApplyLearnedWeightsAsync(horizon ?? SuggestionHorizon.Intraday, cancellationToken)));
 
+        group.MapGet("/reliability/meta", async (SuggestionHorizon? horizon, IModelReliabilityService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.GetMetaModelAsync(horizon ?? SuggestionHorizon.Intraday, cancellationToken)));
+
+        group.MapPost("/reliability/meta/apply", async (SuggestionHorizon? horizon, IModelReliabilityService service, CancellationToken cancellationToken) =>
+            Results.Ok(await service.ApplyMetaModelAsync(horizon ?? SuggestionHorizon.Intraday, cancellationToken)));
+
+        group.MapDelete("/reliability/meta", async (SuggestionHorizon? horizon, IModelReliabilityService service, CancellationToken cancellationToken) =>
+        {
+            await service.DisableMetaModelAsync(horizon ?? SuggestionHorizon.Intraday, cancellationToken);
+            return Results.NoContent();
+        });
+
         group.MapGet("/reliability/sentiment", async (IModelReliabilityService service, CancellationToken cancellationToken) =>
             Results.Ok(await service.GetSentimentStudyAsync(cancellationToken)));
 

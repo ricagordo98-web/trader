@@ -42,7 +42,8 @@ public static class SignalWeightMap
         ["buzz"] = o.BuzzWeight,
         ["trend"] = o.TrendWeight,
         ["momentum"] = o.MomentumWeight,
-        ["bollinger"] = o.BollingerWeight
+        ["bollinger"] = o.BollingerWeight,
+        ["relative-strength"] = o.RelativeStrengthWeight
     };
 
     public static void Apply(ScoringOptions o, IReadOnlyDictionary<string, double> weights)
@@ -56,6 +57,7 @@ public static class SignalWeightMap
                 case "trend": o.TrendWeight = weight; break;
                 case "momentum": o.MomentumWeight = weight; break;
                 case "bollinger": o.BollingerWeight = weight; break;
+                case "relative-strength": o.RelativeStrengthWeight = weight; break;
             }
         }
     }

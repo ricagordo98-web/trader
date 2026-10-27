@@ -58,6 +58,50 @@ public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDa
         return learning;
     }
 
+    public async Task<MetaModelFit> GetMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken) =>
+        MetaModelTrainer.Train(horizon, await LoadClosedAsync(horizon, cancellationToken));
+
+    public async Task<MetaModelFit> ApplyMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        MetaModelFit fit = await GetMetaModelAsync(horizon, cancellationToken);
+
+        if (fit.Model is null)
+        {
+            return fit;
+        }
+
+        string key = MetaModelStore.SettingKey(horizon);
+        string json = System.Text.Json.JsonSerializer.Serialize(fit.Model, new System.Text.Json.JsonSerializerOptions(System.Text.Json.JsonSerializerDefaults.Web));
+        AppSetting? setting = await dbContext.AppSettings.FirstOrDefaultAsync(s => s.Key == key, cancellationToken);
+
+        if (setting is null)
+        {
+            dbContext.AppSettings.Add(new AppSetting { Key = key, Value = json });
+        }
+        else
+        {
+            setting.Value = json;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        cache.Remove(MetaModelStore.CacheKey(horizon));
+        return fit;
+    }
+
+    public async Task DisableMetaModelAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        string key = MetaModelStore.SettingKey(horizon);
+        AppSetting? setting = await dbContext.AppSettings.FirstOrDefaultAsync(s => s.Key == key, cancellationToken);
+
+        if (setting is not null)
+        {
+            dbContext.AppSettings.Remove(setting);
+            await dbContext.SaveChangesAsync(cancellationToken);
+        }
+
+        cache.Remove(MetaModelStore.CacheKey(horizon));
+    }
+
     private async Task<List<SuggestionDto>> LoadClosedAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
     {
         IQueryable<Suggestion> query = dbContext.Suggestions.AsNoTracking().Where(s => s.Status != SuggestionStatus.Open);

@@ -5,6 +5,7 @@ using Trader.Core.Abstractions;
 using Trader.Core.Backtesting;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
+using Trader.Infrastructure.Explain;
 using Trader.Infrastructure.Persistence;
 
 namespace Trader.Infrastructure.Backtesting;
@@ -41,8 +42,10 @@ public sealed class BacktestService(
             List<SymbolHistory> histories = await LoadHistoriesAsync(instruments, request.Range, cancellationToken);
             IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>? sentiment = request.UseSentiment ? await LoadSentimentAsync(cancellationToken) : null;
 
+            BacktestMarketContext? marketContext = request.UseMarketContext ? await LoadMarketContextAsync(histories, request.Range, cancellationToken) : null;
+
             BacktestResult result = await Task.Run(
-                () => BacktestRunner.Run(histories, scoring, request, DateTimeOffset.UtcNow, sentiment),
+                () => BacktestRunner.Run(histories, scoring, request, DateTimeOffset.UtcNow, sentiment, marketContext),
                 cancellationToken);
 
             await SaveAsync(result, cancellationToken);
@@ -95,6 +98,37 @@ public sealed class BacktestService(
             .ToArray();
 
         return (await Task.WhenAll(tasks)).OfType<SymbolHistory>().ToList();
+    }
+
+    private async Task<BacktestMarketContext> LoadMarketContextAsync(IReadOnlyList<SymbolHistory> histories, string range, CancellationToken cancellationToken)
+    {
+        List<string> symbols = histories
+            .Select(h => BenchmarkSelector.For(h.Symbol, h.AssetClass)?.Symbol)
+            .OfType<string>()
+            .Distinct()
+            .ToList();
+
+        Dictionary<string, IReadOnlyList<Candle>> benchmarks = [];
+
+        foreach (string symbol in symbols)
+        {
+            benchmarks[symbol] = await TryLoadAsync(symbol, range, cancellationToken);
+        }
+
+        return new BacktestMarketContext(benchmarks, await TryLoadAsync("^VIX", range, cancellationToken));
+    }
+
+    private async Task<IReadOnlyList<Candle>> TryLoadAsync(string symbol, string range, CancellationToken cancellationToken)
+    {
+        try
+        {
+            return await marketData.GetCandlesAsync(symbol, "1d", range, cancellationToken) ?? [];
+        }
+        catch (HttpRequestException ex)
+        {
+            logger.LogWarning("Backtest context skipped {Symbol}: {Message}", symbol, ex.Message);
+            return [];
+        }
     }
 
     private async Task<IReadOnlyDictionary<string, IReadOnlyList<ArticleSentimentRow>>> LoadSentimentAsync(CancellationToken cancellationToken)

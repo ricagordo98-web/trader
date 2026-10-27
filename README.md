@@ -130,6 +130,15 @@ Trading -> chart opens a workspace of draggable/resizable chart panels (`workspa
 - **Weight learning:** with at least 150 closed suggestions of a horizon, signal weights are proposed from the hit rate per signal using the oldest 70%; a proposal can only be applied if the AUC on the newest 30% improves by at least 0.02 (`/api/suggestions/reliability/weights`).
 - **A/B test:** a second intraday rule set (variant B, Settings -> Scoring) runs in parallel as shadow records (`Variant = "B"`, own stops and targets) and is compared with variant A in Fiabilidade.
 
+### Context filters and statistical model
+
+- **Regime and higher timeframe:** swing uses ADX (daily) and the weekly EMA10/EMA20 trend; intraday uses ADX on 5-minute candles and the daily EMA20/EMA50 trend. A suggestion in a sideways market (`MinAdx`) or against the higher timeframe becomes a shadow record instead of being dropped.
+- **Relative strength (swing):** 4-week return minus the benchmark's return, a new signal (`relative-strength`) with its own weight. Swing suggestions are also shadowed when earnings fall within `BlockEarningsWithinDays` or the VIX is above `MaxVix`.
+- **Weak cells:** with `AutoDisableWeakCells`, a (horizon, asset class) or (intraday, asset class, UTC hour) cell whose net R upper confidence bound is below zero, over at least `WeakCellMinSamples` independent days, stops producing visible suggestions. Shadow records keep being evaluated, so a cell can recover.
+- **Independent bets:** suggestions from the same day, asset class and direction count as one case; the Fiabilidade verdict uses that clustered interval.
+- **Backtest:** the swing backtest applies the same context filters (ADX, weekly trend, relative strength, VIX) and the switch lets you compare with and without them. Earnings are not available historically.
+- **Statistical model:** with 200+ closed suggestions per horizon, a regularised logistic regression on the signal values is trained on the oldest 70% and only offered for activation if its AUC on the newest 30% beats the current confidence by 0.03. Once active it replaces the calibrated confidence shown.
+
 ## System status
 
 Settings -> Fontes shows `GET /api/system/health`: Yahoo price freshness (quotes carry `AsOf`; the chart chip tooltip shows how old the last quote is), news sources with errors, whether Finnhub live data is configured and whether the local Ollama model answers. No paid data provider is wired in.

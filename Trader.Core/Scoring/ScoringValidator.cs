@@ -9,7 +9,7 @@ public static class ScoringValidator
         foreach ((string name, double weight) in new[]
         {
             ("Sentimento", o.SentimentWeight), ("Volume de menções", o.BuzzWeight), ("Tendência", o.TrendWeight),
-            ("Momentum", o.MomentumWeight), ("Bollinger", o.BollingerWeight)
+            ("Momentum", o.MomentumWeight), ("Bollinger", o.BollingerWeight), ("Força relativa", o.RelativeStrengthWeight)
         })
         {
             if (weight is < 0 or > 5)
@@ -46,6 +46,16 @@ public static class ScoringValidator
         if (o.MinRiskReward is < 1 or > 5)
         {
             errors.Add("O R:R mínimo tem de estar entre 1 e 5.");
+        }
+
+        if (o.MinAdx is < 0 or > 60 || o.MaxVix is < 0 or > 100)
+        {
+            errors.Add("O ADX mínimo (0–60) e o VIX máximo (0–100) estão fora do intervalo.");
+        }
+
+        if (o.BlockEarningsWithinDays is < 0 or > 30 || o.WeakCellMinSamples is < 5 or > 200)
+        {
+            errors.Add("Os dias antes de resultados (0–30) e o mínimo de casos para desligar uma célula fraca (5–200) estão fora do intervalo.");
         }
 
         if (o.ExpiryDays is < 1 or > 30)

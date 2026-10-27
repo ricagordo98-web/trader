@@ -63,6 +63,8 @@ public sealed class SuggestionEngine(ScoringOptions options)
             blockers.Add("R:R abaixo do mínimo");
         }
 
+        AddContextBlockers(blockers, market, sign);
+
         if (blockers.Count > 0 && (!options.RecordShadow || confidence < options.ShadowMinConfidence))
         {
             return null;
@@ -90,6 +92,29 @@ public sealed class SuggestionEngine(ScoringOptions options)
             blockers);
     }
 
+    private void AddContextBlockers(List<string> blockers, MarketSnapshot market, int sign)
+    {
+        if (options.MinAdx > 0 && market.Adx is { } adx && adx < options.MinAdx)
+        {
+            blockers.Add($"mercado lateral (ADX {Format(adx, "0")})");
+        }
+
+        if (options.RequireWeeklyAlignment && market.WeeklyTrend is { } weekly && Math.Abs(weekly) >= 0.5 && Math.Sign(weekly) != sign)
+        {
+            blockers.Add("contra a tendência semanal");
+        }
+
+        if (options.BlockEarningsWithinDays > 0 && market.DaysToEarnings is { } days && days >= 0 && days <= options.BlockEarningsWithinDays)
+        {
+            blockers.Add($"resultados em {days} dias");
+        }
+
+        if (options.MaxVix > 0 && market.Vix is { } vix && vix >= options.MaxVix)
+        {
+            blockers.Add($"VIX elevado ({Format(vix, "0.#")})");
+        }
+    }
+
     private List<SignalResult> BuildSignals(MarketSnapshot market, SentimentSnapshot sentiment)
     {
         List<SignalResult> signals = [];
@@ -114,6 +139,16 @@ public sealed class SuggestionEngine(ScoringOptions options)
                     options.BuzzWeight,
                     $"volume de menções {Format(z, "0.0")} desvios acima do normal"));
             }
+        }
+
+        if (market.RelativeStrength is { } relative && options.RelativeStrengthWeight > 0 && options.RelativeStrengthScale > 0)
+        {
+            signals.Add(new SignalResult(
+                "relative-strength",
+                "Força relativa",
+                Clamp(relative / options.RelativeStrengthScale),
+                options.RelativeStrengthWeight,
+                $"{Format(relative, "+0.0;-0.0")} pontos face ao mercado nas últimas 4 semanas"));
         }
 
         signals.Add(BuildTrend(market));
