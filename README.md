@@ -119,6 +119,17 @@ Trading -> chart opens a workspace of draggable/resizable chart panels (`workspa
 - **Intraday rules** (`IntradayOptions`, persisted via `/api/settings/intraday` and applied live): wider ATR-based stops and targets (defaults 3.0 / 5.4 x ATR, min R:R 1.8, min stop 2 x ATR), "don't chase" limits, session window, market-direction signal (S&P 500, DAX, Bitcoin...) with an optional hard filter, and a macro-event window using the Calendar. Settings saved before this change keep their old values until reset.
 - The intraday backtest uses the live rules (session window, extension and stops); the market and macro rules have no historical data and are not backtested.
 
+### Model improvement loop
+
+- **Costs:** the Fiabilidade tab reports R net of an estimated round-trip cost (spread and commission by asset class, plus overnight financing for swing; `CostModel` defaults) and shows gross against net. Calibration is also fitted on net outcomes.
+- **Calibration by asset class:** each suggestion's historical hit rate uses its own class (stock, crypto, commodity...) when it has at least 30 closed samples, otherwise the horizon-wide curve. Results by class and by hour of creation are in Fiabilidade.
+- **Volatility regime:** `MaxVix` (default 30, quote `^VIX`) and `MaxVolatilityRatio` (the asset's 5-minute range today against previous sessions, default 2.5) turn a suggestion into a shadow record. 0 disables each.
+- **MFE / MAE:** every suggestion closed from now on stores its best and worst excursion in R. Fiabilidade shows typical excursions and a hint about stops (older suggestions have no excursion data).
+- **Smart exit:** partial exit, breakeven stop and trailing stop are simulated for every closed suggestion (`SmartR`) and compared with the fixed exit; it only becomes the official R when "Usar a saída inteligente" is on. It applies to intraday and swing.
+- **Sentiment quality:** source weights were already learned from outcomes; headline categories (earnings, analyst, M&A...) now get learned weights too (minimum 15 appearances).
+- **Weight learning:** with at least 150 closed suggestions of a horizon, signal weights are proposed from the hit rate per signal using the oldest 70%; a proposal can only be applied if the AUC on the newest 30% improves by at least 0.02 (`/api/suggestions/reliability/weights`).
+- **A/B test:** a second intraday rule set (variant B, Settings -> Scoring) runs in parallel as shadow records (`Variant = "B"`, own stops and targets) and is compared with variant A in Fiabilidade.
+
 ## System status
 
 Settings -> Fontes shows `GET /api/system/health`: Yahoo price freshness (quotes carry `AsOf`; the chart chip tooltip shows how old the last quote is), news sources with errors, whether Finnhub live data is configured and whether the local Ollama model answers. No paid data provider is wired in.

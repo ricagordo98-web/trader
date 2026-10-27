@@ -62,7 +62,9 @@ public sealed record IntradayContext(
     IReadOnlyList<Candle> SessionCandles,
     DateTimeOffset? SessionEnd = null,
     double? MarketChangePercent = null,
-    string? MacroEvent = null);
+    string? MacroEvent = null,
+    double? Vix = null,
+    double? VolatilityRatio = null);
 
 public sealed class IntradayOptions
 {
@@ -110,6 +112,19 @@ public sealed class IntradayOptions
     public bool RequireMarketAlignment { get; set; }
     public double MarketAlignmentFloorPercent { get; set; } = 0.3;
     public double AvoidMacroHours { get; set; } = 2;
+
+    public double MaxVix { get; set; } = 30;
+    public double MaxVolatilityRatio { get; set; } = 2.5;
+
+    public bool SmartExitEnabled { get; set; }
+    public double PartialAtR { get; set; } = 1.0;
+    public double PartialFraction { get; set; } = 0.5;
+    public double BreakevenAtR { get; set; } = 1.0;
+    public double LockR { get; set; } = 0.1;
+    public double TrailAfterR { get; set; } = 1.5;
+    public double TrailDistanceR { get; set; } = 1.0;
+
+    public Trader.Core.Scoring.ExitPolicy ToExitPolicy() => new(SmartExitEnabled, PartialAtR, PartialFraction, BreakevenAtR, LockR, TrailAfterR, TrailDistanceR);
 
     public bool RecordShadow { get; set; } = true;
     public double ShadowMinConfidence { get; set; } = 0.5;

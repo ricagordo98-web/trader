@@ -914,6 +914,12 @@ namespace Trader.Infrastructure.Persistence.Migrations
                     b.Property<bool>("IsShadow")
                         .HasColumnType("INTEGER");
 
+                    b.Property<double?>("MaeR")
+                        .HasColumnType("REAL");
+
+                    b.Property<double?>("MfeR")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("Name")
                         .IsRequired()
                         .HasMaxLength(128)
@@ -933,6 +939,9 @@ namespace Trader.Infrastructure.Persistence.Migrations
                         .HasMaxLength(200)
                         .HasColumnType("TEXT");
 
+                    b.Property<double?>("SmartR")
+                        .HasColumnType("REAL");
+
                     b.Property<string>("Status")
                         .IsRequired()
                         .HasMaxLength(16)
@@ -948,6 +957,13 @@ namespace Trader.Infrastructure.Persistence.Migrations
 
                     b.Property<double>("TakeProfit")
                         .HasColumnType("REAL");
+
+                    b.Property<string>("Variant")
+                        .IsRequired()
+                        .ValueGeneratedOnAdd()
+                        .HasMaxLength(8)
+                        .HasColumnType("TEXT")
+                        .HasDefaultValue("A");
 
                     b.HasKey("Id");
 

@@ -8,10 +8,22 @@
 }
 else
 {
-    <MudText Typo="Typo.h6" Class="mb-1">Regras das sugestões de curto prazo (intraday)</MudText>
+    <MudText Typo="Typo.h6" Class="mb-1">@(VariantB ? "Variante B (teste A/B)" : "Regras das sugestões de curto prazo (intraday)")</MudText>
     <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
-        Aplicam-se ao próximo ciclo (a cada 90 segundos). Nada é descartado: o que falha uma regra fica gravado como "só registo" (sombra), é avaliado como as outras e conta para a calibração e para a Fiabilidade.
+        @if (VariantB)
+        {
+            <text>Uma segunda versão das regras corre em paralelo, só em registo (sombra), com os seus próprios stops e alvos. Compara-se com a variante A no separador Fiabilidade, em "Variante A contra B", antes de decidires trocar. Não afeta o que vês nem os teus alertas.</text>
+        }
+        else
+        {
+            <text>Aplicam-se ao próximo ciclo (a cada 90 segundos). Nada é descartado: o que falha uma regra fica gravado como "só registo" (sombra), é avaliado como as outras e conta para a calibração e para a Fiabilidade.</text>
+        }
     </MudText>
+
+    @if (VariantB)
+    {
+        <MudSwitch T="bool" @bind-Value="_variantEnabled" Color="Color.Primary" Label="Correr a variante B em paralelo" Class="mb-2" />
+    }
 
     <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
         <MudText Typo="Typo.subtitle1" Class="mb-1">Stops e alvos</MudText>
@@ -49,6 +61,31 @@ else
     </MudPaper>
 
     <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Regime de volatilidade</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">Não sugere quando o mercado está em stress (VIX alto) ou quando o próprio ativo se mexe muito acima do normal. 0 desliga.</MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MaxVix" Label="VIX máximo" Min="0" Max="100" Step="1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.MaxVolatilityRatio" Label="Volatilidade do ativo máx. (× normal)" Min="0" Max="20" Step="0.5" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
+        <MudText Typo="Typo.subtitle1" Class="mb-1">Saída inteligente (intraday e swing)</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+            Saída parcial, stop em breakeven e stop que acompanha o preço (trailing). A app calcula sempre o resultado que isto teria dado e mostra-o na Fiabilidade; só passa a ser o resultado oficial se ligares o interruptor.
+        </MudText>
+        <MudGrid Spacing="3">
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.PartialAtR" Label="Saída parcial em (R)" Min="0.1" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.PartialFraction" Label="Fração a sair (0–0,9)" Min="0" Max="0.9" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.BreakevenAtR" Label="Stop a breakeven em (R)" Min="0" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.LockR" Label="Garantir (R)" Min="-1" Max="5" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.TrailAfterR" Label="Trailing a partir de (R)" Min="0" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.TrailDistanceR" Label="Distância do trailing (R)" Min="0.1" Max="10" Step="0.1" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
+            <MudItem xs="12" md="6"><MudSwitch T="bool" @bind-Value="_options.SmartExitEnabled" Color="Color.Primary" Label="Usar a saída inteligente como resultado oficial" /></MudItem>
+        </MudGrid>
+    </MudPaper>
+
+    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mb-3">
         <MudText Typo="Typo.subtitle1" Class="mb-1">Critérios gerais e gravação</MudText>
         <MudGrid Spacing="3">
             <MudItem xs="6" md="3"><MudNumericField T="double" @bind-Value="_options.ConfidenceThreshold" Label="Certeza mínima (0,5–0,95)" Min="0.5" Max="0.95" Step="0.05" Variant="Variant.Outlined" Margin="Margin.Dense" /></MudItem>
@@ -71,7 +108,10 @@ else
 }
 
 @code {
+    [Parameter] public bool VariantB { get; set; }
+
     private readonly CancellationTokenSource _cts = new();
+    private bool _variantEnabled;
     private Trader.Core.Intraday.IntradayOptions? _options;
     private string? _error;
     private bool _busy;
@@ -80,7 +120,16 @@ else
     {
         try
         {
-            _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+            if (VariantB)
+            {
+                Trader.Core.Abstractions.VariantSettings variant = await Api.GetVariantBAsync(_cts.Token);
+                _options = variant.Options;
+                _variantEnabled = variant.Enabled;
+            }
+            else
+            {
+                _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+            }
         }
         catch (HttpRequestException)
         {
@@ -91,7 +140,9 @@ else
     private async Task SaveAsync()
     {
         _busy = true;
-        _error = await Api.SaveIntradaySettingsAsync(_options!, _cts.Token);
+        _error = VariantB
+            ? await Api.SaveVariantBAsync(new Trader.Core.Abstractions.VariantSettings(_variantEnabled, _options!), _cts.Token)
+            : await Api.SaveIntradaySettingsAsync(_options!, _cts.Token);
         _busy = false;
 
         if (_error is null)
@@ -103,8 +154,19 @@ else
     private async Task ResetAsync()
     {
         _busy = true;
-        await Api.ResetIntradaySettingsAsync(_cts.Token);
-        _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+        if (VariantB)
+        {
+            await Api.ResetVariantBAsync(_cts.Token);
+            Trader.Core.Abstractions.VariantSettings variant = await Api.GetVariantBAsync(_cts.Token);
+            _options = variant.Options;
+            _variantEnabled = false;
+        }
+        else
+        {
+            await Api.ResetIntradaySettingsAsync(_cts.Token);
+            _options = await Api.GetIntradaySettingsAsync(_cts.Token);
+        }
+
         _error = null;
         _busy = false;
         Snackbar.Add("Valores por omissão repostos.", Severity.Success);

@@ -84,6 +84,24 @@ public static class SettingsEndpoints
                 : Results.Problem(title: string.Join(" ", errors), statusCode: StatusCodes.Status400BadRequest);
         });
 
+        group.MapGet("/settings/intraday/variant-b", async (IIntradaySettings settings, CancellationToken cancellationToken) =>
+            Results.Ok(await settings.GetVariantBAsync(cancellationToken)));
+
+        group.MapPut("/settings/intraday/variant-b", async ([Microsoft.AspNetCore.Mvc.FromBody] VariantSettings variant, IIntradaySettings settings, CancellationToken cancellationToken) =>
+        {
+            IReadOnlyList<string> errors = await settings.SaveVariantBAsync(variant, cancellationToken);
+
+            return errors.Count == 0
+                ? Results.NoContent()
+                : Results.Problem(title: string.Join(" ", errors), statusCode: StatusCodes.Status400BadRequest);
+        });
+
+        group.MapDelete("/settings/intraday/variant-b", async (IIntradaySettings settings, CancellationToken cancellationToken) =>
+        {
+            await settings.ResetVariantBAsync(cancellationToken);
+            return Results.NoContent();
+        });
+
         group.MapDelete("/settings/intraday", async (IIntradaySettings settings, CancellationToken cancellationToken) =>
         {
             await settings.ResetAsync(cancellationToken);

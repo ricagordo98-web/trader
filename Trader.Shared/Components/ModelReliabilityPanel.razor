@@ -91,6 +91,30 @@
         </MudGrid>
     }
 
+    @if (report.Excursions is { } excursions)
+    {
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Até onde vai o preço depois da entrada (@excursions.Samples sugestões)</MudText>
+            <MudText Typo="Typo.body2">
+                Ganho máximo típico: @excursions.MedianMfeR.ToString("0.00", Pt) R · queda máxima típica: @excursions.MedianMaeR.ToString("0.00", Pt) R.
+                Dos stops, @excursions.StoppedReachedHalfTargetShare.ToString("P0", Pt) tinham chegado a metade do caminho para o alvo antes de virar.
+            </MudText>
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mt-1">@excursions.Hint</MudText>
+        </MudPaper>
+    }
+
+    @if (report.SmartExit is { } smart)
+    {
+        <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
+            <MudText Typo="Typo.subtitle1" Class="mb-1">Saída fixa contra saída inteligente (@smart.Samples sugestões)</MudText>
+            <MudText Typo="Typo.body2">
+                R médio com stop e alvo fixos: @smart.FixedAverageR.ToString("+0.00;-0.00;0.00", Pt) · com saída parcial, breakeven e trailing: @smart.SmartAverageR.ToString("+0.00;-0.00;0.00", Pt)
+                (@smart.DifferenceR.ToString("+0.00;-0.00;0.00", Pt) R).
+            </MudText>
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mt-1">@smart.Hint</MudText>
+        </MudPaper>
+    }
+
     @if (report.Shadow is { } shadow && (shadow.Hidden is not null || shadow.ByReason.Count > 0))
     {
         <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
@@ -120,6 +144,45 @@ else if (_loading)
 {
     <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
 }
+
+<MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
+    <div class="d-flex align-center flex-wrap gap-3">
+        <MudText Typo="Typo.subtitle1">Aprender os pesos dos sinais</MudText>
+        <MudSpacer />
+        <MudToggleGroup T="SuggestionHorizon" Value="_learnHorizon" ValueChanged="SetLearnHorizonAsync" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+            <MudToggleItem Value="SuggestionHorizon.Intraday" Text="Intraday" />
+            <MudToggleItem Value="SuggestionHorizon.Swing" Text="Swing" />
+        </MudToggleGroup>
+        <MudButton Variant="Variant.Outlined" Size="Size.Small" Disabled="_learnBusy" OnClick="LearnAsync">Calcular proposta</MudButton>
+    </div>
+    <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+        Com 150 ou mais sugestões fechadas, ajusta o peso de cada sinal pelo acerto real. A proposta aprende nos 70% mais antigos e só é aplicável se melhorar a separação entre ganhos e perdas nos 30% mais recentes, que não foram usados a aprender.
+    </MudText>
+    @if (_learning is { } learning)
+    {
+        <MudAlert Severity="@(learning.Validated ? Severity.Success : Severity.Info)" Variant="Variant.Outlined" Class="mb-2">@learning.Message</MudAlert>
+
+        @if (learning.Weights.Count > 0)
+        {
+            <MudSimpleTable Dense="true" Elevation="0">
+                <thead><tr><th>Sinal</th><th>N</th><th>Vantagem face à média</th><th>Peso atual</th><th>Peso proposto</th></tr></thead>
+                <tbody>
+                    @foreach (LearnedWeight weight in learning.Weights)
+                    {
+                        <tr>
+                            <td>@weight.Label</td>
+                            <td>@weight.Samples</td>
+                            <td>@weight.Lift.ToString("+0.0%;-0.0%;0.0%", Pt)</td>
+                            <td>@weight.CurrentWeight.ToString("0.00", Pt)</td>
+                            <td>@weight.ProposedWeight.ToString("0.00", Pt)</td>
+                        </tr>
+                    }
+                </tbody>
+            </MudSimpleTable>
+            <MudButton Variant="Variant.Filled" Color="Color.Primary" Class="mt-2" Disabled="@(!learning.Validated || _learnBusy)" OnClick="ApplyLearningAsync">Aplicar pesos validados</MudButton>
+        }
+    }
+</MudPaper>
 
 <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-2">
     <div class="d-flex align-center gap-3">
@@ -180,6 +243,53 @@ else if (_loading)
     private string? _error;
     private bool _loading = true;
     private bool _studyBusy;
+    private SuggestionHorizon _learnHorizon = SuggestionHorizon.Intraday;
+    private WeightLearning? _learning;
+    private bool _learnBusy;
+
+    private async Task SetLearnHorizonAsync(SuggestionHorizon horizon)
+    {
+        _learnHorizon = horizon;
+        _learning = null;
+        await LearnAsync();
+    }
+
+    private async Task LearnAsync()
+    {
+        _learnBusy = true;
+
+        try
+        {
+            _learning = await Api.GetWeightLearningAsync(_learnHorizon, _cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível calcular a proposta de pesos.";
+        }
+        finally
+        {
+            _learnBusy = false;
+        }
+    }
+
+    private async Task ApplyLearningAsync()
+    {
+        _learnBusy = true;
+
+        try
+        {
+            _learning = await Api.ApplyWeightLearningAsync(_learnHorizon, _cts.Token);
+            _error = null;
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível aplicar os pesos.";
+        }
+        finally
+        {
+            _learnBusy = false;
+        }
+    }
 
     protected override Task OnInitializedAsync() => LoadAsync();
 
@@ -239,7 +349,8 @@ else if (_loading)
         yield return ("Sugestões fechadas", r.Closed.ToString(Pt), "amostra usada");
         yield return ("Acerto (lucro)", r.WinRate.ToString("P0", Pt), $"IC 95%: {r.WinRateCi.Low.ToString("P0", Pt)} – {r.WinRateCi.High.ToString("P0", Pt)}");
         yield return ("Ponto de equilíbrio", r.BreakEvenWinRate.ToString("P0", Pt), r.WinRate >= r.BreakEvenWinRate ? "acima do mínimo necessário" : "abaixo do mínimo necessário");
-        yield return ("R médio por sugestão", r.AverageR.ToString("+0.00;-0.00;0.00", Pt), $"IC 95%: {r.AverageRCi.Low.ToString("+0.00;-0.00;0.00", Pt)} a {r.AverageRCi.High.ToString("+0.00;-0.00;0.00", Pt)}");
+        yield return ("R médio líquido", r.AverageR.ToString("+0.00;-0.00;0.00", Pt), $"IC 95%: {r.AverageRCi.Low.ToString("+0.00;-0.00;0.00", Pt)} a {r.AverageRCi.High.ToString("+0.00;-0.00;0.00", Pt)}");
+        yield return ("R médio bruto e custos", r.AverageGrossR.ToString("+0.00;-0.00;0.00", Pt), $"menos {r.AverageCostR.ToString("0.00", Pt)} R de spread e comissões (estimativa)");
         yield return ("Profit factor", r.ProfitFactor?.ToString("0.00", Pt) ?? "—", "ganhos totais / perdas totais");
         yield return ("Certeza média indicada", r.AverageConfidence.ToString("P0", Pt), $"acerto real {r.WinRate.ToString("P0", Pt)}");
         yield return ("Erro de calibração", r.CalibrationError.ToString("P1", Pt), "diferença média entre certeza e acerto (menor é melhor)");
@@ -251,6 +362,9 @@ else if (_loading)
         yield return ("Por horizonte", r.ByHorizon, "Intraday (horas) contra swing (dias).");
         yield return ("Por direção", r.ByDirection, "Compra contra venda.");
         yield return ("Por faixa de certeza", r.ByConfidence, "Certezas mais altas deviam acertar mais.");
+        yield return ("Por tipo de ativo", r.ByAssetClass ?? [], "O acerto de cripto, ações e mercadorias costuma ser muito diferente. A certeza calibrada usa o histórico do próprio tipo quando há amostra.");
+        yield return ("Por hora de criação", r.ByHour ?? [], "Hora local em que a sugestão nasceu.");
+        yield return ("Variante A contra B", r.ByVariant ?? [], "A variante B é a segunda versão das regras que corre em sombra (Configurações → Scoring).");
         yield return ("Sentimento a favor ou contra", r.BySentiment, "O acerto quando as notícias apontavam no mesmo sentido da sugestão, e quando apontavam ao contrário.");
     }
 

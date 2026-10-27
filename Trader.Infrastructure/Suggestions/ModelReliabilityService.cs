@@ -1,13 +1,15 @@
 using Microsoft.EntityFrameworkCore;
 using Microsoft.Extensions.Caching.Memory;
 using Trader.Core.Abstractions;
+using Trader.Core.Backtesting;
+using Trader.Core.Intraday;
 using Trader.Core.Models;
 using Trader.Core.Scoring;
 using Trader.Infrastructure.Persistence;
 
 namespace Trader.Infrastructure.Suggestions;
 
-public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDataProvider provider, IMemoryCache cache) : IModelReliabilityService
+public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDataProvider provider, IMemoryCache cache, IIntradaySettings intradaySettings, IScoringSettings scoringSettings) : IModelReliabilityService
 {
     private const int StudyDays = 90;
     private const int MaxSymbols = 30;
@@ -17,6 +19,47 @@ public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDa
 
     public async Task<ModelReliabilityReport> GetReportAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
     {
+        return ModelReliability.CalculateWithShadow(await LoadClosedAsync(horizon, cancellationToken));
+    }
+
+    public async Task<WeightLearning> GetWeightLearningAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        IReadOnlyDictionary<string, double> current = horizon == SuggestionHorizon.Intraday
+            ? SignalWeightMap.Read(await intradaySettings.GetAsync(cancellationToken))
+            : SignalWeightMap.Read(await scoringSettings.GetAsync(cancellationToken));
+
+        return WeightLearner.Learn(horizon, await LoadClosedAsync(horizon, cancellationToken), current);
+    }
+
+    public async Task<WeightLearning> ApplyLearnedWeightsAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    {
+        WeightLearning learning = await GetWeightLearningAsync(horizon, cancellationToken);
+
+        if (!learning.Validated)
+        {
+            return learning;
+        }
+
+        Dictionary<string, double> proposed = learning.Weights.ToDictionary(w => w.Signal, w => w.ProposedWeight);
+
+        if (horizon == SuggestionHorizon.Intraday)
+        {
+            IntradayOptions options = await intradaySettings.GetAsync(cancellationToken);
+            SignalWeightMap.Apply(options, proposed);
+            await intradaySettings.SaveAsync(options, cancellationToken);
+        }
+        else
+        {
+            ScoringOptions options = await scoringSettings.GetAsync(cancellationToken);
+            SignalWeightMap.Apply(options, proposed);
+            await scoringSettings.SaveAsync(options, cancellationToken);
+        }
+
+        return learning;
+    }
+
+    private async Task<List<SuggestionDto>> LoadClosedAsync(SuggestionHorizon? horizon, CancellationToken cancellationToken)
+    {
         IQueryable<Suggestion> query = dbContext.Suggestions.AsNoTracking().Where(s => s.Status != SuggestionStatus.Open);
 
         if (horizon is not null)
@@ -25,7 +68,15 @@ public sealed class ModelReliabilityService(TraderDbContext dbContext, IMarketDa
         }
 
         List<Suggestion> closed = await query.ToListAsync(cancellationToken);
-        return ModelReliability.CalculateWithShadow(closed.Select(SuggestionService.ToDto).ToList());
+        Dictionary<string, AssetClass> classes = await dbContext.Instruments.AsNoTracking().ToDictionaryAsync(i => i.Symbol, i => i.AssetClass, cancellationToken);
+        CostModel costs = new();
+
+        return closed
+            .Select(SuggestionService.ToDto)
+            .Select(dto => classes.TryGetValue(dto.Symbol, out AssetClass assetClass)
+                ? dto with { Class = assetClass, CostR = SuggestionCosts.CostR(dto, assetClass, costs) }
+                : dto)
+            .ToList();
     }
 
     public async Task<SentimentStudyResult> GetSentimentStudyAsync(CancellationToken cancellationToken)

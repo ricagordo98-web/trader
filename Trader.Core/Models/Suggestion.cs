@@ -43,4 +43,8 @@ public sealed class Suggestion
     public double? RMultiple { get; set; }
     public bool IsShadow { get; set; }
     public string ShadowReason { get; set; } = string.Empty;
+    public double? MfeR { get; set; }
+    public double? MaeR { get; set; }
+    public double? SmartR { get; set; }
+    public string Variant { get; set; } = "A";
 }

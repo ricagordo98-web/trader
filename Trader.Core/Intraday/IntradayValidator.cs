@@ -36,6 +36,16 @@ public static class IntradayValidator
             errors.Add("O peso do mercado (0–5), o limiar de alinhamento (0–5%) e a janela macro (0–12 h) estão fora do intervalo.");
         }
 
+        if (o.MaxVix is < 0 or > 100 || o.MaxVolatilityRatio is < 0 or > 20)
+        {
+            errors.Add("O VIX máximo (0–100) e a volatilidade anormal máxima (0–20) estão fora do intervalo. 0 desliga.");
+        }
+
+        if (o.PartialAtR is < 0.1 or > 10 || o.PartialFraction is < 0 or > 0.9 || o.BreakevenAtR is < 0 or > 10 || o.LockR is < -1 or > 5 || o.TrailAfterR is < 0 or > 10 || o.TrailDistanceR is < 0.1 or > 10)
+        {
+            errors.Add("Os parâmetros da saída inteligente estão fora do intervalo.");
+        }
+
         if (o.ShadowMinConfidence is < 0.3 or > 0.9 || o.MaxShadowPerCycle is < 0 or > 100)
         {
             errors.Add("A certeza mínima das sugestões em sombra (30–90%) e o máximo por ciclo (0–100) estão fora do intervalo.");

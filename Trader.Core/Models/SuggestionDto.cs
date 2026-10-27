@@ -30,7 +30,13 @@ public sealed record SuggestionDto(
     double? CalibratedConfidence = null,
     int CalibrationSamples = 0,
     bool IsShadow = false,
-    string ShadowReason = "");
+    string ShadowReason = "",
+    double? MfeR = null,
+    double? MaeR = null,
+    double? SmartR = null,
+    double? CostR = null,
+    string Variant = "A",
+    AssetClass? Class = null);
 
 public sealed record CurvePoint(DateTimeOffset Time, double CumulativeR);
 

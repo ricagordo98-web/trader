@@ -4,6 +4,7 @@ using Microsoft.Extensions.Caching.Memory;
 using Microsoft.Extensions.Logging;
 using Trader.Core.Abstractions;
 using Trader.Core.Alerts;
+using Trader.Core.Backtesting;
 using Trader.Core.Calendar;
 using Trader.Core.Intraday;
 using Trader.Core.Models;
@@ -20,6 +21,7 @@ public sealed class SuggestionService(
     IAlertService alerts,
     IntradayOptions intradayOptions,
     ICalendarService calendar,
+    IIntradaySettings intradaySettings,
     IMemoryCache cache,
     ILogger<SuggestionService> logger) : ISuggestionService
 {
@@ -43,17 +45,17 @@ public sealed class SuggestionService(
         DateTimeOffset cooldownStart = now - IntradayCooldown;
 
         HashSet<string> blocked = (await dbContext.Suggestions
-            .Where(s => !s.IsShadow && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Where(s => !s.IsShadow && s.Variant == "A" && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
             .Select(s => s.Symbol)
             .ToListAsync(cancellationToken)).ToHashSet();
 
         HashSet<(string Symbol, TradeDirection Direction)> openShadows = (await dbContext.Suggestions
-            .Where(s => s.IsShadow && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Where(s => s.IsShadow && s.Variant == "A" && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
             .Select(s => new { s.Symbol, s.Direction })
             .ToListAsync(cancellationToken)).Select(s => (s.Symbol, s.Direction)).ToHashSet();
 
         int slots = intradayOptions.MaxOpenSuggestions
-            - await dbContext.Suggestions.CountAsync(x => !x.IsShadow && x.Horizon == SuggestionHorizon.Intraday && x.Status == SuggestionStatus.Open, cancellationToken);
+            - await dbContext.Suggestions.CountAsync(x => !x.IsShadow && x.Variant == "A" && x.Horizon == SuggestionHorizon.Intraday && x.Status == SuggestionStatus.Open, cancellationToken);
 
         IReadOnlyList<IntradayContext> enriched = await EnrichAsync(contexts, now, cancellationToken);
 
@@ -91,8 +93,11 @@ public sealed class SuggestionService(
             .Select(d => ToShadowEntity(d.Draft, now, now.AddHours(intradayOptions.ExpiryHours), SuggestionHorizon.Intraday, null))
             .ToList();
 
+        List<Suggestion> variantShadows = await AssessVariantBAsync(enriched, now, cooldownStart, cancellationToken);
+
         dbContext.Suggestions.AddRange(added);
         dbContext.Suggestions.AddRange(shadows);
+        dbContext.Suggestions.AddRange(variantShadows);
         await dbContext.SaveChangesAsync(cancellationToken);
         await alerts.RaiseAsync(AlertFactory.ForNewSuggestions(added, now), cancellationToken);
 
@@ -107,6 +112,50 @@ public sealed class SuggestionService(
         }
 
         return added.Count;
+    }
+
+    private async Task<List<Suggestion>> AssessVariantBAsync(IReadOnlyList<IntradayContext> contexts, DateTimeOffset now, DateTimeOffset cooldownStart, CancellationToken cancellationToken)
+    {
+        VariantSettings? variant = await intradaySettings.GetVariantBAsync(cancellationToken);
+
+        if (variant is null || !variant.Enabled)
+        {
+            return [];
+        }
+
+        IntradayOptions options = variant.Options;
+        IntradayEngine engine = new(options);
+        ScoringOptions newsScoring = new() { SentimentHalfLifeHours = options.NewsHalfLifeHours };
+
+        HashSet<string> blocked = (await dbContext.Suggestions
+            .Where(s => s.Variant == "B" && s.Horizon == SuggestionHorizon.Intraday && (s.Status == SuggestionStatus.Open || s.CreatedAt >= cooldownStart))
+            .Select(s => s.Symbol)
+            .ToListAsync(cancellationToken)).ToHashSet();
+
+        List<SuggestionDraft> drafts = [];
+
+        foreach (IntradayContext context in contexts.Where(c => !blocked.Contains(c.Symbol) && Math.Abs(c.RecentMove) >= options.MinEntryMove))
+        {
+            SentimentSnapshot sentiment = await BuildSentimentAsync(context.Symbol, now, newsScoring, TimeSpan.FromHours(options.NewsWindowHours), cancellationToken);
+
+            if (engine.Evaluate(context, sentiment) is { } draft)
+            {
+                drafts.Add(draft);
+            }
+        }
+
+        return drafts
+            .OrderByDescending(d => d.Confidence)
+            .Take(options.MaxNewSuggestionsPerCycle)
+            .Select(d =>
+            {
+                Suggestion entity = ToEntity(d, now, now.AddHours(options.ExpiryHours), SuggestionHorizon.Intraday);
+                entity.IsShadow = true;
+                entity.Variant = "B";
+                entity.ShadowReason = "variante B (teste)";
+                return entity;
+            })
+            .ToList();
     }
 
     public async Task<IReadOnlyList<SuggestionDto>> GetAsync(string? symbol, bool? open, int limit, SuggestionHorizon? horizon, CancellationToken cancellationToken, bool includeShadow = false)
@@ -136,17 +185,29 @@ public sealed class SuggestionService(
         };
 
         List<Suggestion> rows = await query.Take(Math.Clamp(limit, 1, 500)).ToListAsync(cancellationToken);
-        Dictionary<SuggestionHorizon, ConfidenceCalibration?> calibrations = [];
+        Dictionary<string, AssetClass> classes = await dbContext.Instruments.AsNoTracking().ToDictionaryAsync(i => i.Symbol, i => i.AssetClass, cancellationToken);
+        Dictionary<(SuggestionHorizon, AssetClass?), ConfidenceCalibration?> calibrations = [];
 
-        foreach (SuggestionHorizon rowHorizon in rows.Select(r => r.Horizon).Distinct())
+        foreach (Suggestion row in rows)
         {
-            calibrations[rowHorizon] = await GetCalibrationAsync(rowHorizon, cancellationToken);
+            AssetClass? rowClass = classes.TryGetValue(row.Symbol, out AssetClass found) ? found : null;
+
+            if (!calibrations.ContainsKey((row.Horizon, rowClass)))
+            {
+                calibrations[(row.Horizon, rowClass)] = await GetCalibrationAsync(row.Horizon, rowClass, cancellationToken);
+            }
         }
 
         return rows
-            .Select(r => ToDto(r) is var dto && calibrations[r.Horizon] is { } calibration
-                ? dto with { CalibratedConfidence = calibration.Apply(r.Confidence), CalibrationSamples = calibration.Samples }
-                : ToDto(r))
+            .Select(r =>
+            {
+                AssetClass? rowClass = classes.TryGetValue(r.Symbol, out AssetClass found) ? found : null;
+                SuggestionDto dto = ToDto(r) with { Class = rowClass };
+
+                return calibrations[(r.Horizon, rowClass)] is { } calibration
+                    ? dto with { CalibratedConfidence = calibration.Apply(r.Confidence), CalibrationSamples = calibration.Samples }
+                    : dto;
+            })
             .ToList();
     }
 
@@ -191,25 +252,53 @@ public sealed class SuggestionService(
 
         IReadOnlyDictionary<string, double> weights = SourceWeightCalculator.Calculate(outcomes);
         cache.Set("source-weights", weights, CalibrationCacheDuration);
+
+        List<(IReadOnlyList<string> Sources, bool Win)> categoryOutcomes = [];
+
+        foreach (var row in closed)
+        {
+            SuggestionEvidence? evidence = JsonSerializer.Deserialize<SuggestionEvidence>(row.EvidenceJson, JsonOptions);
+            categoryOutcomes.Add((evidence?.Articles.Select(a => SentimentAggregator.CategoryKey(a.Title)).ToList() ?? [], row.R > 0));
+        }
+
+        cache.Set("category-weights", SourceWeightCalculator.Calculate(categoryOutcomes), CalibrationCacheDuration);
         return weights;
     }
 
-    private async Task<ConfidenceCalibration?> GetCalibrationAsync(SuggestionHorizon horizon, CancellationToken cancellationToken)
+    private async Task<ConfidenceCalibration?> GetCalibrationAsync(SuggestionHorizon horizon, AssetClass? assetClass, CancellationToken cancellationToken)
     {
-        string key = $"calibration:{horizon}";
+        string key = $"calibration:{horizon}:{assetClass}";
 
         if (cache.TryGetValue(key, out ConfidenceCalibration? cached))
         {
             return cached;
         }
 
-        var closed = await dbContext.Suggestions
+        List<Suggestion> closed = await dbContext.Suggestions
             .AsNoTracking()
             .Where(s => s.Horizon == horizon && s.Status != SuggestionStatus.Open && s.RMultiple != null)
-            .Select(s => new { s.Confidence, R = s.RMultiple!.Value })
             .ToListAsync(cancellationToken);
 
-        ConfidenceCalibration? calibration = ConfidenceCalibrator.Fit(closed.Select(c => (c.Confidence, c.R > 0)).ToList());
+        Dictionary<string, AssetClass> classes = await dbContext.Instruments.AsNoTracking().ToDictionaryAsync(i => i.Symbol, i => i.AssetClass, cancellationToken);
+        CostModel costs = new();
+
+        List<(double Confidence, bool Win)> outcomes = closed
+            .Where(s => assetClass is null || (classes.TryGetValue(s.Symbol, out AssetClass c) && c == assetClass))
+            .Select(s =>
+            {
+                SuggestionDto dto = ToDto(s);
+                double cost = classes.TryGetValue(s.Symbol, out AssetClass c) ? SuggestionCosts.CostR(dto, c, costs) : 0;
+                return (s.Confidence, s.RMultiple!.Value - cost > 0);
+            })
+            .ToList();
+
+        ConfidenceCalibration? calibration = ConfidenceCalibrator.Fit(outcomes);
+
+        if (calibration is null && assetClass is not null)
+        {
+            calibration = await GetCalibrationAsync(horizon, null, cancellationToken);
+        }
+
         cache.Set(key, calibration, CalibrationCacheDuration);
         return calibration;
     }
@@ -229,7 +318,7 @@ public sealed class SuggestionService(
                 IReadOnlyList<Candle> candles = horizon == SuggestionHorizon.Intraday
                     ? await marketData.GetCandlesAsync(suggestion.Symbol, "5m", "5d", cancellationToken)
                     : await marketData.GetCandlesAsync(suggestion.Symbol, "60m", "1mo", cancellationToken);
-                OutcomeResult? outcome = OutcomeResolver.Resolve(suggestion, candles, now);
+                OutcomeResult? outcome = OutcomeResolver.Resolve(suggestion, candles, now, intradayOptions.ToExitPolicy());
 
                 if (outcome is null)
                 {
@@ -240,8 +329,11 @@ public sealed class SuggestionService(
                 suggestion.ExitPrice = outcome.ExitPrice;
                 suggestion.ClosedAt = outcome.ClosedAt;
                 suggestion.RMultiple = outcome.RMultiple;
+                suggestion.MfeR = outcome.MfeR;
+                suggestion.MaeR = outcome.MaeR;
+                suggestion.SmartR = outcome.SmartR;
 
-                if (AlertFactory.ForOutcome(suggestion, now) is { } alert)
+                if (!suggestion.IsShadow && AlertFactory.ForOutcome(suggestion, now) is { } alert)
                 {
                     raised.Add(alert);
                 }
@@ -342,7 +434,8 @@ public sealed class SuggestionService(
             rows.Select(r => new ArticleSentimentRow(r.Title, r.Url, r.Source, r.SourceType, r.Sentiment, r.PublishedAt)).ToList(),
             now,
             scoring,
-            await GetSourceWeightsAsync(cancellationToken));
+            await GetSourceWeightsAsync(cancellationToken),
+            cache.TryGetValue("category-weights", out IReadOnlyDictionary<string, double>? categoryWeights) ? categoryWeights : null);
     }
 
     private static Suggestion ToEntity(SuggestionDraft draft, DateTimeOffset now, DateTimeOffset expiresAt, SuggestionHorizon horizon) => new()
@@ -375,12 +468,18 @@ public sealed class SuggestionService(
     private async Task<IReadOnlyList<IntradayContext>> EnrichAsync(IReadOnlyList<IntradayContext> contexts, DateTimeOffset now, CancellationToken cancellationToken)
     {
         Dictionary<string, double?> changes = [];
+        double? vix = null;
 
         try
         {
             foreach (InstrumentQuote quote in await marketData.GetQuotesAsync(null, cancellationToken) ?? [])
             {
                 changes[quote.Symbol] = quote.ChangePercent;
+
+                if (quote.Symbol == "^VIX")
+                {
+                    vix = quote.Price;
+                }
             }
         }
         catch (HttpRequestException ex)
@@ -414,7 +513,8 @@ public sealed class SuggestionService(
             .Select(c => c with
             {
                 MarketChangePercent = BenchmarkSelector.For(c.Symbol, c.AssetClass) is { } benchmark && changes.TryGetValue(benchmark.Symbol, out double? change) ? change : null,
-                MacroEvent = macro
+                MacroEvent = macro,
+                Vix = vix
             })
             .ToList();
     }
@@ -445,6 +545,10 @@ public sealed class SuggestionService(
             evidence.Articles,
             s.Horizon,
             IsShadow: s.IsShadow,
-            ShadowReason: s.ShadowReason);
+            ShadowReason: s.ShadowReason,
+            MfeR: s.MfeR,
+            MaeR: s.MaeR,
+            SmartR: s.SmartR,
+            Variant: s.Variant);
     }
 }

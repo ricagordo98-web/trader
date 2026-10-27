@@ -79,7 +79,20 @@ public static class IntradayAnalyzer
             sessionStart,
             last.Time,
             session,
-            usesSessionLevels && previous is { Count: > 1 } ? sessionStart + (previous[^1].Time - previous[0].Time) : null);
+            usesSessionLevels && previous is { Count: > 1 } ? sessionStart + (previous[^1].Time - previous[0].Time) : null,
+            VolatilityRatio: VolatilityRatio(days, session));
+    }
+
+    private static double? VolatilityRatio(List<List<Candle>> days, List<Candle> session)
+    {
+        List<double> baseline = days.SkipLast(1).SelectMany(d => d).Select(c => c.High - c.Low).ToList();
+
+        if (baseline.Count < 20 || session.Count < 6 || baseline.Average() <= 0)
+        {
+            return null;
+        }
+
+        return session.Average(c => c.High - c.Low) / baseline.Average();
     }
 
     private static double Atr(List<List<Candle>> days)

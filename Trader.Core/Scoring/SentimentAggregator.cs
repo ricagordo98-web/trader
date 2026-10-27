@@ -19,13 +19,13 @@ public static class SentimentAggregator
     private const double DuplicateSimilarity = 0.6;
     private static readonly TimeSpan DuplicateWindow = TimeSpan.FromHours(12);
 
-    public static SentimentSnapshot Build(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset now, ScoringOptions options, IReadOnlyDictionary<string, double>? sourceWeights = null)
+    public static SentimentSnapshot Build(IReadOnlyList<ArticleSentimentRow> rows, DateTimeOffset now, ScoringOptions options, IReadOnlyDictionary<string, double>? sourceWeights = null, IReadOnlyDictionary<string, double>? categoryWeights = null)
     {
         rows = Deduplicate(rows);
         List<ArticleSentimentRow> recent = rows.Where(r => now - r.PublishedAt <= TimeSpan.FromHours(RecentHours)).ToList();
 
         List<(ArticleSentimentRow Row, double Weight)> weighted = recent
-            .Select(r => (Row: r, Weight: Math.Pow(0.5, Math.Max(0, (now - r.PublishedAt).TotalHours) / options.SentimentHalfLifeHours) * Reliability(r.SourceType) * (sourceWeights?.GetValueOrDefault(r.Source, 1) ?? 1)))
+            .Select(r => (Row: r, Weight: Math.Pow(0.5, Math.Max(0, (now - r.PublishedAt).TotalHours) / options.SentimentHalfLifeHours) * Reliability(r.SourceType) * (sourceWeights?.GetValueOrDefault(r.Source, 1) ?? 1) * CategoryFactor(r.Title, categoryWeights)))
             .ToList();
 
         double totalWeight = weighted.Sum(w => w.Weight);
@@ -37,6 +37,11 @@ public static class SentimentAggregator
 
         return new SentimentSnapshot(average, recent.Count, BuzzZScore(rows, now), articles);
     }
+
+    public static string CategoryKey(string title) => Trader.Core.Explain.CauseClassifier.Categorize(title).ToString();
+
+    private static double CategoryFactor(string title, IReadOnlyDictionary<string, double>? categoryWeights) =>
+        categoryWeights is null || categoryWeights.Count == 0 ? 1 : categoryWeights.GetValueOrDefault(CategoryKey(title), 1);
 
     public static IReadOnlyList<ArticleSentimentRow> Deduplicate(IReadOnlyList<ArticleSentimentRow> rows)
     {

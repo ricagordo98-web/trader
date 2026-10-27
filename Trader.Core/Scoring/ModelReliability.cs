@@ -42,7 +42,25 @@ public sealed record ModelReliabilityReport(
     IReadOnlyList<ReliabilityStat> ByConfidence,
     IReadOnlyList<ReliabilityStat> BySentiment,
     ReliabilityVerdict Verdict,
-    ShadowAnalysis? Shadow = null);
+    ShadowAnalysis? Shadow = null,
+    IReadOnlyList<ReliabilityStat>? ByAssetClass = null,
+    IReadOnlyList<ReliabilityStat>? ByHour = null,
+    IReadOnlyList<ReliabilityStat>? ByVariant = null,
+    ExcursionAnalysis? Excursions = null,
+    SmartExitComparison? SmartExit = null,
+    double AverageGrossR = 0,
+    double AverageCostR = 0);
+
+public sealed record ExcursionAnalysis(
+    int Samples,
+    double MedianMfeR,
+    double MedianMaeR,
+    double WinnersMaeP80,
+    double StoppedReachedHalfTargetShare,
+    double? SuggestedStopR,
+    string Hint);
+
+public sealed record SmartExitComparison(int Samples, double FixedAverageR, double SmartAverageR, double DifferenceR, string Hint);
 
 public sealed record ShadowAnalysis(ReliabilityStat? Shown, ReliabilityStat? Hidden, IReadOnlyList<ReliabilityStat> ByReason);
 
@@ -63,22 +81,22 @@ public static class ModelReliability
             return Empty();
         }
 
-        double[] rs = done.Select(s => s.RMultiple!.Value).ToArray();
-        List<bool> wins = done.Select(s => s.RMultiple > 0).ToList();
+        double[] rs = done.Select(s => R(s)).ToArray();
+        List<bool> wins = done.Select(s => R(s) > 0).ToList();
         int winCount = wins.Count(w => w);
         double winRate = (double)winCount / done.Count;
         double averageR = rs.Average();
 
-        List<SuggestionDto> winners = done.Where(s => s.RMultiple > 0).ToList();
-        List<SuggestionDto> losers = done.Where(s => s.RMultiple <= 0).ToList();
-        double grossProfit = winners.Sum(s => s.RMultiple!.Value);
-        double grossLoss = Math.Abs(losers.Where(s => s.RMultiple < 0).Sum(s => s.RMultiple!.Value));
+        List<SuggestionDto> winners = done.Where(s => R(s) > 0).ToList();
+        List<SuggestionDto> losers = done.Where(s => R(s) <= 0).ToList();
+        double grossProfit = winners.Sum(s => R(s));
+        double grossLoss = Math.Abs(losers.Where(s => R(s) < 0).Sum(s => R(s)));
         double averageWin = winners.Count == 0 ? 0 : grossProfit / winners.Count;
-        double averageLoss = losers.Count == 0 ? 0 : losers.Average(s => s.RMultiple!.Value);
+        double averageLoss = losers.Count == 0 ? 0 : losers.Average(s => R(s));
         double breakEven = averageWin > 0 && averageLoss < 0 ? -averageLoss / (averageWin - averageLoss) : 0.5;
 
         double baseRate = winRate;
-        double brier = done.Average(s => Math.Pow(s.Confidence - (s.RMultiple > 0 ? 1 : 0), 2));
+        double brier = done.Average(s => Math.Pow(s.Confidence - (R(s) > 0 ? 1 : 0), 2));
         double baselineBrier = baseRate * (1 - baseRate);
 
         ReliabilityVerdict verdict = BuildVerdict(done.Count, winRate, breakEven, averageR, MeanCi(rs), brier, baselineBrier, done.Average(s => s.Confidence));
@@ -110,14 +128,72 @@ public static class ModelReliability
             verdict);
     }
 
-    public static ModelReliabilityReport CalculateWithShadow(IReadOnlyList<SuggestionDto> closed)
+    public static double R(SuggestionDto s) => s.RMultiple!.Value - (s.CostR ?? 0);
+
+    public static ExcursionAnalysis? AnalyzeExcursions(IReadOnlyList<SuggestionDto> done)
+    {
+        List<SuggestionDto> items = done.Where(s => s.MfeR is not null && s.MaeR is not null).ToList();
+
+        if (items.Count < 10)
+        {
+            return null;
+        }
+
+        List<double> winnersMae = items.Where(s => s.Status == SuggestionStatus.HitTakeProfit).Select(s => s.MaeR!.Value).OrderBy(v => v).ToList();
+        List<SuggestionDto> stopped = items.Where(s => s.Status == SuggestionStatus.HitStopLoss).ToList();
+        double stoppedShare = stopped.Count == 0
+            ? 0
+            : stopped.Count(s => s.Entry != s.StopLoss && s.MfeR >= 0.5 * Math.Abs(s.TakeProfit - s.Entry) / Math.Abs(s.Entry - s.StopLoss)) / (double)stopped.Count;
+        double? p80 = winnersMae.Count >= 5 ? winnersMae[(int)Math.Min(winnersMae.Count - 1, Math.Floor(winnersMae.Count * 0.8))] : null;
+
+        string hint = p80 is { } stopR
+            ? p80 < 0.9
+                ? $"As vencedoras raramente aguentam mais de {stopR:0.0} R contra elas: um stop mais curto que o atual poderia ser testado."
+                : "As vencedoras chegam a aguentar quase o stop todo antes de ganhar: não apertes o stop."
+            : "Poucas vencedoras ainda para sugerir um stop.";
+
+        return new ExcursionAnalysis(items.Count, Median(items.Select(s => s.MfeR!.Value)), Median(items.Select(s => s.MaeR!.Value)), p80 ?? 0, stoppedShare, p80, hint);
+    }
+
+    public static SmartExitComparison? CompareSmartExit(IReadOnlyList<SuggestionDto> done)
+    {
+        List<SuggestionDto> items = done.Where(s => s.SmartR is not null && s.RMultiple is not null).ToList();
+
+        if (items.Count < 10)
+        {
+            return null;
+        }
+
+        double fixedAverage = items.Average(s => s.RMultiple!.Value - (s.CostR ?? 0));
+        double smartAverage = items.Average(s => s.SmartR!.Value - (s.CostR ?? 0));
+        double difference = smartAverage - fixedAverage;
+
+        return new SmartExitComparison(
+            items.Count,
+            fixedAverage,
+            smartAverage,
+            difference,
+            difference > 0.05
+                ? "Com stop em breakeven, saída parcial e trailing o resultado teria sido melhor: vale a pena ativar a saída inteligente."
+                : difference < -0.05
+                    ? "A saída inteligente teria dado pior resultado: o stop e o alvo fixos estão a funcionar melhor."
+                    : "Sem diferença relevante entre saída fixa e inteligente.");
+    }
+
+    private static double Median(IEnumerable<double> values)
+    {
+        double[] sorted = values.OrderBy(v => v).ToArray();
+        return sorted.Length == 0 ? 0 : sorted.Length % 2 == 1 ? sorted[sorted.Length / 2] : (sorted[sorted.Length / 2 - 1] + sorted[sorted.Length / 2]) / 2;
+    }
+
+    public static ModelReliabilityReport CalculateWithShadow(IReadOnlyList<SuggestionDto> closed, TimeZoneInfo? zone = null)
     {
         List<SuggestionDto> shown = closed.Where(s => !s.IsShadow).ToList();
         List<SuggestionDto> hidden = closed.Where(s => s.IsShadow && s.RMultiple is not null).ToList();
 
         ReliabilityStat? Stat(string name, List<SuggestionDto> items) => items.Count == 0
             ? null
-            : new ReliabilityStat(name, items.Count, items.Count(s => s.RMultiple > 0), items.Count(s => s.RMultiple > 0) / (double)items.Count, Wilson(items.Count(s => s.RMultiple > 0), items.Count), items.Average(s => s.RMultiple!.Value));
+            : new ReliabilityStat(name, items.Count, items.Count(s => R(s) > 0), items.Count(s => R(s) > 0) / (double)items.Count, Wilson(items.Count(s => R(s) > 0), items.Count), items.Average(s => R(s)));
 
         List<ReliabilityStat> byReason = hidden
             .SelectMany(s => s.ShadowReason.Split("; ", StringSplitOptions.RemoveEmptyEntries).Select(reason => (Reason: reason, Item: s)))
@@ -126,11 +202,33 @@ public static class ModelReliability
             .OrderByDescending(g => g.Count)
             .ToList();
 
+        zone ??= TimeZoneInfo.Local;
+        List<SuggestionDto> shownDone = shown.Where(s => s.RMultiple is not null && s.ClosedAt is not null).ToList();
+        List<SuggestionDto> everything = closed.Where(s => s.RMultiple is not null).ToList();
+
         return Calculate(shown) with
         {
-            Shadow = new ShadowAnalysis(Stat("Mostradas", shown.Where(s => s.RMultiple is not null).ToList()), Stat("Só registo (sombra)", hidden), byReason)
+            Shadow = new ShadowAnalysis(Stat("Mostradas", shown.Where(s => s.RMultiple is not null).ToList()), Stat("Só registo (sombra)", hidden), byReason),
+            ByAssetClass = Group(shownDone, s => s.Class is { } c ? ClassLabel(c) : "Desconhecida"),
+            ByHour = Group(shownDone, s => $"{TimeZoneInfo.ConvertTime(s.CreatedAt, zone).Hour:00}h").OrderBy(g => g.Name, StringComparer.Ordinal).ToList(),
+            ByVariant = Group(everything.Where(s => s.Variant == "B" || !s.IsShadow).ToList(), s => s.Variant == "B" ? "Variante B (teste)" : "Variante A (em uso)"),
+            Excursions = AnalyzeExcursions(everything),
+            SmartExit = CompareSmartExit(everything),
+            AverageGrossR = shownDone.Count == 0 ? 0 : shownDone.Average(s => s.RMultiple!.Value),
+            AverageCostR = shownDone.Count == 0 ? 0 : shownDone.Average(s => s.CostR ?? 0)
         };
     }
+
+    private static string ClassLabel(AssetClass assetClass) => assetClass switch
+    {
+        AssetClass.Stock => "Ações",
+        AssetClass.Etf => "ETFs",
+        AssetClass.Commodity => "Mercadorias",
+        AssetClass.Forex => "Forex",
+        AssetClass.Crypto => "Cripto",
+        AssetClass.Index => "Índices",
+        _ => "Outros"
+    };
 
     public static Interval Wilson(int successes, int total)
     {
@@ -173,7 +271,7 @@ public static class ModelReliability
     private static double CalibrationError(IReadOnlyList<SuggestionDto> done) =>
         done
             .GroupBy(s => ConfidenceBand(s.Confidence))
-            .Sum(g => g.Count() / (double)done.Count * Math.Abs(g.Average(s => s.Confidence) - g.Count(s => s.RMultiple > 0) / (double)g.Count()));
+            .Sum(g => g.Count() / (double)done.Count * Math.Abs(g.Average(s => s.Confidence) - g.Count(s => R(s) > 0) / (double)g.Count()));
 
     private static double AverageHours(IEnumerable<SuggestionDto> items)
     {
@@ -184,7 +282,7 @@ public static class ModelReliability
     private static List<ReliabilityStat> Group(IReadOnlyList<SuggestionDto> done, Func<SuggestionDto, string> key) =>
         done
             .GroupBy(key)
-            .Select(g => new ReliabilityStat(g.Key, g.Count(), g.Count(s => s.RMultiple > 0), g.Count(s => s.RMultiple > 0) / (double)g.Count(), Wilson(g.Count(s => s.RMultiple > 0), g.Count()), g.Average(s => s.RMultiple!.Value)))
+            .Select(g => new ReliabilityStat(g.Key, g.Count(), g.Count(s => R(s) > 0), g.Count(s => R(s) > 0) / (double)g.Count(), Wilson(g.Count(s => R(s) > 0), g.Count()), g.Average(s => R(s))))
             .OrderByDescending(g => g.Count)
             .ToList();
 

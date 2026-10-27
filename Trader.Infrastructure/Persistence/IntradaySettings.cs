@@ -10,6 +10,7 @@ namespace Trader.Infrastructure.Persistence;
 public sealed class IntradaySettings(TraderDbContext dbContext, IntradayOptions live) : IIntradaySettings
 {
     private const string Key = "intraday-options";
+    private const string VariantKey = "intraday-options-b";
 
     private static readonly JsonSerializerOptions JsonOptions = new(JsonSerializerDefaults.Web);
     private static readonly PropertyInfo[] Properties = typeof(IntradayOptions).GetProperties(BindingFlags.Public | BindingFlags.Instance).Where(p => p.CanWrite).ToArray();
@@ -73,6 +74,57 @@ public sealed class IntradaySettings(TraderDbContext dbContext, IntradayOptions 
         {
         }
     }
+
+    public async Task<VariantSettings> GetVariantBAsync(CancellationToken cancellationToken)
+    {
+        string? json = await dbContext.AppSettings.AsNoTracking().Where(s => s.Key == VariantKey).Select(s => s.Value).FirstOrDefaultAsync(cancellationToken);
+
+        if (json is not null)
+        {
+            try
+            {
+                if (JsonSerializer.Deserialize<VariantSettings>(json, JsonOptions) is { } stored)
+                {
+                    return stored;
+                }
+            }
+            catch (JsonException)
+            {
+            }
+        }
+
+        IntradayOptions copy = new();
+        Copy(live, copy);
+        return new VariantSettings(false, copy);
+    }
+
+    public async Task<IReadOnlyList<string>> SaveVariantBAsync(VariantSettings settings, CancellationToken cancellationToken)
+    {
+        IReadOnlyList<string> errors = IntradayValidator.Validate(settings.Options);
+
+        if (errors.Count > 0)
+        {
+            return errors;
+        }
+
+        string json = JsonSerializer.Serialize(settings, JsonOptions);
+        AppSetting? setting = await dbContext.AppSettings.FirstOrDefaultAsync(s => s.Key == VariantKey, cancellationToken);
+
+        if (setting is null)
+        {
+            dbContext.AppSettings.Add(new AppSetting { Key = VariantKey, Value = json });
+        }
+        else
+        {
+            setting.Value = json;
+        }
+
+        await dbContext.SaveChangesAsync(cancellationToken);
+        return [];
+    }
+
+    public async Task ResetVariantBAsync(CancellationToken cancellationToken) =>
+        await dbContext.AppSettings.Where(s => s.Key == VariantKey).ExecuteDeleteAsync(cancellationToken);
 
     private static void Copy(IntradayOptions from, IntradayOptions to)
     {

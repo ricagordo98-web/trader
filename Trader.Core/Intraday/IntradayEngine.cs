@@ -190,6 +190,16 @@ public sealed class IntradayEngine(IntradayOptions options)
             blockers.Add("contra o sentido do mercado");
         }
 
+        if (options.MaxVix > 0 && context.Vix is { } vix && vix >= options.MaxVix)
+        {
+            blockers.Add($"VIX elevado ({vix.ToString("0.#", CultureInfo.InvariantCulture)})");
+        }
+
+        if (options.MaxVolatilityRatio > 0 && context.VolatilityRatio is { } ratio && ratio >= options.MaxVolatilityRatio)
+        {
+            blockers.Add($"volatilidade anormal ({ratio.ToString("0.0", CultureInfo.InvariantCulture)}× o normal)");
+        }
+
         if (options.AvoidMacroHours > 0 && context.MacroEvent is { Length: > 0 } macro)
         {
             blockers.Add($"evento macro próximo ({macro})");

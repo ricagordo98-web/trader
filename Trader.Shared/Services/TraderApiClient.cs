@@ -382,6 +382,31 @@ public sealed class TraderApiClient(HttpClient httpClient)
         response.EnsureSuccessStatusCode();
     }
 
+    public async Task<WeightLearning> GetWeightLearningAsync(SuggestionHorizon horizon, CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<WeightLearning>($"api/suggestions/reliability/weights?horizon={horizon}", cancellationToken))!;
+
+    public async Task<WeightLearning> ApplyWeightLearningAsync(SuggestionHorizon horizon, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PostAsync($"api/suggestions/reliability/weights/apply?horizon={horizon}", null, cancellationToken);
+        response.EnsureSuccessStatusCode();
+        return (await response.Content.ReadFromJsonAsync<WeightLearning>(cancellationToken))!;
+    }
+
+    public async Task<VariantSettings> GetVariantBAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<VariantSettings>("api/settings/intraday/variant-b", cancellationToken))!;
+
+    public async Task<string?> SaveVariantBAsync(VariantSettings settings, CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.PutAsJsonAsync("api/settings/intraday/variant-b", settings, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task ResetVariantBAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync("api/settings/intraday/variant-b", cancellationToken);
+        response.EnsureSuccessStatusCode();
+    }
+
     public async Task<IReadOnlyList<HealthItem>> GetHealthAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<HealthItem>>("api/system/health", cancellationToken) ?? [];
 
