@@ -1,7 +1,10 @@
 @page "/journal"
 @using System.Globalization
+@using Microsoft.AspNetCore.SignalR.Client
+@using Trader.Core.Alerts
 @implements IDisposable
 @inject TraderApiClient Api
+@inject AuthSession Session
 @inject IDialogService DialogService
 @inject ISnackbar Snackbar
 @inject IJSRuntime JS
@@ -254,6 +257,42 @@
         {
             _loading = false;
         }
+
+        await ConnectAsync();
+    }
+
+    private HubConnection? _hub;
+
+    private async Task ConnectAsync()
+    {
+        try
+        {
+            _hub = new HubConnectionBuilder()
+                .WithUrl(Api.NewsHubUrl, options => options.AccessTokenProvider = () => Session.GetAccessTokenAsync())
+                .WithAutomaticReconnect()
+                .Build();
+
+            _hub.On<List<AlertDto>>("AlertsRaised", raised => InvokeAsync(async () =>
+            {
+                if (raised.Any(a => a.Kind is AlertKind.TradeStopLoss or AlertKind.TradeTakeProfit))
+                {
+                    try
+                    {
+                        await ReloadTradesAsync();
+                    }
+                    catch (HttpRequestException)
+                    {
+                    }
+
+                    StateHasChanged();
+                }
+            }));
+
+            await _hub.StartAsync(_cts.Token);
+        }
+        catch (Exception ex) when (ex is HttpRequestException or OperationCanceledException)
+        {
+        }
     }
 
     private async Task ReloadTradesAsync()
@@ -403,5 +442,6 @@
     {
         _cts.Cancel();
         _cts.Dispose();
+        _ = _hub?.DisposeAsync().AsTask();
     }
 }

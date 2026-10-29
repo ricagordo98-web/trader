@@ -63,6 +63,8 @@
             Arrasta um gráfico pelo cabeçalho para o mover e puxa o canto inferior direito para mudar o tamanho. A disposição fica guardada neste dispositivo.
         </MudText>
 
+        <ErrorBoundary>
+            <ChildContent>
         <div @ref="_workspace" class="ws" style="@($"min-height:{_contentHeight:0}px")">
             @if (_panels.Count == 0)
             {
@@ -90,6 +92,11 @@
                 </div>
             }
         </div>
+            </ChildContent>
+            <ErrorContent Context="exception">
+                <MudAlert Severity="Severity.Error">Não foi possível mostrar os gráficos (@exception.GetType().Name: @exception.Message).</MudAlert>
+            </ErrorContent>
+        </ErrorBoundary>
     }
 </MudContainer>
 
@@ -122,6 +129,18 @@
     private IEnumerable<WorkspacePanel> VisiblePanels => _soloId is { } solo ? _panels.Where(p => p.Id == solo) : _panels;
 
     protected override async Task OnInitializedAsync()
+    {
+        try
+        {
+            await LoadWorkspaceAsync();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = $"Não foi possível abrir os gráficos ({ex.GetType().Name}: {ex.Message}).";
+        }
+    }
+
+    private async Task LoadWorkspaceAsync()
     {
         try
         {
@@ -168,19 +187,28 @@
         }
 
         _ready = true;
-        _module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/workspace.js");
-        _self = DotNetObjectReference.Create(this);
-        await _module.InvokeVoidAsync("init", _id, _workspace, _self);
-        await MeasureAsync();
 
-        if (_needsArrange)
+        try
         {
-            _needsArrange = false;
-            WorkspaceLayout.ArrangeGrid(_panels, _width, _height, WorkspaceLayout.AutoColumns(_panels.Count));
-            await SaveAsync();
+            _module = await JS.InvokeAsync<IJSObjectReference>("import", "./_content/Trader.Shared/js/workspace.js");
+            _self = DotNetObjectReference.Create(this);
+            await _module.InvokeVoidAsync("init", _id, _workspace, _self);
+            await MeasureAsync();
+
+            if (_needsArrange)
+            {
+                _needsArrange = false;
+                WorkspaceLayout.ArrangeGrid(_panels, _width, _height, WorkspaceLayout.AutoColumns(_panels.Count));
+                await SaveAsync();
+            }
+
+            RefreshHeight();
+        }
+        catch (Exception ex) when (ex is not OperationCanceledException)
+        {
+            _error = $"Não foi possível preparar os gráficos ({ex.GetType().Name}: {ex.Message}).";
         }
 
-        RefreshHeight();
         StateHasChanged();
     }
 

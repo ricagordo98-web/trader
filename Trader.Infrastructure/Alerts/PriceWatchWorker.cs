@@ -66,6 +66,8 @@ public sealed class PriceWatchWorker(IServiceScopeFactory scopeFactory, ILogger<
                     continue;
                 }
 
+                double exitPrice = level == TradeLevel.StopLoss ? trade.StopLoss!.Value : trade.TakeProfit!.Value;
+
                 if (level == TradeLevel.StopLoss)
                 {
                     trade.StopLossAlerted = true;
@@ -75,13 +77,15 @@ public sealed class PriceWatchWorker(IServiceScopeFactory scopeFactory, ILogger<
                     trade.TakeProfitAlerted = true;
                 }
 
+                LevelChecker.CloseAtLevel(trade, level, exitPrice, now);
+
                 if (!currencies.TryGetValue(trade.UserId, out string? currency))
                 {
                     currency = (await journal.GetAccountAsync(trade.UserId, cancellationToken)).Currency;
                     currencies[trade.UserId] = currency;
                 }
 
-                raised.Add(AlertFactory.ForTradeLevel(trade, level, price, now, currency));
+                raised.Add(AlertFactory.ForTradeLevel(trade, level, exitPrice, now, currency, price));
             }
 
             foreach (PriceAlert alert in priceAlerts)

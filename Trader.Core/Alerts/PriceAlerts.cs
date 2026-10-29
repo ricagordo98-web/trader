@@ -62,6 +62,16 @@ public static class LevelChecker
         return null;
     }
 
+    public static void CloseAtLevel(JournalTrade trade, TradeLevel level, double exitPrice, DateTimeOffset now)
+    {
+        string note = level == TradeLevel.StopLoss ? "Fechada automaticamente ao stop loss." : "Fechada automaticamente ao take profit.";
+
+        trade.Status = TradeStatus.Closed;
+        trade.ExitPrice = exitPrice;
+        trade.ExitTime = now > trade.EntryTime ? now : trade.EntryTime;
+        trade.Notes = string.IsNullOrWhiteSpace(trade.Notes) ? note : $"{trade.Notes} · {note}";
+    }
+
     public static bool IsTriggered(PriceAlert alert, double price) =>
         alert.TriggeredAt is null && (alert.Condition == PriceCondition.Above ? price >= alert.Price : price <= alert.Price);
 }

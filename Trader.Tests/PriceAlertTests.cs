@@ -88,6 +88,36 @@ public class LevelCheckerTests
         alert.Kind.Should().Be(AlertKind.TradeStopLoss);
         alert.Title.Should().Contain("Stop loss").And.Contain("AAPL");
     }
+
+    [Theory]
+    [InlineData(TradeDirection.Buy, TradeLevel.StopLoss, 98, 98)]
+    [InlineData(TradeDirection.Buy, TradeLevel.TakeProfit, 105, 105)]
+    [InlineData(TradeDirection.Sell, TradeLevel.StopLoss, 102, 102)]
+    public void CloseAtLevel_ClosesTheTradeAtTheLevelPriceAndNotesIt(TradeDirection direction, TradeLevel level, double levelPrice, double expectedExit)
+    {
+        JournalTrade trade = Trade(direction, direction == TradeDirection.Buy ? 98 : 102, 105);
+        trade.EntryTime = DateTimeOffset.UtcNow.AddHours(-2);
+        trade.Notes = "teste";
+        DateTimeOffset now = DateTimeOffset.UtcNow;
+
+        LevelChecker.CloseAtLevel(trade, level, levelPrice, now);
+
+        trade.Status.Should().Be(TradeStatus.Closed);
+        trade.ExitPrice.Should().Be(expectedExit);
+        trade.ExitTime.Should().Be(now);
+        trade.Notes.Should().StartWith("teste").And.Contain("automaticamente");
+    }
+
+    [Fact]
+    public void ForTradeLevel_ShowsTheClosingPriceAndTheMarketPrice()
+    {
+        JournalTrade trade = Trade(TradeDirection.Buy, 98, 105);
+        trade.Symbol = "AAPL";
+
+        Alert alert = AlertFactory.ForTradeLevel(trade, TradeLevel.StopLoss, 98, DateTimeOffset.UtcNow, "EUR", 97.2);
+
+        alert.Message.Should().Contain("fechada na Carteira a 98").And.Contain("preço agora 97.2");
+    }
 }
 
 public class PriceAlertIntegrationTests

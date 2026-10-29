@@ -74,7 +74,7 @@ public static class AlertFactory
         ];
     }
 
-    public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now, string currency = "")
+    public static Alert ForTradeLevel(JournalTrade trade, TradeLevel level, double price, DateTimeOffset now, string currency = "", double? marketPrice = null)
     {
         string label = level == TradeLevel.StopLoss ? "Stop loss" : "Take profit";
         TradeOutcome outcome = JournalCalculator.Compute(new JournalTrade
@@ -99,7 +99,7 @@ public static class AlertFactory
             Kind = level == TradeLevel.StopLoss ? AlertKind.TradeStopLoss : AlertKind.TradeTakeProfit,
             Symbol = trade.Symbol,
             Title = $"{trade.Symbol} · {label}{result}",
-            Message = string.Create(CultureInfo.InvariantCulture, $"{(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")} a {trade.EntryPrice:0.#####}, preço agora {price:0.#####}. Ainda tens de fechar a trade na corretora e aqui."),
+            Message = string.Create(CultureInfo.InvariantCulture, $"{(trade.Direction == TradeDirection.Buy ? "Compra" : "Venda")} a {trade.EntryPrice:0.#####}, fechada na Carteira a {price:0.#####} (preço agora {marketPrice ?? price:0.#####}). Confirma que também fechou na corretora."),
             SuggestionId = trade.SuggestionId ?? 0,
             TradeId = trade.Id,
             CreatedAt = now
