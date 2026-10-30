@@ -404,6 +404,27 @@
                             </MudSimpleTable>
                         }
                     </MudPaper>
+                    <MudPaper Elevation="0" Outlined="true" Class="pa-4 mt-4">
+                        <MudText Typo="Typo.subtitle1" Class="mb-1">Importar base de dados</MudText>
+                        <MudText Typo="Typo.caption" Class="symbol-name mb-3">
+                            Passa os teus dados de outro PC: escolhe o ficheiro trader.db. A importação substitui tudo (conta, trades, diário, sugestões) e só é aplicada quando o servidor for reiniciado; a base atual fica guardada na pasta backups. Depois de importar, entras com a conta do PC original. As chaves das APIs não vão na base de dados.
+                        </MudText>
+                        @if (_importError is not null)
+                        {
+                            <MudAlert Severity="Severity.Error" Dense="true" Class="mb-2">@_importError</MudAlert>
+                        }
+                        @if (_importPending)
+                        {
+                            <MudAlert Severity="Severity.Warning" Class="mb-2">
+                                Importação preparada. Reinicia o servidor (fecha e volta a abrir o Iniciar servidor, ou reinicia o serviço TraderServer) para a aplicar.
+                                <MudButton Size="Size.Small" Variant="Variant.Text" Class="ml-2" Disabled="_busy" OnClick="CancelImportAsync">Cancelar importação</MudButton>
+                            </MudAlert>
+                        }
+                        else
+                        {
+                            <InputFile OnChange="ImportDatabaseAsync" accept=".db,.sqlite,.sqlite3" disabled="@_busy" />
+                        }
+                    </MudPaper>
                 </MudTabPanel>
                 <MudTabPanel Text="Scoring">
                     @if (_scoring is not null)
@@ -510,6 +531,8 @@
     private string? _alertError;
     private IReadOnlyList<BackupInfo> _backups = [];
     private string? _backupError;
+    private string? _importError;
+    private bool _importPending;
     private string _oldPassword = string.Empty;
     private string _newPassword = string.Empty;
     private string _userEmail = string.Empty;
@@ -554,6 +577,7 @@
             _ntfyPublicUrl = ntfy.PublicUrl;
             _ntfyPushMarket = ntfy.PushMarketAlerts;
             _backups = await Api.GetBackupsAsync(_cts.Token);
+            _importPending = await Api.HasPendingDatabaseImportAsync(_cts.Token);
             _priceAlerts = await Api.GetPriceAlertsAsync(_cts.Token);
             _profile = await Api.GetProfileAsync(_cts.Token);
             _myTopic = _profile.NtfyTopic ?? string.Empty;
@@ -638,6 +662,35 @@
             Snackbar.Add("Backup criado.", Severity.Success);
         }
 
+        _busy = false;
+    }
+
+    private async Task ImportDatabaseAsync(InputFileChangeEventArgs args)
+    {
+        _busy = true;
+        _importError = null;
+
+        try
+        {
+            await using Stream stream = args.File.OpenReadStream(DatabaseImportLimits.MaxBytes, _cts.Token);
+            _importError = await Api.ImportDatabaseAsync(stream, _cts.Token);
+            _importPending = _importError is null;
+        }
+        catch (Exception ex) when (ex is IOException or HttpRequestException)
+        {
+            _importError = "Não foi possível enviar o ficheiro. Verifica se o servidor está a correr e se o ficheiro não é demasiado grande.";
+        }
+        finally
+        {
+            _busy = false;
+        }
+    }
+
+    private async Task CancelImportAsync()
+    {
+        _busy = true;
+        _importError = await Api.CancelDatabaseImportAsync(_cts.Token);
+        _importPending = _importError is not null;
         _busy = false;
     }
 

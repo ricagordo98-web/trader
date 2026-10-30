@@ -1,3 +1,4 @@
+using Microsoft.AspNetCore.Mvc;
 using Microsoft.Extensions.Options;
 using Trader.Core.Abstractions;
 using Trader.Core.Health;
@@ -26,6 +27,29 @@ public static class SystemEndpoints
             {
                 return Results.Problem(title: "Não foi possível criar o backup: " + ex.Message, statusCode: StatusCodes.Status500InternalServerError);
             }
+        });
+
+        group.MapGet("/import", (IDatabaseImportService service) => Results.Ok(new DatabaseImportStatus(service.HasPending)));
+
+        group.MapPost("/import", async (HttpRequest request, IDatabaseImportService service, CancellationToken cancellationToken) =>
+        {
+            try
+            {
+                string? error = await service.StageAsync(request.Body, cancellationToken);
+                return error is null
+                    ? Results.Ok(new DatabaseImportStatus(true))
+                    : Results.Problem(title: error, statusCode: StatusCodes.Status400BadRequest);
+            }
+            catch (Exception ex) when (ex is IOException or UnauthorizedAccessException)
+            {
+                return Results.Problem(title: "Não foi possível guardar o ficheiro: " + ex.Message, statusCode: StatusCodes.Status500InternalServerError);
+            }
+        }).WithMetadata(new RequestSizeLimitAttribute(DatabaseImportLimits.MaxBytes));
+
+        group.MapDelete("/import", (IDatabaseImportService service) =>
+        {
+            service.CancelPending();
+            return Results.Ok(new DatabaseImportStatus(false));
         });
 
         group.MapGet("/health", async (

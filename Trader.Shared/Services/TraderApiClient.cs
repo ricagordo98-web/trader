@@ -85,6 +85,23 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
     }
 
+    public async Task<bool> HasPendingDatabaseImportAsync(CancellationToken cancellationToken = default) =>
+        (await httpClient.GetFromJsonAsync<DatabaseImportStatus>("api/system/import", cancellationToken))?.Pending ?? false;
+
+    public async Task<string?> ImportDatabaseAsync(Stream content, CancellationToken cancellationToken = default)
+    {
+        using StreamContent body = new(content);
+        body.Headers.ContentType = new System.Net.Http.Headers.MediaTypeHeaderValue("application/octet-stream");
+        using HttpResponseMessage response = await httpClient.PostAsync("api/system/import", body, cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
+    public async Task<string?> CancelDatabaseImportAsync(CancellationToken cancellationToken = default)
+    {
+        using HttpResponseMessage response = await httpClient.DeleteAsync("api/system/import", cancellationToken);
+        return response.IsSuccessStatusCode ? null : await ApiError.ReadAsync(response);
+    }
+
     public async Task<NtfySettings> GetNtfyAsync(CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<NtfySettings>("api/alerts/ntfy", cancellationToken) ?? new NtfySettings(NtfySettings.DefaultServer, string.Empty);
 

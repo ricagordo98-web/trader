@@ -31,6 +31,10 @@ SqliteConnectionStringBuilder connectionString = new(builder.Configuration.GetCo
 connectionString.DataSource = Path.GetFullPath(connectionString.DataSource, contentRoot);
 builder.Configuration["ConnectionStrings:Trader"] = connectionString.ToString();
 builder.Services.PostConfigure<BackupOptions>(options => options.Directory = Path.GetFullPath(options.Directory, contentRoot));
+DatabaseImport.ApplyPending(
+    connectionString.DataSource,
+    Path.GetFullPath(builder.Configuration[$"{BackupOptions.SectionName}:{nameof(BackupOptions.Directory)}"] ?? new BackupOptions().Directory, contentRoot),
+    null);
 
 builder.Services.AddTraderShared();
 builder.Services.AddTraderInfrastructure(builder.Configuration, Path.Combine(builder.Environment.ContentRootPath, "models", "finbert"));

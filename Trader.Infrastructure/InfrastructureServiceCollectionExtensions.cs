@@ -70,6 +70,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddScoped<IJournalService, JournalService>();
         services.Configure<BackupOptions>(configuration.GetSection(BackupOptions.SectionName));
         services.AddScoped<IBackupService, BackupService>();
+        services.AddScoped<IDatabaseImportService, DatabaseImportService>();
         services.AddHostedService<BackupWorker>();
         services.AddHttpClient<ICalendarService, CalendarService>(client => client.Timeout = TimeSpan.FromSeconds(20));
         services.AddHostedService<CalendarAlertWorker>();
