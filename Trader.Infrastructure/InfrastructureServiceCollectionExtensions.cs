@@ -60,6 +60,7 @@ public static class InfrastructureServiceCollectionExtensions
         services.AddSingleton<ISentimentAnalyzer>(sp => CreateSentimentAnalyzer(sp, finBertDirectory));
         services.AddScoped<ArticleIngestor>();
         services.AddScoped<INewsService, NewsService>();
+        services.AddScoped<ICommunityService, CommunityService>();
         services.Configure<ScoringOptions>(configuration.GetSection(ScoringOptions.SectionName));
         services.AddScoped<ISuggestionService, SuggestionService>();
         services.AddScoped<IScoringSettings, ScoringSettings>();
@@ -121,6 +122,15 @@ public static class InfrastructureServiceCollectionExtensions
         AddConnector<MarketauxConnector>(services, 20);
         AddConnector<FredConnector>(services, 20);
         AddConnector<HackerNewsConnector>(services, 20);
+        AddConnector<RedditFeedConnector>(services, 20);
+        AddConnector<MastodonConnector>(services, 20);
+        AddConnector<LemmyConnector>(services, 20);
+        services.AddHttpClient<ApeWisdomClient>(client =>
+        {
+            client.DefaultRequestHeaders.UserAgent.ParseAdd(UserAgent);
+            client.Timeout = TimeSpan.FromSeconds(20);
+        });
+        services.AddSingleton<ISourceConnector, ApeWisdomConnector>();
 
         services.AddHostedService<IngestionWorker>();
         return services;

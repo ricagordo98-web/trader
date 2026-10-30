@@ -7,12 +7,13 @@
 <MudPaper Elevation="0" Outlined="true" Class="chart-panel">
     <div class="chart-panel-header">
         <MudIcon Icon="@Icons.Material.Filled.DragIndicator" Size="Size.Small" Class="chart-panel-grip" />
-        <MudSelect T="string" Value="Symbol" ValueChanged="SymbolChanged" Dense="true" Variant="Variant.Text" Margin="Margin.Dense" Class="chart-panel-symbol" aria-label="Ativo">
-            @foreach (InstrumentQuote instrument in Instruments)
-            {
-                <MudSelectItem T="string" Value="@instrument.Symbol">@instrument.Symbol · @instrument.Name</MudSelectItem>
-            }
-        </MudSelect>
+        <MudAutocomplete T="string" Value="Symbol" ValueChanged="SymbolChanged" SearchFunc="SearchInstruments" ToStringFunc="@(symbol => symbol)"
+                         Dense="true" Variant="Variant.Text" Margin="Margin.Dense" Class="chart-panel-symbol" Placeholder="Procurar mercado" OpenOnFocus="true" MaxItems="40"
+                         SelectOnActivation="true" aria-label="Procurar mercado">
+            <ItemTemplate Context="symbol">
+                <span>@symbol · @InstrumentName(symbol)</span>
+            </ItemTemplate>
+        </MudAutocomplete>
         @for (int i = 0; i < Timeframes.Length; i++)
         {
             int index = i;
@@ -87,6 +88,16 @@
     private Timeframe Current => Timeframes[Math.Clamp(TimeframeIndex, 0, Timeframes.Length - 1)];
 
     private InstrumentQuote? Quote => Instruments.FirstOrDefault(i => i.Symbol == Symbol);
+
+    private string InstrumentName(string symbol) => Instruments.FirstOrDefault(i => i.Symbol == symbol)?.Name ?? string.Empty;
+
+    private Task<IEnumerable<string>> SearchInstruments(string value, CancellationToken cancellationToken) =>
+        Task.FromResult(Instruments
+            .Where(i => string.IsNullOrWhiteSpace(value)
+                || i.Symbol.Contains(value, StringComparison.OrdinalIgnoreCase)
+                || i.Name.Contains(value, StringComparison.OrdinalIgnoreCase))
+            .OrderByDescending(i => i.Symbol.StartsWith(value ?? string.Empty, StringComparison.OrdinalIgnoreCase))
+            .Select(i => i.Symbol));
 
     private bool HasVolume => Quote?.AssetClass is not (AssetClass.Forex or AssetClass.Index);
 

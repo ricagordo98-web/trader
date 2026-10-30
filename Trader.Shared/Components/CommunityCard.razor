@@ -1,0 +1,59 @@
+<MudPaper Elevation="0" Outlined="true" Class="news-card pa-4 mb-3">
+    <div class="d-flex align-center flex-wrap gap-2 mb-1">
+        <MudText Typo="Typo.caption" Class="news-source">@Article.Source</MudText>
+        <MudText Typo="Typo.caption" Class="symbol-name">· @TimeAgo(Article.PublishedAt)</MudText>
+        <MudSpacer />
+        @if (Article.Sentiment is { } score)
+        {
+            <MudChip T="string" Size="Size.Small" Class="ma-0" Variant="Variant.Filled" Color="@SentimentColor(score)">
+                @SentimentLabel(score) @(score >= 0 ? "+" : string.Empty)@score.ToString("0.00", System.Globalization.CultureInfo.InvariantCulture)
+            </MudChip>
+        }
+    </div>
+    @if (SafeUrl(Article.Url) is { } url)
+    {
+        <a href="@url" target="_blank" rel="noopener noreferrer" class="news-title">@Article.Title</a>
+    }
+    else
+    {
+        <span class="news-title">@Article.Title</span>
+    }
+    @if (!string.IsNullOrWhiteSpace(Article.Summary) && Article.Summary != Article.Title)
+    {
+        <MudText Typo="Typo.body2" Class="news-summary mt-1">@Article.Summary</MudText>
+    }
+    @if (Article.Symbols.Count > 0)
+    {
+        <div class="d-flex flex-wrap gap-1 mt-2">
+            @foreach (string symbol in Article.Symbols)
+            {
+                <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Class="ma-0" OnClick="@(() => SymbolSelected.InvokeAsync(symbol))">@symbol</MudChip>
+            }
+        </div>
+    }
+</MudPaper>
+
+@code {
+    [Parameter, EditorRequired] public ArticleDto Article { get; set; } = default!;
+
+    [Parameter] public EventCallback<string> SymbolSelected { get; set; }
+
+    private static string? SafeUrl(string url) =>
+        Uri.TryCreate(url, UriKind.Absolute, out Uri? uri) && uri.Scheme is "http" or "https" ? uri.ToString() : null;
+
+    private static string TimeAgo(DateTimeOffset time)
+    {
+        TimeSpan elapsed = DateTimeOffset.UtcNow - time;
+
+        return elapsed.TotalMinutes < 1 ? "agora"
+            : elapsed.TotalMinutes < 60 ? $"há {(int)elapsed.TotalMinutes} min"
+            : elapsed.TotalHours < 24 ? $"há {(int)elapsed.TotalHours} h"
+            : $"há {(int)elapsed.TotalDays} d";
+    }
+
+    private static string SentimentLabel(double score) =>
+        SentimentBands.IsPositive(score) ? "Positivo" : SentimentBands.IsNegative(score) ? "Negativo" : "Neutro";
+
+    private static Color SentimentColor(double score) =>
+        SentimentBands.IsPositive(score) ? Color.Success : SentimentBands.IsNegative(score) ? Color.Error : Color.Default;
+}

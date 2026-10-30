@@ -38,7 +38,7 @@ dotnet user-secrets set "Sources:Fred:ApiKey" "<key>"
 
 In a published build put the same values in `appsettings.Production.json` next to the server executable. The Finnhub key also powers the real-time trade stream used by the charts and the earnings calendar; the FRED key powers the macro calendar.
 
-SEC EDGAR requires a contact address in the User-Agent. StockTwits is disabled by default because it rejects non-browser clients (HTTP 403). GDELT enforces a strict rate limit (HTTP 429); the worker backs off and retries on the next cycle.
+SEC EDGAR requires a contact address in the User-Agent. StockTwits is enabled but may answer HTTP 403 to some clients; the connector then logs a warning and tries again on the next cycle. Community sources need no keys: Reddit is read through one multi-subreddit RSS request (the OAuth connector takes over when `Sources:Reddit:ClientId` is set), plus Mastodon hashtags, Lemmy communities, ApeWisdom mention spikes and analysis feeds (TradingView Ideas, Seeking Alpha, economics blogs). They are stored as `Social` articles, so they feed the sentiment and buzz signals with lower weight, and the per-source weights learn from outcomes. The Comunidade page shows them with the most-discussed stocks. GDELT enforces a strict rate limit (HTTP 429); the worker backs off and retries on the next cycle.
 
 ## Live data
 

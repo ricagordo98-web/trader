@@ -1,0 +1,272 @@
+@page "/community"
+@implements IDisposable
+@inject TraderApiClient Api
+
+<PageTitle>Comunidade · Trader</PageTitle>
+
+<MudContainer MaxWidth="MaxWidth.ExtraExtraLarge" Class="pa-6 page-fade">
+    <div class="d-flex align-center flex-wrap gap-3 mb-2">
+        <MudText Typo="Typo.h4">Comunidade</MudText>
+        <MudSpacer />
+        <MudTextField T="string" Value="_search" ValueChanged="OnSearchChanged" DebounceInterval="400" Placeholder="Pesquisar conversas"
+                      Variant="Variant.Outlined" Margin="Margin.Dense" Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Class="news-search" />
+        <MudIconButton Icon="@Icons.Material.Filled.Refresh" Disabled="_loading" aria-label="Atualizar comunidade" OnClick="ReloadAsync" />
+    </div>
+    <MudText Typo="Typo.caption" Class="symbol-name d-block mb-4">
+        O que se discute em fóruns e redes (Reddit, Mastodon, Lemmy, StockTwits, Hacker News e blogues de análise). O sentimento destas conversas entra no modelo com menos peso do que as notícias, e o peso de cada fonte é ajustado pelos resultados.
+    </MudText>
+
+    @if (_error is not null)
+    {
+        <MudAlert Severity="Severity.Error" Class="mb-4">@_error</MudAlert>
+    }
+
+    <div class="d-flex flex-wrap gap-2 mb-4">
+        @foreach (GroupSummary group in Summaries())
+        {
+            <MudPaper Elevation="0" Outlined="true" Class="pa-3" Style="min-width:150px">
+                <MudText Typo="Typo.caption" Class="symbol-name">@group.Label · 24 h</MudText>
+                <div class="d-flex align-center gap-2">
+                    <MudText Typo="Typo.h6">@group.Count</MudText>
+                    @if (group.Average is { } average)
+                    {
+                        <MudText Typo="Typo.body2" Color="@SentimentColor(average)">@(average >= 0 ? "+" : string.Empty)@average.ToString("0.00", Invariant)</MudText>
+                    }
+                </div>
+            </MudPaper>
+        }
+    </div>
+
+    <MudTabs @bind-ActivePanelIndex="_tab" Elevation="0" Rounded="true" Border="true" PanelClass="pa-4">
+        <MudTabPanel Text="Em alta">
+            @if (_loading && _trending.Count == 0)
+            {
+                <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="200px" />
+            }
+            else if (_trending.Count == 0)
+            {
+                <MudText Color="Color.Secondary">Sem dados de tendências neste momento. A fonte (ApeWisdom) pode estar indisponível.</MudText>
+            }
+            else
+            {
+                <MudText Typo="Typo.caption" Class="symbol-name d-block mb-2">
+                    Ações mais mencionadas no Reddit nas últimas 24 horas (fonte: ApeWisdom). Clica num ativo para ver as conversas.
+                </MudText>
+                <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="overflow-x:auto">
+                    <thead>
+                        <tr><th>#</th><th>Ativo</th><th>Menções</th><th>Vs. 24 h antes</th><th>Votos</th><th>Posts guardados</th><th>Sentimento</th></tr>
+                    </thead>
+                    <tbody>
+                        @foreach (CommunityTrend trend in _trending)
+                        {
+                            <tr style="cursor:pointer" @onclick="@(() => OpenSymbolAsync(trend.Symbol))">
+                                <td>@trend.Rank</td>
+                                <td>
+                                    <strong>@trend.Symbol</strong> <span class="symbol-name">· @trend.Name</span>
+                                    @if (trend.InWatchlist)
+                                    {
+                                        <MudChip T="string" Size="Size.Small" Variant="Variant.Outlined" Color="Color.Primary" Class="ml-1">Na tua lista</MudChip>
+                                    }
+                                </td>
+                                <td>@trend.Mentions</td>
+                                <td>@Change(trend)</td>
+                                <td>@trend.Upvotes</td>
+                                <td>@trend.PostCount</td>
+                                <td>
+                                    @if (trend.AverageSentiment is { } score)
+                                    {
+                                        <MudText Typo="Typo.body2" Color="@SentimentColor(score)">@(score >= 0 ? "+" : string.Empty)@score.ToString("0.00", Invariant)</MudText>
+                                    }
+                                    else
+                                    {
+                                        <span class="symbol-name">—</span>
+                                    }
+                                </td>
+                            </tr>
+                        }
+                    </tbody>
+                </MudSimpleTable>
+            }
+        </MudTabPanel>
+
+        <MudTabPanel Text="Conversas">
+            <div class="d-flex align-center flex-wrap gap-2 mb-3">
+                @foreach ((string? key, string label) in _groups)
+                {
+                    <MudChip T="string" Size="Size.Medium" Variant="@(_group == key ? Variant.Filled : Variant.Outlined)" Color="@(_group == key ? Color.Primary : Color.Default)"
+                             OnClick="@(() => SetGroup(key))">@label</MudChip>
+                }
+                <MudDivider Vertical="true" FlexItem="true" Class="mx-2" />
+                @foreach ((string? value, string label) in _sentiments)
+                {
+                    <MudChip T="string" Size="Size.Medium" Variant="@(_sentiment == value ? Variant.Filled : Variant.Outlined)" Color="@(_sentiment == value ? Color.Primary : Color.Default)"
+                             OnClick="@(() => SetSentiment(value))">@label</MudChip>
+                }
+                @if (_symbol is not null)
+                {
+                    <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Filled" OnClose="@(() => SetSymbolAsync(null))">@_symbol</MudChip>
+                }
+            </div>
+            @RenderList(Conversations())
+        </MudTabPanel>
+
+        <MudTabPanel Text="Análises">
+            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
+                Ideias de traders (TradingView), artigos de análise (Seeking Alpha) e blogues de economia e mercados.
+            </MudText>
+            @RenderList(Analyses())
+        </MudTabPanel>
+    </MudTabs>
+</MudContainer>
+
+@code {
+    private static readonly System.Globalization.CultureInfo Invariant = System.Globalization.CultureInfo.InvariantCulture;
+
+    private static readonly HashSet<string> AnalysisSources = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "TradingView Ideas", "Seeking Alpha Articles", "Calculated Risk", "Wolf Street", "Naked Capitalism"
+    };
+
+    private static readonly (string? Key, string Label)[] _groups =
+    [
+        (null, "Todas"),
+        ("reddit", "Reddit"),
+        ("mastodon", "Mastodon"),
+        ("lemmy", "Lemmy"),
+        ("stocktwits", "StockTwits"),
+        ("hn", "Hacker News"),
+        ("apewisdom", "Picos de menções")
+    ];
+
+    private static readonly (string? Value, string Label)[] _sentiments =
+    [
+        (null, "Qualquer sentimento"),
+        ("positive", "Positivo"),
+        ("neutral", "Neutro"),
+        ("negative", "Negativo")
+    ];
+
+    private sealed record GroupSummary(string Label, int Count, double? Average);
+
+    private readonly CancellationTokenSource _cts = new();
+    private IReadOnlyList<ArticleDto> _articles = [];
+    private IReadOnlyList<CommunityTrend> _trending = [];
+    private string? _group;
+    private string? _sentiment;
+    private string? _symbol;
+    private string _search = string.Empty;
+    private string? _error;
+    private bool _loading;
+    private int _tab;
+
+    protected override Task OnInitializedAsync() => ReloadAsync();
+
+    private async Task ReloadAsync()
+    {
+        _loading = true;
+        _error = null;
+
+        try
+        {
+            _articles = await Api.GetNewsAsync(new NewsQuery(_symbol, SourceType.Social, null, string.IsNullOrWhiteSpace(_search) ? null : _search, null, 200), _cts.Token);
+            _trending = await Api.GetCommunityTrendingAsync(_cts.Token);
+        }
+        catch (HttpRequestException)
+        {
+            _error = "Não foi possível obter a comunidade. Verifica se o servidor está a correr.";
+        }
+        finally
+        {
+            _loading = false;
+        }
+    }
+
+    private Task OnSearchChanged(string value)
+    {
+        _search = value;
+        return ReloadAsync();
+    }
+
+    private Task SetSymbolAsync(string? symbol)
+    {
+        _symbol = symbol;
+        return ReloadAsync();
+    }
+
+    private async Task OpenSymbolAsync(string symbol)
+    {
+        _tab = 1;
+        await SetSymbolAsync(symbol);
+    }
+
+    private void SetGroup(string? group) => _group = group;
+
+    private void SetSentiment(string? sentiment) => _sentiment = sentiment;
+
+    private static string GroupOf(ArticleDto article) =>
+        article.Source.StartsWith("r/", StringComparison.Ordinal) ? "reddit"
+        : article.Source.StartsWith("Lemmy", StringComparison.Ordinal) ? "lemmy"
+        : article.Source == "Mastodon" ? "mastodon"
+        : article.Source == "StockTwits" ? "stocktwits"
+        : article.Source == "Hacker News" ? "hn"
+        : article.Source == "ApeWisdom" ? "apewisdom"
+        : AnalysisSources.Contains(article.Source) ? "analysis"
+        : "other";
+
+    private IEnumerable<ArticleDto> Conversations() =>
+        _articles.Where(a => GroupOf(a) != "analysis" && (_group is null || GroupOf(a) == _group) && MatchesSentiment(a));
+
+    private IEnumerable<ArticleDto> Analyses() => _articles.Where(a => GroupOf(a) == "analysis" && MatchesSentiment(a));
+
+    private bool MatchesSentiment(ArticleDto article) => _sentiment switch
+    {
+        "positive" => SentimentBands.IsPositive(article.Sentiment),
+        "negative" => SentimentBands.IsNegative(article.Sentiment),
+        "neutral" => article.Sentiment is not null && !SentimentBands.IsPositive(article.Sentiment) && !SentimentBands.IsNegative(article.Sentiment),
+        _ => true
+    };
+
+    private IEnumerable<GroupSummary> Summaries()
+    {
+        DateTimeOffset since = DateTimeOffset.UtcNow.AddHours(-24);
+        List<ArticleDto> recent = _articles.Where(a => a.PublishedAt >= since).ToList();
+
+        foreach ((string? key, string label) in _groups.Skip(1).Append(("analysis", "Análises")))
+        {
+            List<ArticleDto> items = recent.Where(a => GroupOf(a) == key).ToList();
+            double[] scores = items.Where(a => a.Sentiment is not null).Select(a => a.Sentiment!.Value).ToArray();
+            yield return new GroupSummary(label, items.Count, scores.Length > 0 ? scores.Average() : null);
+        }
+    }
+
+    private static string Change(CommunityTrend trend) =>
+        trend.MentionsPrevious is not > 0 ? "novo"
+        : $"{(trend.Mentions >= trend.MentionsPrevious ? "+" : string.Empty)}{(trend.Mentions - trend.MentionsPrevious.Value) * 100.0 / trend.MentionsPrevious.Value:0}%";
+
+    private RenderFragment<IEnumerable<ArticleDto>> RenderList => items => @<text>
+        @if (_loading && _articles.Count == 0)
+        {
+            <MudSkeleton SkeletonType="SkeletonType.Rectangle" Height="104px" />
+        }
+        else if (!items.Any())
+        {
+            <MudText Color="Color.Secondary">Sem publicações para estes filtros.</MudText>
+        }
+        else
+        {
+            @foreach (ArticleDto article in items)
+            {
+                <CommunityCard @key="article.Id" Article="article" SymbolSelected="SetSymbolAsync" />
+            }
+        }
+    </text>;
+
+    private static Color SentimentColor(double score) =>
+        SentimentBands.IsPositive(score) ? Color.Success : SentimentBands.IsNegative(score) ? Color.Error : Color.Default;
+
+    public void Dispose()
+    {
+        _cts.Cancel();
+        _cts.Dispose();
+    }
+}

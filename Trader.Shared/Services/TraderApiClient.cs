@@ -265,6 +265,9 @@ public sealed class TraderApiClient(HttpClient httpClient)
         return await httpClient.GetFromJsonAsync<IReadOnlyList<ArticleDto>>($"api/news?{string.Join('&', parameters)}", cancellationToken) ?? [];
     }
 
+    public async Task<IReadOnlyList<CommunityTrend>> GetCommunityTrendingAsync(CancellationToken cancellationToken = default) =>
+        await httpClient.GetFromJsonAsync<IReadOnlyList<CommunityTrend>>("api/community/trending", cancellationToken) ?? [];
+
     public async Task<IReadOnlyList<SentimentSummary>> GetSentimentSummaryAsync(int hours = 24, CancellationToken cancellationToken = default) =>
         await httpClient.GetFromJsonAsync<IReadOnlyList<SentimentSummary>>($"api/news/sentiment?hours={hours}", cancellationToken) ?? [];
 

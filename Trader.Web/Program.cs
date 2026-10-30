@@ -98,6 +98,7 @@ app.MapStaticAssets();
 app.MapAuthEndpoints();
 app.MapMarketEndpoints();
 app.MapNewsEndpoints();
+app.MapCommunityEndpoints();
 app.MapSuggestionEndpoints();
 app.MapRadarEndpoints();
 app.MapSimulatorEndpoints();

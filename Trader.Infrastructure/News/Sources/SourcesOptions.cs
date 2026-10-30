@@ -15,6 +15,9 @@ public sealed class SourcesOptions
     public MarketauxOptions Marketaux { get; set; } = new();
     public FredOptions Fred { get; set; } = new();
     public HackerNewsOptions HackerNews { get; set; } = new();
+    public MastodonOptions Mastodon { get; set; } = new();
+    public LemmyOptions Lemmy { get; set; } = new();
+    public ApeWisdomOptions ApeWisdom { get; set; } = new();
 }
 
 public sealed class RssOptions
@@ -82,4 +85,27 @@ public sealed class HackerNewsOptions
 {
     public bool Enabled { get; set; } = true;
     public int IntervalMinutes { get; set; } = 15;
+}
+
+public sealed class MastodonOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int IntervalMinutes { get; set; } = 10;
+    public string Instance { get; set; } = "https://mastodon.social";
+    public List<string> Hashtags { get; set; } = [];
+}
+
+public sealed class LemmyOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int IntervalMinutes { get; set; } = 15;
+    public List<string> Communities { get; set; } = [];
+}
+
+public sealed class ApeWisdomOptions
+{
+    public bool Enabled { get; set; } = true;
+    public int IntervalMinutes { get; set; } = 30;
+    public int MinMentions { get; set; } = 30;
+    public double SpikeFactor { get; set; } = 2;
 }
