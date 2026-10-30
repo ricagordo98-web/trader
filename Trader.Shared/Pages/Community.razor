@@ -54,10 +54,18 @@
                 </MudText>
                 <MudSimpleTable Dense="true" Hover="true" Elevation="0" Style="overflow-x:auto">
                     <thead>
-                        <tr><th>#</th><th>Ativo</th><th>Menções</th><th>Vs. 24 h antes</th><th>Votos</th><th>Posts guardados</th><th>Sentimento</th></tr>
+                        <tr>
+                            <th><MudLink OnClick="@(() => SortTrend("rank"))">#@TrendArrow("rank")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("symbol"))">Ativo@TrendArrow("symbol")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("mentions"))">Menções@TrendArrow("mentions")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("change"))">Vs. 24 h antes@TrendArrow("change")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("upvotes"))">Votos@TrendArrow("upvotes")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("posts"))">Posts guardados@TrendArrow("posts")</MudLink></th>
+                            <th><MudLink OnClick="@(() => SortTrend("sentiment"))">Sentimento@TrendArrow("sentiment")</MudLink></th>
+                        </tr>
                     </thead>
                     <tbody>
-                        @foreach (CommunityTrend trend in _trending)
+                        @foreach (CommunityTrend trend in SortedTrending())
                         {
                             <tr style="cursor:pointer" @onclick="@(() => OpenSymbolAsync(trend.Symbol))">
                                 <td>@trend.Rank</td>
@@ -106,14 +114,20 @@
                 {
                     <MudChip T="string" Size="Size.Medium" Color="Color.Secondary" Variant="Variant.Filled" OnClose="@(() => SetSymbolAsync(null))">@_symbol</MudChip>
                 }
+                <MudSpacer />
+                @SortSelect
             </div>
             @RenderList(Conversations())
         </MudTabPanel>
 
         <MudTabPanel Text="Análises">
-            <MudText Typo="Typo.caption" Class="symbol-name d-block mb-3">
-                Ideias de traders (TradingView), artigos de análise (Seeking Alpha) e blogues de economia e mercados.
-            </MudText>
+            <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                <MudText Typo="Typo.caption" Class="symbol-name">
+                    Ideias de traders (TradingView), artigos de análise (Seeking Alpha) e blogues de economia e mercados.
+                </MudText>
+                <MudSpacer />
+                @SortSelect
+            </div>
             @RenderList(Analyses())
         </MudTabPanel>
     </MudTabs>
@@ -214,9 +228,56 @@
         : "other";
 
     private IEnumerable<ArticleDto> Conversations() =>
-        _articles.Where(a => GroupOf(a) != "analysis" && (_group is null || GroupOf(a) == _group) && MatchesSentiment(a));
+        Sorted(_articles.Where(a => GroupOf(a) != "analysis" && (_group is null || GroupOf(a) == _group) && MatchesSentiment(a)));
 
-    private IEnumerable<ArticleDto> Analyses() => _articles.Where(a => GroupOf(a) == "analysis" && MatchesSentiment(a));
+    private IEnumerable<ArticleDto> Analyses() => Sorted(_articles.Where(a => GroupOf(a) == "analysis" && MatchesSentiment(a)));
+
+    private string _sort = "recent";
+    private string _trendSort = "rank";
+    private bool _trendDescending;
+
+    private RenderFragment SortSelect => @<MudSelect T="string" @bind-Value="_sort" Label="Ordenar por" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="max-width:230px">
+        <MudSelectItem Value="@("recent")">Mais recentes</MudSelectItem>
+        <MudSelectItem Value="@("positive")">Mais positivos</MudSelectItem>
+        <MudSelectItem Value="@("negative")">Mais negativos</MudSelectItem>
+        <MudSelectItem Value="@("source")">Fonte (A–Z)</MudSelectItem>
+    </MudSelect>;
+
+    private IEnumerable<ArticleDto> Sorted(IEnumerable<ArticleDto> items) => _sort switch
+    {
+        "positive" => items.OrderByDescending(a => a.Sentiment ?? double.MinValue),
+        "negative" => items.OrderBy(a => a.Sentiment ?? double.MaxValue),
+        "source" => items.OrderBy(a => a.Source, StringComparer.OrdinalIgnoreCase).ThenByDescending(a => a.PublishedAt),
+        _ => items.OrderByDescending(a => a.PublishedAt)
+    };
+
+    private void SortTrend(string key)
+    {
+        _trendDescending = _trendSort == key ? !_trendDescending : key is not ("rank" or "symbol");
+        _trendSort = key;
+    }
+
+    private string TrendArrow(string key) => _trendSort != key ? string.Empty : _trendDescending ? " ↓" : " ↑";
+
+    private IEnumerable<CommunityTrend> SortedTrending()
+    {
+        Func<CommunityTrend, double> selector = _trendSort switch
+        {
+            "mentions" => t => t.Mentions,
+            "change" => t => t.MentionsPrevious is > 0 ? (t.Mentions - t.MentionsPrevious.Value) * 100.0 / t.MentionsPrevious.Value : double.MaxValue,
+            "upvotes" => t => t.Upvotes,
+            "posts" => t => t.PostCount,
+            "sentiment" => t => t.AverageSentiment ?? double.MinValue,
+            _ => t => t.Rank
+        };
+
+        if (_trendSort == "symbol")
+        {
+            return _trendDescending ? _trending.OrderByDescending(t => t.Symbol) : _trending.OrderBy(t => t.Symbol);
+        }
+
+        return _trendDescending ? _trending.OrderByDescending(selector) : _trending.OrderBy(selector);
+    }
 
     private bool MatchesSentiment(ArticleDto article) => _sentiment switch
     {

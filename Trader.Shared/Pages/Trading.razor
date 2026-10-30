@@ -29,9 +29,9 @@
                 <MudTabPanel Text="@(assetClass is null ? $"{title} ({Favorites.Count})" : title)">
                     <MudTable Items="Filter(assetClass)" Hover="true" OnRowClick="@((TableRowClickEventArgs<InstrumentQuote> args) => OpenChartAsync(args.Item))" RowStyle="cursor:pointer" Dense="true" Elevation="0" Loading="_loading" LoadingProgressColor="Color.Primary" Breakpoint="Breakpoint.None">
                         <HeaderContent>
-                            <MudTh>Instrumento</MudTh>
+                            <MudTh><MudTableSortLabel SortBy="@(new Func<InstrumentQuote, object>(q => q.Symbol))">Instrumento</MudTableSortLabel></MudTh>
                             <MudTh Style="text-align:right">Preço</MudTh>
-                            <MudTh Style="text-align:right">Variação</MudTh>
+                            <MudTh Style="text-align:right"><MudTableSortLabel SortBy="@(new Func<InstrumentQuote, object>(q => q.ChangePercent ?? double.MinValue))">Variação</MudTableSortLabel></MudTh>
                             <MudTh Style="text-align:right" Class="d-none d-sm-table-cell">1 mês</MudTh>
                             <MudTh></MudTh>
                         </HeaderContent>

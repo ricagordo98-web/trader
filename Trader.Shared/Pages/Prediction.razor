@@ -47,6 +47,26 @@
                 <MudSwitch T="bool" Value="_showShadow" ValueChanged="SetShowShadowAsync" Color="Color.Primary" Label="Mostrar também as que ficaram só em registo (sombra)" />
                 <MudText Typo="Typo.caption" Class="symbol-name">São gravadas e avaliadas como as outras, mas falharam alguma regra. Servem para a app aprender; não são sugestões para seguir.</MudText>
             </div>
+            <div class="d-flex align-center flex-wrap gap-3 mb-3">
+                <MudTextField T="string" @bind-Value="_query" Immediate="true" Placeholder="Pesquisar ativo" Variant="Variant.Outlined" Margin="Margin.Dense"
+                              Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" Style="max-width:240px" />
+                <MudToggleGroup T="string" @bind-Value="_directionKey" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+                    <MudToggleItem Value="@DirectionAll" Text="Todas" />
+                    <MudToggleItem Value="@DirectionBuy" Text="Comprar" />
+                    <MudToggleItem Value="@DirectionSell" Text="Vender" />
+                </MudToggleGroup>
+                <MudSelect T="string" @bind-Value="_sortKey" Label="Ordenar por" Variant="Variant.Outlined" Margin="Margin.Dense" Dense="true" Style="max-width:220px">
+                    <MudSelectItem Value="@SortRecent">Mais recentes</MudSelectItem>
+                    <MudSelectItem Value="@SortConfidence">Maior certeza</MudSelectItem>
+                    <MudSelectItem Value="@SortRiskReward">Melhor R:R</MudSelectItem>
+                    <MudSelectItem Value="@SortExpires">Expira primeiro</MudSelectItem>
+                    <MudSelectItem Value="@SortSymbol">Ativo (A–Z)</MudSelectItem>
+                </MudSelect>
+                @if (_open.Count > 0)
+                {
+                    <MudText Typo="Typo.caption" Class="symbol-name">@VisibleOpen().Count() de @_open.Count</MudText>
+                }
+            </div>
             @if (_loading)
             {
                 <MudGrid Spacing="4">
@@ -66,9 +86,15 @@
                     </MudText>
                 </MudPaper>
             }
+            else if (!VisibleOpen().Any())
+            {
+                <MudPaper Elevation="0" Outlined="true" Class="pa-6">
+                    <MudText Color="Color.Secondary">Nenhuma sugestão corresponde aos filtros.</MudText>
+                </MudPaper>
+            }
 
             <MudGrid Spacing="4">
-                @foreach (SuggestionDto suggestion in _open)
+                @foreach (SuggestionDto suggestion in VisibleOpen())
                 {
                     bool buy = suggestion.Direction == TradeDirection.Buy;
                     <MudItem xs="12" lg="6" xl="4" @key="suggestion.Id">
@@ -216,16 +242,16 @@
             </div>
 
             <MudPaper Elevation="0" Outlined="true" Class="mb-4">
-                <MudTable Items="_radar.Events.OrderByDescending(e => e.Time)" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarEvent" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
+                <MudTable Items="_radar.Events" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm" T="RadarEvent" RowClass="cursor-pointer" OnRowClick="@(args => OpenChartAsync(args.Item.Symbol, args.Item.Name))">
                     <ToolBarContent>
                         <MudText Typo="Typo.subtitle1">Movimentos anormais detetados</MudText>
                     </ToolBarContent>
                     <HeaderContent>
-                        <MudTh>Quando</MudTh>
-                        <MudTh>Ativo</MudTh>
-                        <MudTh>Tipo</MudTh>
-                        <MudTh>Direção</MudTh>
-                        <MudTh>Força</MudTh>
+                        <MudTh><MudTableSortLabel InitialDirection="SortDirection.Descending" SortBy="@(new Func<RadarEvent, object>(e => e.Time))">Quando</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="@(new Func<RadarEvent, object>(e => e.Symbol))">Ativo</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="@(new Func<RadarEvent, object>(e => (int)e.Kind))">Tipo</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="@(new Func<RadarEvent, object>(e => (int)e.Direction))">Direção</MudTableSortLabel></MudTh>
+                        <MudTh><MudTableSortLabel SortBy="@(new Func<RadarEvent, object>(e => e.Strength))">Força</MudTableSortLabel></MudTh>
                         <MudTh>Detalhe</MudTh>
                         <MudTh Style="text-align:right">Preço</MudTh>
                         <MudTh></MudTh>
@@ -418,13 +444,23 @@
                         </MudGrid>
 
                         <MudPaper Elevation="0" Outlined="true" Class="mt-4">
-                            <MudTable Items="_closed" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
+                            <div class="d-flex align-center flex-wrap gap-3 pa-3">
+                                <MudText Typo="Typo.subtitle1">Sugestões fechadas</MudText>
+                                <MudSpacer />
+                                <MudToggleGroup T="string" @bind-Value="_outcomeKey" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+                                    <MudToggleItem Value="@OutcomeAll" Text="Todas" />
+                                    <MudToggleItem Value="@OutcomeWin" Text="Take profit" />
+                                    <MudToggleItem Value="@OutcomeLoss" Text="Stop loss" />
+                                    <MudToggleItem Value="@OutcomeExpired" Text="Expirou" />
+                                </MudToggleGroup>
+                            </div>
+                            <MudTable Items="VisibleClosed()" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Sm">
                                 <HeaderContent>
-                                    <MudTh>Ativo</MudTh>
-                                    <MudTh>Direção</MudTh>
-                                    <MudTh>Resultado</MudTh>
-                                    <MudTh Style="text-align:right">R</MudTh>
-                                    <MudTh>Fechada</MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="@(new Func<SuggestionDto, object>(s => s.Symbol))">Ativo</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="@(new Func<SuggestionDto, object>(s => (int)s.Direction))">Direção</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel SortBy="@(new Func<SuggestionDto, object>(s => (int)s.Status))">Resultado</MudTableSortLabel></MudTh>
+                                    <MudTh Style="text-align:right"><MudTableSortLabel SortBy="@(new Func<SuggestionDto, object>(s => s.RMultiple ?? 0))">R</MudTableSortLabel></MudTh>
+                                    <MudTh><MudTableSortLabel InitialDirection="SortDirection.Descending" SortBy="@(new Func<SuggestionDto, object>(s => s.ClosedAt ?? DateTimeOffset.MinValue))">Fechada</MudTableSortLabel></MudTh>
                                 </HeaderContent>
                                 <RowTemplate>
                                     <MudTd><SymbolLabel Symbol="@context.Symbol" /></MudTd>
@@ -492,6 +528,55 @@
     [SupplyParameterFromQuery] public long? Suggestion { get; set; }
 
     [SupplyParameterFromQuery] public string? Tab { get; set; }
+
+    private const string DirectionAll = "all";
+    private const string DirectionBuy = "buy";
+    private const string DirectionSell = "sell";
+    private const string SortRecent = "recent";
+    private const string SortConfidence = "confidence";
+    private const string SortRiskReward = "rr";
+    private const string SortExpires = "expires";
+    private const string SortSymbol = "symbol";
+    private const string OutcomeAll = "all";
+    private const string OutcomeWin = "win";
+    private const string OutcomeLoss = "loss";
+    private const string OutcomeExpired = "expired";
+
+    private string? _query;
+    private string _directionKey = DirectionAll;
+    private string _sortKey = SortRecent;
+    private string _outcomeKey = OutcomeAll;
+
+    private IEnumerable<SuggestionDto> VisibleOpen()
+    {
+        IEnumerable<SuggestionDto> items = _open.Where(s =>
+            (string.IsNullOrWhiteSpace(_query)
+                || s.Symbol.Contains(_query, StringComparison.OrdinalIgnoreCase)
+                || s.Name.Contains(_query, StringComparison.OrdinalIgnoreCase))
+            && _directionKey switch
+            {
+                DirectionBuy => s.Direction == TradeDirection.Buy,
+                DirectionSell => s.Direction == TradeDirection.Sell,
+                _ => true
+            });
+
+        return _sortKey switch
+        {
+            SortConfidence => items.OrderByDescending(s => s.CalibratedConfidence ?? s.Confidence),
+            SortRiskReward => items.OrderByDescending(s => s.RiskReward),
+            SortExpires => items.OrderBy(s => s.ExpiresAt),
+            SortSymbol => items.OrderBy(s => s.Symbol, StringComparer.OrdinalIgnoreCase),
+            _ => items.OrderByDescending(s => s.CreatedAt)
+        };
+    }
+
+    private IEnumerable<SuggestionDto> VisibleClosed() => _closed.Where(s => _outcomeKey switch
+    {
+        OutcomeWin => s.Status == SuggestionStatus.HitTakeProfit,
+        OutcomeLoss => s.Status == SuggestionStatus.HitStopLoss,
+        OutcomeExpired => s.Status == SuggestionStatus.Expired,
+        _ => true
+    });
 
     private static int ThresholdPercent => (int)(ConfidenceThreshold * 100);
 

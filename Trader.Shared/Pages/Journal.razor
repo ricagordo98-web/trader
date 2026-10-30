@@ -46,6 +46,13 @@
                         <MudChip T="string" Variant="@(_filter == value ? Variant.Filled : Variant.Outlined)" Color="@(_filter == value ? Color.Primary : Color.Default)"
                                  OnClick="@(() => _filter = value)">@label</MudChip>
                     }
+                    <MudToggleGroup T="TradeDirection?" @bind-Value="_directionFilter" SelectionMode="SelectionMode.SingleSelection" Size="Size.Small" Color="Color.Primary">
+                        <MudToggleItem Value="@((TradeDirection?)null)" Text="Todas" />
+                        <MudToggleItem Value="@((TradeDirection?)TradeDirection.Buy)" Text="Compra" />
+                        <MudToggleItem Value="@((TradeDirection?)TradeDirection.Sell)" Text="Venda" />
+                    </MudToggleGroup>
+                    <MudTextField T="string" @bind-Value="_search" Immediate="true" Placeholder="Pesquisar ativo" Variant="Variant.Outlined" Margin="Margin.Dense"
+                                  Adornment="Adornment.Start" AdornmentIcon="@Icons.Material.Filled.Search" Clearable="true" Style="max-width:220px" />
                     <MudSpacer />
                     <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FileDownload" OnClick="ExportCsvAsync" Disabled="@(_trades.Count == 0)">Exportar CSV</MudButton>
                     <MudButton Variant="Variant.Text" StartIcon="@Icons.Material.Filled.FileUpload" OnClick="ImportCsvAsync">Importar CSV</MudButton>
@@ -64,11 +71,11 @@
                     <MudPaper Elevation="0" Outlined="true">
                         <MudTable Items="VisibleTrades" Dense="true" Elevation="0" Hover="true" Breakpoint="Breakpoint.Md" RowClassFunc="TradeRowClass">
                             <HeaderContent>
-                                <MudTh>Ativo</MudTh>
-                                <MudTh>Entrada</MudTh>
+                                <MudTh><MudTableSortLabel SortBy="@(new Func<JournalTradeDto, object>(t => t.Symbol))">Ativo</MudTableSortLabel></MudTh>
+                                <MudTh><MudTableSortLabel InitialDirection="SortDirection.Descending" SortBy="@(new Func<JournalTradeDto, object>(t => t.EntryTime))">Entrada</MudTableSortLabel></MudTh>
                                 <MudTh>SL / TP</MudTh>
-                                <MudTh>Saída</MudTh>
-                                <MudTh Style="text-align:right">Resultado</MudTh>
+                                <MudTh><MudTableSortLabel SortBy="@(new Func<JournalTradeDto, object>(t => t.ExitTime ?? DateTimeOffset.MaxValue))">Saída</MudTableSortLabel></MudTh>
+                                <MudTh Style="text-align:right"><MudTableSortLabel SortBy="@(new Func<JournalTradeDto, object>(t => t.NetPnl ?? double.MinValue))">Resultado</MudTableSortLabel></MudTh>
                                 <MudTh></MudTh>
                             </HeaderContent>
                             <RowTemplate>
@@ -223,7 +230,16 @@
         }
     }
 
-    private IReadOnlyList<JournalTradeDto> VisibleTrades => _filter is null ? _trades : _trades.Where(t => t.Status == _filter).ToList();
+    private TradeDirection? _directionFilter;
+    private string? _search;
+
+    private IReadOnlyList<JournalTradeDto> VisibleTrades => _trades
+        .Where(t => (_filter is null || t.Status == _filter)
+            && (_directionFilter is null || t.Direction == _directionFilter)
+            && (string.IsNullOrWhiteSpace(_search)
+                || t.Symbol.Contains(_search, StringComparison.OrdinalIgnoreCase)
+                || t.Name.Contains(_search, StringComparison.OrdinalIgnoreCase)))
+        .ToList();
 
     protected override async Task OnInitializedAsync()
     {
